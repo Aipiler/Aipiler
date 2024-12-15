@@ -17,7 +17,7 @@ include "mixTypes.td"
 
 // 组合算子
 
-def MLPOp : MIX_Op<"MLP"> {
+def MLPOp : MIX_Op<"module.mlp"> {
     let summary = "MultiLayerPerceptron";
     let description = [{
         Multi Layer Perceptron.
@@ -31,7 +31,7 @@ def MLPOp : MIX_Op<"MLP"> {
     );
 }
 
-def LinearOp : MIX_Op<"linear", [Pure]> {
+def LinearOp : MIX_Op<"module.linear", [Pure]> {
     let summary = "Linear";
     let description = [{
         Linear
@@ -46,7 +46,7 @@ def LinearOp : MIX_Op<"linear", [Pure]> {
     );
 }
 
-def SiLUOp : MIX_Op<"silu", [Pure, SameOperandsAndResultElementType]> {
+def SiLUOp : MIX_Op<"comp.silu", [Pure, SameOperandsAndResultElementType]> {
     let summary = "SiLU";
     let description = [{
         SiLU
@@ -59,7 +59,7 @@ def SiLUOp : MIX_Op<"silu", [Pure, SameOperandsAndResultElementType]> {
     );
 }
 
-def SelfAttentionOp : MIX_Op<"self_attn", [Pure]> {
+def SelfAttentionOp : MIX_Op<"module.self_attn", [Pure]> {
     let summary = "Self-Attention computation for input tensors";
     let description = [{
         Computes the self-attention mechanism, which includes key, query, and value projections, 
@@ -75,7 +75,7 @@ def SelfAttentionOp : MIX_Op<"self_attn", [Pure]> {
     );
 }
 
-def SoftmaxOp : MIX_Op<"softmax", [Pure]> {
+def SoftmaxOp : MIX_Op<"comp.softmax", [Pure]> {
     let summary = "Compute the softmax of a tensor along a specific axis";
     let description = [{
         Computes the softmax of the input tensor along the specified axis.
@@ -91,7 +91,7 @@ def SoftmaxOp : MIX_Op<"softmax", [Pure]> {
 
 // 基础算子
 
-def AddOp : MIX_Op<"add", [Pure, Commutative]> {
+def AddOp : MIX_Op<"prim.add", [Pure, Commutative]> {
     let summary = "add";
     let description = [{
         add
@@ -105,7 +105,7 @@ def AddOp : MIX_Op<"add", [Pure, Commutative]> {
     );
 }
 
-def SubOp : MIX_Op<"sub", [Pure]> {
+def SubOp : MIX_Op<"prim.sub", [Pure]> {
     let summary = "sub";
     let description = [{
         sub
@@ -119,7 +119,7 @@ def SubOp : MIX_Op<"sub", [Pure]> {
     );
 }
 
-def MulOp : MIX_Op<"mul", [Pure, Commutative]> {
+def MulOp : MIX_Op<"prim.mul", [Pure, Commutative]> {
     let summary = "mul";
     let description = [{
         mul
@@ -133,7 +133,7 @@ def MulOp : MIX_Op<"mul", [Pure, Commutative]> {
     );
 }
 
-def DivOp : MIX_Op<"div", [Pure]> {
+def DivOp : MIX_Op<"prim.div", [Pure]> {
     let summary = "div";
     let description = [{
         div
@@ -147,7 +147,7 @@ def DivOp : MIX_Op<"div", [Pure]> {
     );
 }
 
-def ConcatOp : MIX_Op<"concat", [Pure]> {
+def ConcatOp : MIX_Op<"prim.concat", [Pure]> {
   let summary = "Concatenate tensors along dimension";
   
   let arguments = (ins 
@@ -158,7 +158,7 @@ def ConcatOp : MIX_Op<"concat", [Pure]> {
   let results = (outs mixTensor:$output);
 }
 
-def MatMulOp : MIX_Op<"matmul", [Pure]> {
+def MatMulOp : MIX_Op<"prim.matmul", [Pure]> {
     let summary = "Matrix multiplication of tensors";
     let description = [{
         Performs matrix multiplication on the input tensors.
@@ -172,7 +172,7 @@ def MatMulOp : MIX_Op<"matmul", [Pure]> {
     );
 }
 
-def BatchMatMulOp : MIX_Op<"batch_matmul", [Pure]> {
+def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
     let summary = "Batch matrix multiplication of tensors";
     let description = [{
         Performs batch matrix multiplication on the input tensors.
@@ -186,7 +186,7 @@ def BatchMatMulOp : MIX_Op<"batch_matmul", [Pure]> {
     );
 }
 
-def ReshapeOp : MIX_Op<"reshape", [Pure]> {
+def ReshapeOp : MIX_Op<"prim.reshape", [Pure]> {
     let summary = "Reshape a tensor to the specified shape";
     let description = [{
         Reshapes the input tensor to the specified shape without changing its data.
@@ -200,7 +200,7 @@ def ReshapeOp : MIX_Op<"reshape", [Pure]> {
     );
 }
 
-def PermuteOp : MIX_Op<"permute", [Pure]> {
+def PermuteOp : MIX_Op<"prim.permute", [Pure]> {
     let summary = "Permute the dimensions of a tensor";
     let description = [{
         Permutes the dimensions of the input tensor according to the specified order.
@@ -216,7 +216,7 @@ def PermuteOp : MIX_Op<"permute", [Pure]> {
 
 
 
-def PowOp : MIX_Op<"pow", [Pure]> {
+def PowOp : MIX_Op<"prim.pow", [Pure]> {
     let summary = "Element-wise power operation";
     let description = [{
         Computes the element-wise power of the input tensor to the specified exponent.
@@ -230,7 +230,7 @@ def PowOp : MIX_Op<"pow", [Pure]> {
     );
 }
 
-def ReciprocalOp : MIX_Op<"reciprocal", [Pure]> {
+def ReciprocalOp : MIX_Op<"prim.reciprocal", [Pure]> {
     let summary = "Element-wise reciprocal of a tensor";
     let description = [{
         Computes the element-wise reciprocal (1/x) of the input tensor.
@@ -243,7 +243,7 @@ def ReciprocalOp : MIX_Op<"reciprocal", [Pure]> {
     );
 }
 
-def CosOp : MIX_Op<"cos", [Pure]> {
+def CosOp : MIX_Op<"prim.cos", [Pure]> {
     let summary = "Element-wise cosine operation";
     let description = [{
         Computes the cosine of each element in the input tensor.
@@ -256,7 +256,7 @@ def CosOp : MIX_Op<"cos", [Pure]> {
     );
 }
 
-def SinOp : MIX_Op<"sin", [Pure]> {
+def SinOp : MIX_Op<"prim.sin", [Pure]> {
     let summary = "Element-wise sine operation";
     let description = [{
         Computes the sine of each element in the input tensor.
@@ -269,7 +269,7 @@ def SinOp : MIX_Op<"sin", [Pure]> {
     );
 }
 
-def NegOp : MIX_Op<"neg", [Pure]> {
+def NegOp : MIX_Op<"prim.neg", [Pure]> {
     let summary = "Element-wise negation of a tensor";
     let description = [{
         Computes the element-wise negation (-x) of the input tensor.
