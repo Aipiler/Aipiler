@@ -2,8 +2,8 @@
 ### Clone and Initialize
 
 ```
-$ git clone xxxxx.git
-$ cd xxx
+$ git clone git@github.com:Aipiler/Aipiler.git
+$ cd Aipiler
 $ git submodule update --init
 ```
 
