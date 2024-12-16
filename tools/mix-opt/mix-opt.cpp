@@ -17,6 +17,7 @@
 
 void registerLowerModulePass();
 void registerLowerCompositePass();
+void registerLowerPrimaryToTosaPass();
 
 int main(int argc, char **argv) {
   // Register all MLIR passes.
@@ -24,6 +25,7 @@ int main(int argc, char **argv) {
 
   registerLowerModulePass();
   registerLowerCompositePass();
+  registerLowerPrimaryToTosaPass();
 
   mlir::DialectRegistry registry;
   // Register all MLIR core dialects.

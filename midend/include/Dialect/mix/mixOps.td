@@ -59,6 +59,19 @@ def SiLUOp : MIX_Op<"comp.silu", [Pure, SameOperandsAndResultElementType, Declar
     );
 }
 
+def SigmoidOp: MIX_Op<"comp.sigmoid", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    let summary = "Sigmoid";
+    let description = [{
+        Sigmoid
+    }];
+    let arguments = (ins
+        mixTensor: $input
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+}
+
 def SelfAttentionOp : MIX_Op<"module.self_attn", [Pure]> {
     let summary = "Self-Attention computation for input tensors";
     let description = [{
@@ -235,7 +248,7 @@ def PowOp : MIX_Op<"prim.pow", [Pure]> {
     );
 }
 
-def ExpOp : MIX_Op<"prim.exp", [Pure]> {
+def ExpOp : MIX_Op<"prim.exp", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "Element-wise exp operation";
     let description = [{
         Computes the element-wise exp of the input tensor to the specified exponent.
@@ -287,7 +300,7 @@ def SinOp : MIX_Op<"prim.sin", [Pure]> {
     );
 }
 
-def NegOp : MIX_Op<"prim.neg", [Pure]> {
+def NegOp : MIX_Op<"prim.neg", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "Element-wise negation of a tensor";
     let description = [{
         Computes the element-wise negation (-x) of the input tensor.

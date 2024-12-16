@@ -11,6 +11,7 @@ target_link_libraries(mix-opt
   MLIRMIX
   LowerModule
   LowerComposite
+  LowerPrimaryToTosa
   ${dialect_libs}
   ${conversion_libs}
   ${extension_libs}

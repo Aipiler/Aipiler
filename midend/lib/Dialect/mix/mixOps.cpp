@@ -22,6 +22,15 @@ LogicalResult mix::SiLUOp::inferReturnTypes(
   return success();
 }
 
+LogicalResult mix::SigmoidOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = operands[0].getType();
+  inferredReturnTypes.push_back(inputType);
+  return success();
+}
+
 bool verifyBroadcastCompatibility(TensorType lhsTensor, TensorType rhsTensor) {
 
   ArrayRef<int64_t> lhsShape = lhsTensor.getShape();
@@ -299,6 +308,24 @@ LogicalResult mix::MatMulOp::inferReturnTypes(
   ArrayRef<int64_t> resultShape{lhsShape[0], rhsShape[1]};
   auto resultType = RankedTensorType::get(resultShape, elementTy);
   inferredReturnTypes.push_back(resultType);
+  return success();
+}
+
+LogicalResult mix::NegOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = operands[0].getType();
+  inferredReturnTypes.push_back(inputType);
+  return success();
+}
+
+LogicalResult mix::ExpOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = operands[0].getType();
+  inferredReturnTypes.push_back(inputType);
   return success();
 }
 

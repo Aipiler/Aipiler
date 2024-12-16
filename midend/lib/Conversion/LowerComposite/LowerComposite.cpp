@@ -12,6 +12,7 @@
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/Dialect/X86Vector/X86VectorDialect.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -43,21 +44,32 @@ public:
   LogicalResult matchAndRewrite(mix::SiLUOp op,
                                 PatternRewriter &rewriter) const override {
     auto input = op.getInput();
+    auto loc = op->getLoc();
+
+    auto sigmoid0 = rewriter.create<mix::SigmoidOp>(loc, input);
+    auto mul0 = rewriter.create<mix::MulOp>(loc, input, sigmoid0);
+    rewriter.replaceOp(op, mul0);
+    return success();
+  }
+};
+
+class SigmoidLoweringPattern : public OpRewritePattern<mix::SigmoidOp> {
+public:
+  using OpRewritePattern<mix::SigmoidOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::SigmoidOp op,
+                                PatternRewriter &rewriter) const override {
+    auto input = op.getInput();
     auto inputTy = input.getType();
     auto elementTy = inputTy.getElementType();
     auto loc = op->getLoc();
     auto neg0 = rewriter.create<mix::NegOp>(loc, inputTy, input);
     auto exp0 = rewriter.create<mix::ExpOp>(loc, inputTy, neg0);
-    Value c1;
-    if (elementTy.isa<IntegerType>()) {
-      auto c1_attr = rewriter.getIntegerAttr(elementTy, 1);
-      c1 = rewriter.create<arith::ConstantOp>(loc, c1_attr);
-    } else if (elementTy.isa<FloatType>()) {
-      auto c1_attr = rewriter.getFloatAttr(elementTy, 1);
-      c1 = rewriter.create<arith::ConstantOp>(loc, c1_attr);
-    }
-    auto add0 = rewriter.create<mix::AddOp>(loc, inputTy, c1, exp0);
-    auto div0 = rewriter.create<mix::DivOp>(loc, inputTy, input, add0);
+
+    auto tensorTy = RankedTensorType::get({1}, elementTy);
+    auto c1_attr = DenseElementsAttr::get(tensorTy, {1.0f});
+    auto c1 = rewriter.create<arith::ConstantOp>(loc, c1_attr);
+    auto add0 = rewriter.create<mix::AddOp>(loc, c1, exp0);
+    auto div0 = rewriter.create<mix::DivOp>(loc, c1, add0);
     rewriter.replaceOp(op, div0);
     return success();
   }
@@ -66,7 +78,8 @@ public:
 } // namespace
 
 void populateLowerCompositeOpPatterns(RewritePatternSet &patterns) {
-  patterns.add<SiLULoweringPattern>(patterns.getContext());
+  patterns.add<SiLULoweringPattern, SigmoidLoweringPattern>(
+      patterns.getContext());
 }
 
 namespace {
@@ -96,7 +109,7 @@ void LowerCompositePass::runOnOperation() {
   ConversionTarget target(context);
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect>();
-  target.addIllegalOp<mix::SiLUOp>();
+  target.addIllegalOp<mix::SiLUOp, mix::SigmoidOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerCompositeOpPatterns(patterns);
