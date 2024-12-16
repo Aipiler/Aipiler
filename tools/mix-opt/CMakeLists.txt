@@ -9,7 +9,7 @@ add_llvm_tool(mix-opt
 target_link_libraries(mix-opt
   PRIVATE
   MLIRMIX
-  LowerGraph
+  LowerModule
   ${dialect_libs}
   ${conversion_libs}
   ${extension_libs}

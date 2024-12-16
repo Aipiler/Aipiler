@@ -34,5 +34,5 @@ target_link_libraries(GenMixCode
     ${dialect_libs}
     ${conversion_libs}
     MLIRMIX
-    LowerGraph
+    LowerModule
 )

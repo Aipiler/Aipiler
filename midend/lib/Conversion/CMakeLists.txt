@@ -1,2 +1,3 @@
-add_subdirectory(LowerGraph)
-add_subdirectory(LowerMixToTosa)
+add_subdirectory(LowerModule)
+# add_subdirectory(LowerComposite)
+# add_subdirectory(LowerPrimarytToTosa)

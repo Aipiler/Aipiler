@@ -33,7 +33,7 @@
 
 using namespace mlir;
 
-std::unique_ptr<Pass> createLowerGraphPass();
+std::unique_ptr<Pass> createLowerModulePass();
 
 int main() {
   mlir::MLIRContext context;
@@ -71,7 +71,7 @@ int main() {
   theModule->dump();
 
   mlir::PassManager pm(&context);
-  pm.addPass(createLowerGraphPass());
+  pm.addPass(createLowerModulePass());
   if (mlir::failed(pm.run(theModule))) {
     return 4;
   }

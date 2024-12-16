@@ -15,13 +15,13 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 
-void registerLowerGraphPass();
+void registerLowerModulePass();
 
 int main(int argc, char **argv) {
   // Register all MLIR passes.
   mlir::registerAllPasses();
 
-  registerLowerGraphPass();
+  registerLowerModulePass();
 
   mlir::DialectRegistry registry;
   // Register all MLIR core dialects.

@@ -86,21 +86,46 @@ public:
   }
 };
 
+class LinearLoweringPattern : public OpRewritePattern<mix::LinearOp> {
+public:
+  using OpRewritePattern<mix::LinearOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::LinearOp op,
+                                PatternRewriter &rewriter) const override {
+    auto input = op.getInput();
+    auto weight = op.getWeight();
+    auto bias = op.getBias();
+    auto loc = op->getLoc();
+    // TODO: auto reference type for linear output.
+    auto tensorType = weight.getType();
+    auto matmul0 =
+        rewriter.create<mix::MatMulOp>(loc, tensorType, input, weight);
+    Value output = matmul0;
+    if (bias) {
+      output = rewriter.create<mix::AddOp>(loc, tensorType, output, bias);
+    }
+    rewriter.replaceOp(op, output);
+    return success();
+  }
+};
+
 } // namespace
 
 void populateConvertGraphPatterns(RewritePatternSet &patterns) {
-  patterns.add<MLPLoweringPattern>(patterns.getContext());
+  patterns.add<MLPLoweringPattern, LinearLoweringPattern>(
+      patterns.getContext());
 }
 
 namespace {
-class LowerGraphPass
-    : public PassWrapper<LowerGraphPass, OperationPass<ModuleOp>> {
+class LowerModulePass
+    : public PassWrapper<LowerModulePass, OperationPass<ModuleOp>> {
 public:
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerGraphPass)
-  LowerGraphPass() = default;
-  LowerGraphPass(const LowerGraphPass &) {}
-  StringRef getArgument() const final { return "lower-graph"; }
-  StringRef getDescription() const final { return "Lower Graph Ops."; }
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerModulePass)
+  LowerModulePass() = default;
+  LowerModulePass(const LowerModulePass &) {}
+  StringRef getArgument() const final { return "lower-mix-module"; }
+  StringRef getDescription() const final {
+    return "Convert mix.module ops to mix.comp op and mix.prim ops.";
+  }
 
   void runOnOperation() override;
 
@@ -111,13 +136,14 @@ public:
 };
 } // namespace
 
-void LowerGraphPass::runOnOperation() {
+void LowerModulePass::runOnOperation() {
   MLIRContext &context = this->getContext();
   ModuleOp module = this->getOperation();
   ConversionTarget target(context);
-  target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect>();
-  target.addLegalOp<ModuleOp, mix::LinearOp, mix::SiLUOp, mix::AddOp,
-                    mix::SubOp, mix::MulOp, mix::DivOp>();
+  target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
+                         mix::MIXDialect>();
+  target.addIllegalOp<mix::MLPOp, mix::LinearOp>();
+  target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateConvertGraphPatterns(patterns);
   if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
@@ -125,8 +151,8 @@ void LowerGraphPass::runOnOperation() {
   }
 }
 
-void registerLowerGraphPass() { PassRegistration<LowerGraphPass>(); }
+void registerLowerModulePass() { PassRegistration<LowerModulePass>(); }
 
-std::unique_ptr<Pass> createLowerGraphPass() {
-  return std::make_unique<LowerGraphPass>();
+std::unique_ptr<Pass> createLowerModulePass() {
+  return std::make_unique<LowerModulePass>();
 }
