@@ -67,20 +67,19 @@ public:
         loc, tensorType, SymbolRefAttr::get(context, "weight0"));
     auto linear0 = rewriter.create<mix::LinearOp>(
         loc, tensorType, hidden_states, _weight0, nullptr);
-    auto silu0 = rewriter.create<mix::SiLUOp>(loc, tensorType, linear0);
+    auto silu0 = rewriter.create<mix::SiLUOp>(loc, linear0);
     auto _weight1 = rewriter.create<ml_program::GlobalLoadOp>(
         loc, tensorType, SymbolRefAttr::get(context, "weight1"));
     auto linear1 = rewriter.create<mix::LinearOp>(
         loc, tensorType, hidden_states, _weight1, nullptr);
-    auto mul0 = rewriter.create<mix::MulOp>(loc, tensorType, silu0, linear1);
+    auto mul0 = rewriter.create<mix::MulOp>(loc, silu0, linear1);
     auto _weight2 = rewriter.create<ml_program::GlobalLoadOp>(
         loc, tensorType, SymbolRefAttr::get(context, "weight2"));
     auto _bias2 = rewriter.create<ml_program::GlobalLoadOp>(
         loc, tensorType, SymbolRefAttr::get(context, "bias2"));
     auto linear2 =
         rewriter.create<mix::LinearOp>(loc, tensorType, mul0, _weight2, _bias2);
-    auto output =
-        rewriter.create<mix::AddOp>(loc, tensorType, linear2, residual);
+    auto output = rewriter.create<mix::AddOp>(loc, linear2, residual);
     rewriter.replaceOp(op, output);
     return success();
   }
@@ -95,13 +94,10 @@ public:
     auto weight = op.getWeight();
     auto bias = op.getBias();
     auto loc = op->getLoc();
-    // TODO: auto reference type for linear output.
-    auto tensorType = weight.getType();
-    auto matmul0 =
-        rewriter.create<mix::MatMulOp>(loc, tensorType, input, weight);
+    auto matmul0 = rewriter.create<mix::MatMulOp>(loc, input, weight);
     Value output = matmul0;
     if (bias) {
-      output = rewriter.create<mix::AddOp>(loc, tensorType, output, bias);
+      output = rewriter.create<mix::AddOp>(loc, output, bias);
     }
     rewriter.replaceOp(op, output);
     return success();
@@ -110,7 +106,7 @@ public:
 
 } // namespace
 
-void populateConvertGraphPatterns(RewritePatternSet &patterns) {
+void populateLowerModulePatterns(RewritePatternSet &patterns) {
   patterns.add<MLPLoweringPattern, LinearLoweringPattern>(
       patterns.getContext());
 }
@@ -145,7 +141,7 @@ void LowerModulePass::runOnOperation() {
   target.addIllegalOp<mix::MLPOp, mix::LinearOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
-  populateConvertGraphPatterns(patterns);
+  populateLowerModulePatterns(patterns);
   if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
     signalPassFailure();
   }

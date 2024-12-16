@@ -46,7 +46,7 @@ def LinearOp : MIX_Op<"module.linear", [Pure]> {
     );
 }
 
-def SiLUOp : MIX_Op<"comp.silu", [Pure, SameOperandsAndResultElementType]> {
+def SiLUOp : MIX_Op<"comp.silu", [Pure, SameOperandsAndResultElementType, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "SiLU";
     let description = [{
         SiLU
@@ -91,7 +91,7 @@ def SoftmaxOp : MIX_Op<"comp.softmax", [Pure]> {
 
 // 基础算子
 
-def AddOp : MIX_Op<"prim.add", [Pure, Commutative]> {
+def AddOp : MIX_Op<"prim.add", [Pure, Commutative, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "add";
     let description = [{
         add
@@ -103,9 +103,10 @@ def AddOp : MIX_Op<"prim.add", [Pure, Commutative]> {
     let results = (outs
         mixData: $output
     );
+    let hasVerifier = 1;
 }
 
-def SubOp : MIX_Op<"prim.sub", [Pure]> {
+def SubOp : MIX_Op<"prim.sub", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "sub";
     let description = [{
         sub
@@ -117,9 +118,10 @@ def SubOp : MIX_Op<"prim.sub", [Pure]> {
     let results = (outs
         mixData: $output
     );
+    let hasVerifier = 1;
 }
 
-def MulOp : MIX_Op<"prim.mul", [Pure, Commutative]> {
+def MulOp : MIX_Op<"prim.mul", [Pure, Commutative, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "mul";
     let description = [{
         mul
@@ -131,9 +133,10 @@ def MulOp : MIX_Op<"prim.mul", [Pure, Commutative]> {
     let results = (outs
         mixData: $output
     );
+    let hasVerifier = 1;
 }
 
-def DivOp : MIX_Op<"prim.div", [Pure]> {
+def DivOp : MIX_Op<"prim.div", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "div";
     let description = [{
         div
@@ -145,6 +148,7 @@ def DivOp : MIX_Op<"prim.div", [Pure]> {
     let results = (outs
         mixData: $output
     );
+    let hasVerifier = 1;
 }
 
 def ConcatOp : MIX_Op<"prim.concat", [Pure]> {
@@ -158,7 +162,7 @@ def ConcatOp : MIX_Op<"prim.concat", [Pure]> {
   let results = (outs mixTensor:$output);
 }
 
-def MatMulOp : MIX_Op<"prim.matmul", [Pure]> {
+def MatMulOp : MIX_Op<"prim.matmul", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "Matrix multiplication of tensors";
     let description = [{
         Performs matrix multiplication on the input tensors.
@@ -170,6 +174,7 @@ def MatMulOp : MIX_Op<"prim.matmul", [Pure]> {
     let results = (outs
         mixTensor: $output
     );
+    let hasVerifier = 1;
 }
 
 def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
@@ -224,6 +229,19 @@ def PowOp : MIX_Op<"prim.pow", [Pure]> {
     let arguments = (ins
         mixTensor: $input,
         mixTensor: $exponent
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+}
+
+def ExpOp : MIX_Op<"prim.exp", [Pure]> {
+    let summary = "Element-wise exp operation";
+    let description = [{
+        Computes the element-wise exp of the input tensor to the specified exponent.
+    }];
+    let arguments = (ins
+        mixTensor: $input
     );
     let results = (outs
         mixTensor: $output

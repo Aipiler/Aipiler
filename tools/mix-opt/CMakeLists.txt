@@ -10,6 +10,7 @@ target_link_libraries(mix-opt
   PRIVATE
   MLIRMIX
   LowerModule
+  LowerComposite
   ${dialect_libs}
   ${conversion_libs}
   ${extension_libs}

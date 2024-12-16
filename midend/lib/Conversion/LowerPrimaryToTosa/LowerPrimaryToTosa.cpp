@@ -46,7 +46,7 @@ public:
 
 } // namespace
 
-void populateConvertGraphPatterns(RewritePatternSet &patterns) {
+void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
   //   patterns.add<AddLoweringPattern>(patterns.getContext());
 }
 
@@ -80,7 +80,7 @@ void LowerPrimaryToTosa::runOnOperation() {
   target.addIllegalOp<mix::SiLUOp, mix::SoftmaxOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
-  populateConvertGraphPatterns(patterns);
+  populateLowerPrimaryToTosaPatterns(patterns);
   if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
     signalPassFailure();
   }

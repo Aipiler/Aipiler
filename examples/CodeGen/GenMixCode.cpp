@@ -63,20 +63,22 @@ int main() {
   auto mlp_output =
       builder.create<mix::MLPOp>(loc, tensorType, hidden_states, residual);
 
-  auto c1 = builder.create<arith::ConstantIntOp>(loc, 1, 32);
+  auto c1 = builder.create<arith::ConstantFloatOp>(loc, 1, 32);
   auto output = builder.create<mix::AddOp>(loc, tensorType, c1, mlp_output);
 
   builder.create<ml_program::OutputOp>(loc, ValueRange{output});
 
   theModule->dump();
 
-  mlir::PassManager pm(&context);
-  pm.addPass(createLowerModulePass());
-  if (mlir::failed(pm.run(theModule))) {
-    return 4;
-  }
-  std::cout << "==== After Lower pass GRAPH-LOWER =====" << std::endl;
-  theModule->dump();
+  std::cout << ShapedType::kDynamic << std::endl;
+
+  // mlir::PassManager pm(&context);
+  // pm.addPass(createLowerModulePass());
+  // if (mlir::failed(pm.run(theModule))) {
+  //   return 4;
+  // }
+  // std::cout << "==== After Lower pass GRAPH-LOWER =====" << std::endl;
+  // theModule->dump();
 
   return 0;
 }

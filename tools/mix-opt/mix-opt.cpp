@@ -16,12 +16,14 @@
 #include "llvm/Support/ToolOutputFile.h"
 
 void registerLowerModulePass();
+void registerLowerCompositePass();
 
 int main(int argc, char **argv) {
   // Register all MLIR passes.
   mlir::registerAllPasses();
 
   registerLowerModulePass();
+  registerLowerCompositePass();
 
   mlir::DialectRegistry registry;
   // Register all MLIR core dialects.
