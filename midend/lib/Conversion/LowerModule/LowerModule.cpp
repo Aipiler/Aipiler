@@ -214,6 +214,38 @@ public:
   }
 };
 
+class SelfAttentionLoweringPattern
+    : public OpRewritePattern<mix::SelfAttentionOp> {
+public:
+  using OpRewritePattern<mix::SelfAttentionOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::SelfAttentionOp op,
+                                PatternRewriter &rewriter) const override {
+    auto hiddenStates = op.getHiddenStates();
+    auto residual = op.getResidual();
+    auto attentionMask = op.getAttentionMask();
+    auto loc = op->getLoc();
+    MLIRContext *context = op->getContext(); // 获取 MLIRContext
+
+    // transpose
+    auto attr1 =
+        IntegerAttr::get(IntegerType::get(context, 32), llvm::APInt(32, 1));
+    auto attr0 =
+        IntegerAttr::get(IntegerType::get(context, 32), llvm::APInt(32, 0));
+    llvm::SmallVector<Attribute> attrs;
+    attrs.push_back(attr1);
+    attrs.push_back(attr0);
+    ArrayAttr arrayAttr = ArrayAttr::get(context, attrs);
+    // TODO: 缺少返回值shape信息。
+    auto transpose =
+        rewriter.create<mix::PermuteOp>(loc, hiddenStates, arrayAttr);
+    // Value output = matmul0;
+    // if (bias) {
+    //   output = rewriter.create<mix::AddOp>(loc, output, bias);
+    // }
+    rewriter.replaceOp(op, transpose);
+    return success();
+  }
+};
 } // namespace
 
 void populateLowerModulePatterns(RewritePatternSet &patterns) {

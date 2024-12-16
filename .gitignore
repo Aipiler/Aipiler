@@ -7,6 +7,9 @@
 # IDEA configurations
 /.idea
 
+# log
+log*
+
 # ONNX models
 *.onnx
 

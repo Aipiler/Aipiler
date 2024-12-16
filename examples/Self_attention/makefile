@@ -3,7 +3,7 @@ MLIR_OPT := ../../llvm/build/bin/mlir-opt
 
 
 # TODO: add lower pass for self-attention op
-self-attention-lower:
+lower-self-attention:
 	@${MIX_OPT} ./self_attention.mlir -o ./log.mlir
 
 .PHONY: clean

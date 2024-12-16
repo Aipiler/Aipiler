@@ -63,7 +63,8 @@ int main() {
   auto mlp_output =
       builder.create<mix::MLPOp>(loc, tensorType, hidden_states, residual);
 
-  auto c1 = builder.create<arith::ConstantFloatOp>(loc, 1, 32);
+  auto c1 = builder.create<arith::ConstantFloatOp>(loc, llvm::APFloat(1.0),
+                                                   builder.getF32Type());
   auto output = builder.create<mix::AddOp>(loc, tensorType, c1, mlp_output);
 
   builder.create<ml_program::OutputOp>(loc, ValueRange{output});
