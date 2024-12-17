@@ -58,34 +58,34 @@ public:
 #ifdef USE_MLP
     rewriter.create<ml_program::GlobalOp>(loc, "weight0", tensorType, true,
                                           nullptr,
-                                          rewriter.getStringAttr("private"));
+                                          rewriter.getStringAttr("public"));
     rewriter.create<ml_program::GlobalOp>(loc, "weight1", tensorType, true,
                                           nullptr,
-                                          rewriter.getStringAttr("private"));
+                                          rewriter.getStringAttr("public"));
     rewriter.create<ml_program::GlobalOp>(loc, "weight2", tensorType, true,
                                           nullptr,
-                                          rewriter.getStringAttr("private"));
+                                          rewriter.getStringAttr("public"));
     rewriter.create<ml_program::GlobalOp>(loc, "bias2", tensorType, true,
                                           nullptr,
-                                          rewriter.getStringAttr("private"));
+                                          rewriter.getStringAttr("public"));
 #else
     auto tensorShape = tensorType.getShape();
     auto elementType = tensorType.getElementType();
     auto memrefType = MemRefType::get(tensorShape, elementType);
     rewriter.create<memref::GlobalOp>(loc, rewriter.getStringAttr("weight0"),
-                                      rewriter.getStringAttr("private"),
+                                      rewriter.getStringAttr("public"),
                                       TypeAttr::get(memrefType), Attribute{},
                                       UnitAttr{}, IntegerAttr{});
     rewriter.create<memref::GlobalOp>(loc, rewriter.getStringAttr("weight1"),
-                                      rewriter.getStringAttr("private"),
+                                      rewriter.getStringAttr("public"),
                                       TypeAttr::get(memrefType), Attribute{},
                                       UnitAttr{}, IntegerAttr{});
     rewriter.create<memref::GlobalOp>(loc, rewriter.getStringAttr("weight2"),
-                                      rewriter.getStringAttr("private"),
+                                      rewriter.getStringAttr("public"),
                                       TypeAttr::get(memrefType), Attribute{},
                                       UnitAttr{}, IntegerAttr{});
     rewriter.create<memref::GlobalOp>(
-        loc, rewriter.getStringAttr("bias2"), rewriter.getStringAttr("private"),
+        loc, rewriter.getStringAttr("bias2"), rewriter.getStringAttr("public"),
         TypeAttr::get(memrefType), Attribute{}, UnitAttr{}, IntegerAttr{});
 #endif
     rewriter.setInsertionPoint(op);
