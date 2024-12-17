@@ -14,10 +14,10 @@ $ cd mix-mlir
 $ mkdir llvm/build
 $ cd llvm/build
 $ cmake -G Ninja ../llvm \
-    -DLLVM_ENABLE_PROJECTS="mlir" \
+    -DLLVM_ENABLE_PROJECTS="mlir;clang" \
     -DLLVM_ENABLE_ASSERTIONS=ON \
     -DCMAKE_BUILD_TYPE=RELEASE
-$ ninja check-mlir
+$ ninja check-mlir check-clang
 ```
 
 ### Build mix-mlir
