@@ -223,6 +223,7 @@ public:
     auto hiddenStates = op.getHiddenStates();
     auto residual = op.getResidual();
     auto attentionMask = op.getAttentionMask();
+    auto returnType = hiddenStates.getType();
     auto loc = op->getLoc();
     MLIRContext *context = op->getContext(); // 获取 MLIRContext
 
@@ -236,13 +237,9 @@ public:
     attrs.push_back(attr0);
     ArrayAttr arrayAttr = ArrayAttr::get(context, attrs);
     // TODO: 缺少返回值shape信息。
-    auto transpose =
-        rewriter.create<mix::PermuteOp>(loc, hiddenStates, arrayAttr);
-    // Value output = matmul0;
-    // if (bias) {
-    //   output = rewriter.create<mix::AddOp>(loc, output, bias);
-    // }
-    rewriter.replaceOp(op, transpose);
+    // auto transpose =
+    //     rewriter.create<mix::PermuteOp>(loc, hiddenStates, arrayAttr);
+    // rewriter.replaceOp(op, transpose);
     return success();
   }
 };

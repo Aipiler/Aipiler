@@ -347,8 +347,8 @@ LogicalResult mix::MatMulOp::inferReturnTypes(
     RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
   auto lhsTy = operands[0].getType();
   auto rhsTy = operands[1].getType();
-  auto lhsTensorTy = lhsTy.dyn_cast<RankedTensorType>();
-  auto rhsTensorTy = rhsTy.dyn_cast<RankedTensorType>();
+  auto lhsTensorTy = mlir::dyn_cast<RankedTensorType>(lhsTy);
+  auto rhsTensorTy = mlir::dyn_cast<RankedTensorType>(rhsTy);
   auto lhsShape = lhsTensorTy.getShape();
   auto rhsShape = rhsTensorTy.getShape();
   auto elementTy = lhsTensorTy.getElementType();
