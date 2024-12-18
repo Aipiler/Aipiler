@@ -28,11 +28,13 @@
 #include "mlir/Support/TypeID.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include <cstdint>
 #include <iostream>
 #include <memory>
 
 #include "mix/mixDialect.h"
 #include "mix/mixOps.h"
+#include "llvm/ADT/ArrayRef.h"
 
 // #define USE_MLP
 
@@ -151,11 +153,73 @@ public:
   }
 };
 
+class RMSNormLoweringPattern : public OpRewritePattern<mix::RMSNormOp> {
+public:
+  using OpRewritePattern<mix::RMSNormOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::RMSNormOp op,
+                                PatternRewriter &rewriter) const override {
+    auto hidden_states = op.getHiddenStates();
+    auto hidden_size = op.getHiddenSize();
+    auto eps = op.getEps();
+    auto hidden_states_type = hidden_states.getType();
+    auto hidden_states_shape = hidden_states_type.getShape();
+    auto hidden_states_rank = hidden_states_shape.size();
+    auto elementType = hidden_states_type.getElementType();
+    llvm::ArrayRef<int64_t> weightShape{int64_t(hidden_size)};
+    auto weightTensorType = RankedTensorType::get(weightShape, elementType);
+
+    auto loc = op.getLoc();
+    auto context = op->getContext();
+
+    auto module = op->getParentOfType<ModuleOp>();
+    rewriter.setInsertionPointToStart(module.getBody());
+#ifdef USE_MLP
+    rewriter.create<ml_program::GlobalOp>(loc, "weight3", weightTensorType,
+                                          true, nullptr,
+                                          rewriter.getStringAttr("public"));
+#else
+    auto memrefType = MemRefType::get(weightShape, elementType);
+    rewriter.create<memref::GlobalOp>(loc, rewriter.getStringAttr("weight3"),
+                                      rewriter.getStringAttr("public"),
+                                      TypeAttr::get(memrefType), Attribute{},
+                                      UnitAttr{}, IntegerAttr{});
+#endif
+    rewriter.setInsertionPoint(op);
+
+#ifdef USE_MLP
+    auto _weight3 = rewriter.create<ml_program::GlobalLoadOp>(
+        loc, weightTensorType, SymbolRefAttr::get(context, "weight3"));
+#else
+    auto _weight3Memref =
+        rewriter.create<memref::GetGlobalOp>(loc, memrefType, "weight3");
+    auto _weight3 = rewriter.create<bufferization::ToTensorOp>(
+        loc, weightTensorType, _weight3Memref, UnitAttr{});
+#endif
+    auto constantTensorType = RankedTensorType::get({1}, elementType);
+    auto constantTensor = DenseElementsAttr::get(constantTensorType, {2.0f});
+    auto c2Tensor = rewriter.create<arith::ConstantOp>(loc, constantTensor);
+    auto pow0 = rewriter.create<mix::PowOp>(loc, hidden_states, c2Tensor);
+    auto mean0 = rewriter.create<mix::MeanOp>(
+        loc, pow0, rewriter.getI32ArrayAttr({int32_t(hidden_states_rank - 1)}),
+        rewriter.getBoolAttr(true));
+    // TODO: eps is F64Attr, but element may not be.
+    auto epsAttr = rewriter.getFloatAttr(elementType, eps.convertToDouble());
+    auto const_eps = rewriter.create<arith::ConstantOp>(loc, epsAttr);
+    auto add0 = rewriter.create<mix::AddOp>(loc, mean0, const_eps);
+    auto rsqrt0 = rewriter.create<mix::RsqrtOp>(loc, add0);
+    auto mul0 = rewriter.create<mix::MulOp>(loc, hidden_states, rsqrt0);
+    auto mul1 = rewriter.create<mix::MulOp>(loc, _weight3, mul0);
+    rewriter.replaceOp(op, mul1);
+    return success();
+  }
+};
+
 } // namespace
 
 void populateLowerModulePatterns(RewritePatternSet &patterns) {
-  patterns.add<MLPLoweringPattern, LinearLoweringPattern>(
-      patterns.getContext());
+  patterns
+      .add<MLPLoweringPattern, LinearLoweringPattern, RMSNormLoweringPattern>(
+          patterns.getContext());
 }
 
 namespace {
@@ -188,7 +252,7 @@ void LowerModulePass::runOnOperation() {
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect, memref::MemRefDialect,
                          bufferization::BufferizationDialect>();
-  target.addIllegalOp<mix::MLPOp, mix::LinearOp>();
+  target.addIllegalOp<mix::MLPOp, mix::LinearOp, mix::RMSNormOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerModulePatterns(patterns);

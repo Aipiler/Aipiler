@@ -3,11 +3,15 @@
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/InliningUtils.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <optional>
 
@@ -44,7 +48,8 @@ bool verifyBroadcastCompatibility(TensorType lhsTensor, TensorType rhsTensor) {
     int64_t lhsDim = (i < lhsRank) ? lhsShape[lhsRank - 1 - i] : 1;
     int64_t rhsDim = (i < rhsRank) ? rhsShape[rhsRank - 1 - i] : 1;
 
-    if (lhsDim != rhsDim && lhsDim != 1 && rhsDim != 1) {
+    if (lhsDim != rhsDim && lhsDim != 1 && rhsDim != 1 &&
+        lhsDim != ShapedType::kDynamic && rhsDim != ShapedType::kDynamic) {
       return false;
     }
   }
@@ -175,6 +180,38 @@ verify:
   }
 }
 
+LogicalResult mix::PowOp::verify() {
+
+  /*
+verify:
+  - element types are the same: refuse i32 / f32
+    - both are Tensor: boardcastable and element
+    - one is Tensor, another is Scale: success
+    - both are Scale: success
+*/
+  auto lhsTy = this->getInput().getType();
+  auto rhsTy = this->getExponent().getType();
+  auto lhsTensorTy = lhsTy.dyn_cast<RankedTensorType>();
+  auto rhsTensorTy = rhsTy.dyn_cast<RankedTensorType>();
+  // check element types.
+  Type lhsElemTy = lhsTensorTy ? lhsTensorTy.getElementType() : lhsTy;
+  Type rhsElemTy = rhsTensorTy ? rhsTensorTy.getElementType() : rhsTy;
+  if (lhsElemTy != rhsElemTy) {
+    return emitOpError() << "Expect the same element types for DivOp";
+  }
+
+  // check types are boradcastable
+  if (lhsTensorTy && rhsTensorTy) {
+    if (verifyBroadcastCompatibility(lhsTensorTy, rhsTensorTy)) {
+      return success();
+    } else {
+      return this->emitOpError() << "Failed broadcast shapes.";
+    }
+  } else {
+    return success();
+  }
+}
+
 SmallVector<int64_t> inferBroadcastShape(ArrayRef<int64_t> lhsShape,
                                          ArrayRef<int64_t> rhsShape) {
   SmallVector<int64_t> resultShape;
@@ -185,7 +222,8 @@ SmallVector<int64_t> inferBroadcastShape(ArrayRef<int64_t> lhsShape,
     int64_t lhsDim = i < lhsRank ? lhsShape[lhsRank - 1 - i] : 1;
     int64_t rhsDim = i < rhsRank ? rhsShape[rhsRank - 1 - i] : 1;
 
-    if (lhsDim == rhsDim || lhsDim == 1 || rhsDim == 1) {
+    if (lhsDim == rhsDim || lhsDim == 1 || rhsDim == 1 ||
+        lhsDim == ShapedType::kDynamic || rhsDim == ShapedType::kDynamic) {
       if (lhsDim == ShapedType::kDynamic || rhsDim == ShapedType::kDynamic) {
         resultShape.push_back(ShapedType::kDynamic);
       } else {
@@ -271,6 +309,15 @@ LogicalResult mix::DivOp::inferReturnTypes(
                                           inferredReturnTypes);
 }
 
+LogicalResult mix::PowOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  return inferBinElementwiseOpReturnTypes(context, location, operands,
+                                          attributes, properties, regions,
+                                          inferredReturnTypes);
+}
+
 LogicalResult mix::MatMulOp::verify() {
   auto lhs = this->getLhs();
   auto rhs = this->getRhs();
@@ -326,6 +373,96 @@ LogicalResult mix::ExpOp::inferReturnTypes(
     RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
   auto inputType = operands[0].getType();
   inferredReturnTypes.push_back(inputType);
+  return success();
+}
+
+LogicalResult mix::MeanOp::verify() {
+  auto inputShape = this->getInput().getType().getShape();
+  auto inputRank = inputShape.size();
+  auto dimsAttr = this->getDims();
+  auto dimArray = dimsAttr.getValue();
+  SmallVector<int64_t> dims;
+  for (auto attr : dimArray) {
+    if (auto dimAttr = attr.dyn_cast<IntegerAttr>()) {
+      auto dim = dimAttr.getInt();
+      if (size_t(dim) >= inputRank) {
+        return this->emitError() << "Unexpected dim value: " << dim << ".";
+      }
+      dims.push_back(dim);
+    } else {
+      return this->emitError() << "Unexpected dim attribute type.";
+    }
+  }
+  for (size_t i = 0; i < dims.size(); i++) {
+    auto dim = dims[i];
+    for (size_t j = i + 1; j < dims.size(); j++) {
+      auto another = dims[j];
+      if (dim == another) {
+        return this->emitError() << "Repetitive dimensions in meanOp.";
+      }
+    }
+  }
+  return success();
+}
+
+LogicalResult mix::MeanOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    MeanOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = adaptor.getInput().getType().dyn_cast<RankedTensorType>();
+  auto inputShape = inputType.getShape();
+  auto inputElementType = inputType.getElementType();
+  auto dimsAttr = adaptor.getDimsAttr();
+  auto dimArr = dimsAttr.getValue();
+
+  auto keepDimAttr = adaptor.getKeepDimAttr();
+  auto keepDim = keepDimAttr.getValue();
+
+  SmallVector<int64_t> outputShape(inputShape);
+
+  for (auto attr : dimArr) {
+    auto dimAttr = attr.dyn_cast<IntegerAttr>();
+    auto dim = dimAttr.getInt();
+    if (keepDim) {
+      outputShape[dim] = 1;
+    } else {
+      outputShape.erase(outputShape.begin() + dim);
+    }
+  }
+  auto outputType = RankedTensorType::get(outputShape, inputElementType);
+  inferredReturnTypes.push_back(outputType);
+  return success();
+}
+
+LogicalResult mix::RsqrtOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  inferredReturnTypes.push_back(operands[0].getType());
+  return success();
+}
+
+LogicalResult mix::ReduceSumOp::verify() {
+  auto inputType = this->getInput().getType();
+  auto inputShape = inputType.getShape();
+  auto inputRank = inputShape.size();
+  auto axis = this->getAxis();
+  if (size_t(axis) >= inputRank) {
+    return this->emitOpError("Unexpected axis.");
+  }
+  return success();
+}
+
+LogicalResult mix::ReduceSumOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    ReduceSumOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = adaptor.getInput().getType().dyn_cast<RankedTensorType>();
+  auto elementTy = inputType.getElementType();
+  auto inputShape = inputType.getShape();
+  auto axis = adaptor.getAxis();
+  SmallVector<int64_t> outputShape(inputShape);
+  outputShape[axis] = 1;
+  auto outputType = RankedTensorType::get(outputShape, elementTy);
+  inferredReturnTypes.push_back(outputType);
   return success();
 }
 

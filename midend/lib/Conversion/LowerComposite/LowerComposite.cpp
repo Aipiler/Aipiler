@@ -28,11 +28,13 @@
 #include "mlir/Support/TypeID.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include <cstdint>
 #include <iostream>
 #include <memory>
 
 #include "mix/mixDialect.h"
 #include "mix/mixOps.h"
+#include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
 
@@ -75,11 +77,46 @@ public:
   }
 };
 
+class MeanLoweringPattern : public OpRewritePattern<mix::MeanOp> {
+public:
+  using OpRewritePattern<mix::MeanOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::MeanOp op,
+                                PatternRewriter &rewriter) const override {
+    auto input = op.getInput();
+    auto inputTy = input.getType();
+    auto inputShape = inputTy.getShape();
+    auto elementTy = inputTy.getElementType();
+    auto dimsArrAttr = op.getDims();
+    auto keepDim = op.getKeepDim();
+    auto loc = op->getLoc();
+    Value res = input;
+    llvm::SmallVector<int64_t> resShape(inputShape);
+    for (auto reduceDimAttr : dimsArrAttr) {
+      auto axis = reduceDimAttr.dyn_cast<IntegerAttr>();
+      auto axisNum = axis.getInt();
+      res = rewriter.create<mix::ReduceSumOp>(loc, res, axis);
+      if (keepDim) {
+        resShape[axisNum] = 1;
+      } else {
+        resShape.erase(resShape.begin() + axisNum);
+      }
+    }
+    if (!keepDim) {
+      auto resType = RankedTensorType::get(resShape, elementTy);
+      res = rewriter.create<mix::ReshapeOp>(loc, resType, res,
+                                            rewriter.getI64ArrayAttr(resShape));
+    }
+    rewriter.replaceOp(op, res);
+    return success();
+  }
+};
+
 } // namespace
 
 void populateLowerCompositeOpPatterns(RewritePatternSet &patterns) {
-  patterns.add<SiLULoweringPattern, SigmoidLoweringPattern>(
-      patterns.getContext());
+  patterns
+      .add<SiLULoweringPattern, SigmoidLoweringPattern, MeanLoweringPattern>(
+          patterns.getContext());
 }
 
 namespace {
@@ -109,7 +146,7 @@ void LowerCompositePass::runOnOperation() {
   ConversionTarget target(context);
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect>();
-  target.addIllegalOp<mix::SiLUOp, mix::SigmoidOp>();
+  target.addIllegalOp<mix::SiLUOp, mix::SigmoidOp, mix::MeanOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerCompositeOpPatterns(patterns);

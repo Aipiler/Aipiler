@@ -12,6 +12,7 @@
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/Dialect/X86Vector/X86VectorDialect.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -27,12 +28,14 @@
 #include "mlir/Support/TypeID.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include <cstdint>
 #include <iostream>
 #include <memory>
 
 #include "mix/mixDialect.h"
 #include "mix/mixOps.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
 
@@ -254,12 +257,105 @@ public:
   }
 };
 
+class PowLoweringPattern : public OpRewritePattern<mix::PowOp> {
+public:
+  using OpRewritePattern<mix::PowOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::PowOp op,
+                                PatternRewriter &rewriter) const override {
+
+    auto lhs = op.getInput();
+    auto rhs = op.getExponent();
+    auto loc = op->getLoc();
+    auto lhsType = lhs.getType();
+    auto rhsType = rhs.getType();
+    auto resultType = op.getType();
+    auto resultTensorType = resultType.dyn_cast<RankedTensorType>();
+    Value newop;
+    if (!resultTensorType) {
+      // TODO
+      return op.emitOpError() << "Not support scale pow now.";
+    } else {
+      auto lhsTensorType = lhsType.dyn_cast<RankedTensorType>();
+      auto rhsTensorType = rhsType.dyn_cast<RankedTensorType>();
+      auto elemTy = resultTensorType.getElementType();
+      auto tensorTy = RankedTensorType::get({1}, elemTy);
+      if (!lhsTensorType) {
+        lhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, lhs);
+      } else if (!rhsTensorType) {
+        rhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, rhs);
+      }
+      newop = rewriter.create<tosa::PowOp>(loc, resultTensorType, lhs, rhs);
+    }
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
+class ReduceSumLoweringPattern : public OpRewritePattern<mix::ReduceSumOp> {
+public:
+  using OpRewritePattern<mix::ReduceSumOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::ReduceSumOp op,
+                                PatternRewriter &rewriter) const override {
+    auto input = op.getInput();
+    auto axis = op.getAxis();
+    auto loc = op.getLoc();
+    auto reducesum0 = rewriter.create<tosa::ReduceSumOp>(loc, input, axis);
+    rewriter.replaceOp(op, reducesum0);
+    return success();
+  }
+};
+
+class ReshapeLoweringPattern : public OpRewritePattern<mix::ReshapeOp> {
+public:
+  using OpRewritePattern<mix::ReshapeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::ReshapeOp op,
+                                PatternRewriter &rewriter) const override {
+    auto input = op.getInput();
+    auto shape = op.getShape().getValue();
+    llvm::SmallVector<int64_t> shapeNum;
+    for (auto attr : shape) {
+      auto numAttr = attr.dyn_cast<IntegerAttr>();
+      auto num = numAttr.getInt();
+      shapeNum.push_back(num);
+    }
+    auto loc = op->getLoc();
+    auto reshape0 = rewriter.create<tosa::ReshapeOp>(
+        loc, input, rewriter.getDenseI64ArrayAttr(shapeNum));
+    rewriter.replaceOp(op, reshape0);
+    return success();
+  }
+};
+
+class RsqrtSumLoweringPattern : public OpRewritePattern<mix::RsqrtOp> {
+public:
+  using OpRewritePattern<mix::RsqrtOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::RsqrtOp op,
+                                PatternRewriter &rewriter) const override {
+
+    auto input = op.getInput();
+    auto loc = op->getLoc();
+    auto resultType = op.getType();
+    auto resultTensorType = resultType.dyn_cast<RankedTensorType>();
+    Value newop;
+    if (!resultTensorType) {
+      // TODO
+      return op.emitOpError() << "Not support scale pow now.";
+    } else {
+      newop = rewriter.create<tosa::RsqrtOp>(loc, resultTensorType, input);
+    }
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
   patterns.add<AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
                DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
-               ExpLoweringPattern>(patterns.getContext());
+               ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
+               ReshapeLoweringPattern, RsqrtSumLoweringPattern>(
+      patterns.getContext());
 }
 
 namespace {
@@ -291,7 +387,8 @@ void LowerPrimaryToTosaPass::runOnOperation() {
                          mix::MIXDialect, tosa::TosaDialect,
                          tensor::TensorDialect>();
   target.addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
-                      mix::MatMulOp, mix::NegOp, mix::ExpOp>();
+                      mix::MatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp,
+                      mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);

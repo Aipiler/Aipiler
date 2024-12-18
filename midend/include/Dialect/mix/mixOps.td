@@ -31,6 +31,21 @@ def MLPOp : MIX_Op<"module.mlp"> {
     );
 }
 
+def RMSNormOp : MIX_Op<"module.rmsnorm"> {
+    let summary = "MixedFusedRMSNorm";
+    let description = [{
+        Mixed Fused RMSNorm.
+    }];
+    let arguments = (ins 
+        mixTensor: $hidden_states,
+        I64Attr: $hidden_size,
+        F64Attr: $eps
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+}
+
 def LinearOp : MIX_Op<"module.linear", [Pure]> {
     let summary = "Linear";
     let description = [{
@@ -100,6 +115,22 @@ def SoftmaxOp : MIX_Op<"comp.softmax", [Pure]> {
     let results = (outs
         mixTensor: $output
     );
+}
+
+def MeanOp : MIX_Op<"comp.mean", [Pure, InferTypeOpAdaptor]> {
+    let summary = "mean";
+    let description = [{
+        mean
+    }];
+    let arguments = (ins
+        mixTensor: $input,
+        I32ArrayAttr: $dims,
+        BoolAttr: $keepDim
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+    let hasVerifier = 1;
 }
 
 // 基础算子
@@ -234,18 +265,19 @@ def PermuteOp : MIX_Op<"prim.permute", [Pure]> {
 
 
 
-def PowOp : MIX_Op<"prim.pow", [Pure]> {
+def PowOp : MIX_Op<"prim.pow", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "Element-wise power operation";
     let description = [{
         Computes the element-wise power of the input tensor to the specified exponent.
     }];
     let arguments = (ins
-        mixTensor: $input,
-        mixTensor: $exponent
+        mixData: $input,
+        mixData: $exponent
     );
     let results = (outs
-        mixTensor: $output
+        mixData: $output
     );
+    let hasVerifier = 1;
 }
 
 def ExpOp : MIX_Op<"prim.exp", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
@@ -313,5 +345,36 @@ def NegOp : MIX_Op<"prim.neg", [Pure, DeclareOpInterfaceMethods<InferTypeOpInter
     );
 }
 
+def RsqrtOp : MIX_Op<"prim.rsqrt", [Pure, Commutative, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    let summary = "rsqrt";
+    let description = [{
+        rsqrt
+    }];
+    let arguments = (ins
+        mixData: $input
+    );
+    let results = (outs
+        mixData: $output
+    );
+}
+
+def ReduceSumOp : MIX_Op<"prim.reduce_sum", [InferTypeOpAdaptor]> {
+  let summary = "Reduce Sum operator";
+
+  let description = [{
+    Reduce a tensor along the given axis by computing the sum of the axis.
+  }];
+
+  let arguments = (ins
+    mixTensor:$input,
+    I32Attr:$axis
+  );
+
+  let results = (outs
+    mixTensor:$output
+  );
+
+  let hasVerifier = 1;
+}
 
 #endif // MIX_OPS_TD
