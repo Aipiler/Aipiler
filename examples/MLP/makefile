@@ -26,30 +26,30 @@ mlp_memref.mlir: mlp_tosa.mlir
 			tosa-to-tensor \
 			), \
 			empty-tensor-to-alloc-tensor, \
-			arith-bufferize, \
-			func.func(tensor-bufferize, linalg-bufferize ), \
-			func-bufferize, \
-			func.func(buffer-deallocation, convert-linalg-to-loops) \
+			one-shot-bufferize, \
+			buffer-deallocation-pipeline, \
+			convert-linalg-to-loops \
 		)" -o $@
 
 mlp.ll: mlp_tosa.mlir
 	${MIX_OPT} $^ \
 		--pass-pipeline="builtin.module( \
+			lower-mix-primary-to-tosa, \
 			func.func( \
 			tosa-to-linalg-named, \
 			tosa-to-linalg, \
 			tosa-to-tensor \
 			), \
 			empty-tensor-to-alloc-tensor, \
-			arith-bufferize, \
-			func.func(tensor-bufferize, linalg-bufferize ), \
-			func-bufferize, \
-			func.func(buffer-deallocation, convert-linalg-to-loops), \
-			convert-scf-to-cf, \
-			convert-math-to-llvm, \
-			convert-func-to-llvm, \
+			one-shot-bufferize, \
+ 			convert-linalg-to-loops, \
+			buffer-deallocation-pipeline, \
 			expand-strided-metadata, \
 			finalize-memref-to-llvm, \
+			convert-math-to-llvm, \
+			convert-scf-to-cf, \
+			convert-cf-to-llvm, \
+			convert-func-to-llvm, \
 			reconcile-unrealized-casts \
 		)" | \
 	${MLIR_TRANSLATE} --mlir-to-llvmir -o $@

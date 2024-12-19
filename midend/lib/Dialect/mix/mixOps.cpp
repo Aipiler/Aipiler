@@ -17,6 +17,8 @@
 
 using namespace mlir;
 
+// 单目运算符
+
 LogicalResult mix::SiLUOp::inferReturnTypes(
     MLIRContext *context, std::optional<::mlir::Location> location,
     ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
@@ -34,6 +36,34 @@ LogicalResult mix::SigmoidOp::inferReturnTypes(
   inferredReturnTypes.push_back(inputType);
   return success();
 }
+
+LogicalResult mix::NegOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = operands[0].getType();
+  inferredReturnTypes.push_back(inputType);
+  return success();
+}
+
+LogicalResult mix::ExpOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = operands[0].getType();
+  inferredReturnTypes.push_back(inputType);
+  return success();
+}
+
+LogicalResult mix::RsqrtOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  inferredReturnTypes.push_back(operands[0].getType());
+  return success();
+}
+
+// element wise Op verify
 
 bool verifyBroadcastCompatibility(TensorType lhsTensor, TensorType rhsTensor) {
 
@@ -56,54 +86,24 @@ bool verifyBroadcastCompatibility(TensorType lhsTensor, TensorType rhsTensor) {
   return true;
 }
 
-LogicalResult mix::AddOp::verify() {
-  /*
-  verify:
-    - element types are the same: refuse i32 + f32
-      - both are Tensor: boardcastable and element
-      - one is Tensor, another is Scale: success
-      - both are Scale: success
-  */
-  auto lhsTy = this->getLhs().getType();
-  auto rhsTy = this->getRhs().getType();
-  auto lhsTensorTy = lhsTy.dyn_cast<RankedTensorType>();
-  auto rhsTensorTy = rhsTy.dyn_cast<RankedTensorType>();
-  // check element types.
-  Type lhsElemTy = lhsTensorTy ? lhsTensorTy.getElementType() : lhsTy;
-  Type rhsElemTy = rhsTensorTy ? rhsTensorTy.getElementType() : rhsTy;
-  if (lhsElemTy != rhsElemTy) {
-    return emitOpError() << "Expect the same element types for AddOp";
-  }
-
-  // check types are boradcastable
-  if (lhsTensorTy && rhsTensorTy) {
-    if (verifyBroadcastCompatibility(lhsTensorTy, rhsTensorTy)) {
-      return success();
-    } else {
-      return this->emitOpError() << "Failed broadcast shapes.";
-    }
-  } else {
-    return success();
-  }
-}
-
-LogicalResult mix::SubOp::verify() {
+template <typename T> LogicalResult verifyElementWiseOp(T op) {
   /*
 verify:
-  - element types are the same: refuse i32 - f32
+  - element types are the same: refuse i32 + f32
     - both are Tensor: boardcastable and element
     - one is Tensor, another is Scale: success
     - both are Scale: success
 */
-  auto lhsTy = this->getLhs().getType();
-  auto rhsTy = this->getRhs().getType();
-  auto lhsTensorTy = lhsTy.dyn_cast<RankedTensorType>();
-  auto rhsTensorTy = rhsTy.dyn_cast<RankedTensorType>();
+  auto lhsTy = op.getLhs().getType();
+  auto rhsTy = op.getRhs().getType();
+  auto lhsTensorTy = mlir::dyn_cast<RankedTensorType>(lhsTy);
+  auto rhsTensorTy = mlir::dyn_cast<RankedTensorType>(rhsTy);
   // check element types.
   Type lhsElemTy = lhsTensorTy ? lhsTensorTy.getElementType() : lhsTy;
   Type rhsElemTy = rhsTensorTy ? rhsTensorTy.getElementType() : rhsTy;
   if (lhsElemTy != rhsElemTy) {
-    return emitOpError() << "Expect the same element types for SubOp";
+    op->emitOpError() << "Expect the same element types for AddOp";
+    return failure();
   }
 
   // check types are boradcastable
@@ -111,74 +111,21 @@ verify:
     if (verifyBroadcastCompatibility(lhsTensorTy, rhsTensorTy)) {
       return success();
     } else {
-      return this->emitOpError() << "Failed broadcast shapes.";
+      op->emitOpError() << "Failed broadcast shapes.";
+      return failure();
     }
   } else {
     return success();
   }
 }
 
-LogicalResult mix::MulOp::verify() {
-  /*
-verify:
-  - element types are the same: refuse i32 * f32
-    - both are Tensor: boardcastable and element
-    - one is Tensor, another is Scale: success
-    - both are Scale: success
-*/
-  auto lhsTy = this->getLhs().getType();
-  auto rhsTy = this->getRhs().getType();
-  auto lhsTensorTy = lhsTy.dyn_cast<RankedTensorType>();
-  auto rhsTensorTy = rhsTy.dyn_cast<RankedTensorType>();
-  // check element types.
-  Type lhsElemTy = lhsTensorTy ? lhsTensorTy.getElementType() : lhsTy;
-  Type rhsElemTy = rhsTensorTy ? rhsTensorTy.getElementType() : rhsTy;
-  if (lhsElemTy != rhsElemTy) {
-    return emitOpError() << "Expect the same element types for MulOp";
-  }
+LogicalResult mix::AddOp::verify() { return verifyElementWiseOp(*this); }
 
-  // check types are boradcastable
-  if (lhsTensorTy && rhsTensorTy) {
-    if (verifyBroadcastCompatibility(lhsTensorTy, rhsTensorTy)) {
-      return success();
-    } else {
-      return this->emitOpError() << "Failed broadcast shapes.";
-    }
-  } else {
-    return success();
-  }
-}
+LogicalResult mix::SubOp::verify() { return verifyElementWiseOp(*this); }
 
-LogicalResult mix::DivOp::verify() {
-  /*
-verify:
-  - element types are the same: refuse i32 / f32
-    - both are Tensor: boardcastable and element
-    - one is Tensor, another is Scale: success
-    - both are Scale: success
-*/
-  auto lhsTy = this->getLhs().getType();
-  auto rhsTy = this->getRhs().getType();
-  auto lhsTensorTy = lhsTy.dyn_cast<RankedTensorType>();
-  auto rhsTensorTy = rhsTy.dyn_cast<RankedTensorType>();
-  // check element types.
-  Type lhsElemTy = lhsTensorTy ? lhsTensorTy.getElementType() : lhsTy;
-  Type rhsElemTy = rhsTensorTy ? rhsTensorTy.getElementType() : rhsTy;
-  if (lhsElemTy != rhsElemTy) {
-    return emitOpError() << "Expect the same element types for DivOp";
-  }
+LogicalResult mix::MulOp::verify() { return verifyElementWiseOp(*this); }
 
-  // check types are boradcastable
-  if (lhsTensorTy && rhsTensorTy) {
-    if (verifyBroadcastCompatibility(lhsTensorTy, rhsTensorTy)) {
-      return success();
-    } else {
-      return this->emitOpError() << "Failed broadcast shapes.";
-    }
-  } else {
-    return success();
-  }
-}
+LogicalResult mix::DivOp::verify() { return verifyElementWiseOp(*this); }
 
 LogicalResult mix::PowOp::verify() {
 
@@ -239,10 +186,9 @@ SmallVector<int64_t> inferBroadcastShape(ArrayRef<int64_t> lhsShape,
   return resultShape;
 }
 
-LogicalResult inferBinElementwiseOpReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+LogicalResult
+inferBinElementwiseOpReturnTypes(ValueRange operands,
+                                 SmallVectorImpl<Type> &inferredReturnTypes) {
 
   /*
   infer:
@@ -273,50 +219,23 @@ LogicalResult inferBinElementwiseOpReturnTypes(
   }
 }
 
-LogicalResult mix::AddOp::inferReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
-  return inferBinElementwiseOpReturnTypes(context, location, operands,
-                                          attributes, properties, regions,
-                                          inferredReturnTypes);
-}
+// element wise shape inference
+#define ELEMENTWISE_SHAPE_INFER(OP)                                            \
+  LogicalResult OP::inferReturnTypes(                                          \
+      MLIRContext *context, std::optional<::mlir::Location> location,          \
+      ValueRange operands, DictionaryAttr attributes,                          \
+      OpaqueProperties properties, RegionRange regions,                        \
+      SmallVectorImpl<Type> &inferredReturnTypes) {                            \
+    return inferBinElementwiseOpReturnTypes(operands, inferredReturnTypes);    \
+  }
 
-LogicalResult mix::SubOp::inferReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
-  return inferBinElementwiseOpReturnTypes(context, location, operands,
-                                          attributes, properties, regions,
-                                          inferredReturnTypes);
-}
+ELEMENTWISE_SHAPE_INFER(mix::AddOp)
+ELEMENTWISE_SHAPE_INFER(mix::SubOp)
+ELEMENTWISE_SHAPE_INFER(mix::MulOp)
+ELEMENTWISE_SHAPE_INFER(mix::DivOp)
+ELEMENTWISE_SHAPE_INFER(mix::PowOp)
 
-LogicalResult mix::MulOp::inferReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
-  return inferBinElementwiseOpReturnTypes(context, location, operands,
-                                          attributes, properties, regions,
-                                          inferredReturnTypes);
-}
-
-LogicalResult mix::DivOp::inferReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
-  return inferBinElementwiseOpReturnTypes(context, location, operands,
-                                          attributes, properties, regions,
-                                          inferredReturnTypes);
-}
-
-LogicalResult mix::PowOp::inferReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
-  return inferBinElementwiseOpReturnTypes(context, location, operands,
-                                          attributes, properties, regions,
-                                          inferredReturnTypes);
-}
+// 特殊的shape inference 算子
 
 LogicalResult mix::MatMulOp::verify() {
   auto lhs = this->getLhs();
@@ -330,13 +249,16 @@ LogicalResult mix::MatMulOp::verify() {
   auto lhsElemTy = lhsType.getElementType();
   auto rhsElemTy = rhsType.getElementType();
   if (lhsElemTy != rhsElemTy) {
-    return this->emitOpError() << "Types mismatch.";
+    this->emitOpError() << "Types mismatch.";
+    return failure();
   }
   if (lhsRank != rhsRank || lhsRank != 2 || rhsRank != 2) {
-    return this->emitOpError() << "Unexpected ranks.";
+    this->emitOpError() << "Unexpected ranks.";
+    return failure();
   }
   if (lhsShape[1] != rhsShape[0]) {
-    return this->emitError() << "Unexpect shapes.";
+    this->emitError() << "Unexpect shapes.";
+    return failure();
   }
   return success();
 }
@@ -352,27 +274,9 @@ LogicalResult mix::MatMulOp::inferReturnTypes(
   auto lhsShape = lhsTensorTy.getShape();
   auto rhsShape = rhsTensorTy.getShape();
   auto elementTy = lhsTensorTy.getElementType();
-  ArrayRef<int64_t> resultShape{lhsShape[0], rhsShape[1]};
+  SmallVector<int64_t> resultShape{lhsShape[0], rhsShape[1]};
   auto resultType = RankedTensorType::get(resultShape, elementTy);
   inferredReturnTypes.push_back(resultType);
-  return success();
-}
-
-LogicalResult mix::NegOp::inferReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
-  auto inputType = operands[0].getType();
-  inferredReturnTypes.push_back(inputType);
-  return success();
-}
-
-LogicalResult mix::ExpOp::inferReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
-  auto inputType = operands[0].getType();
-  inferredReturnTypes.push_back(inputType);
   return success();
 }
 
@@ -433,13 +337,7 @@ LogicalResult mix::MeanOp::inferReturnTypes(
   return success();
 }
 
-LogicalResult mix::RsqrtOp::inferReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
-  inferredReturnTypes.push_back(operands[0].getType());
-  return success();
-}
+// Reduce 类型算子，只有一个input
 
 LogicalResult mix::ReduceSumOp::verify() {
   auto inputType = this->getInput().getType();

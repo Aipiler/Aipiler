@@ -1,5 +1,6 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -69,7 +70,8 @@ public:
       auto tensorTy = RankedTensorType::get({1}, elemTy);
       if (!lhsTensorType) {
         lhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, lhs);
-      } else if (!rhsTensorType) {
+      }
+      if (!rhsTensorType) {
         rhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, rhs);
       }
       newop = rewriter.create<tosa::AddOp>(loc, resultTensorType, lhs, rhs);
@@ -210,9 +212,9 @@ public:
     auto lhsShape = lhsType.getShape();
     auto rhsShape = rhsType.getShape();
     auto resShape = resType.getShape();
-    llvm::ArrayRef<int64_t> newLhsShape{1, lhsShape[0], lhsShape[1]};
-    llvm::ArrayRef<int64_t> newRhsShape{1, rhsShape[0], rhsShape[1]};
-    llvm::ArrayRef<int64_t> newResShape{1, resShape[0], resShape[1]};
+    SmallVector<int64_t> newLhsShape{1, lhsShape[0], lhsShape[1]};
+    SmallVector<int64_t> newRhsShape{1, rhsShape[0], rhsShape[1]};
+    SmallVector<int64_t> newResShape{1, resShape[0], resShape[1]};
     auto newResType =
         RankedTensorType::get(newResShape, resType.getElementType());
     auto newLhs = rewriter.create<tosa::ReshapeOp>(
@@ -385,7 +387,8 @@ void LowerPrimaryToTosaPass::runOnOperation() {
   ConversionTarget target(context);
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect, tosa::TosaDialect,
-                         tensor::TensorDialect>();
+                         tensor::TensorDialect,
+                         bufferization::BufferizationDialect>();
   target.addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
                       mix::MatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp,
                       mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp>();

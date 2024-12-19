@@ -36,7 +36,7 @@
 #include "mix/mixOps.h"
 #include "llvm/ADT/ArrayRef.h"
 
-// #define USE_MLP
+#define USE_MLP
 
 using namespace mlir;
 
@@ -92,13 +92,13 @@ public:
 #endif
     rewriter.setInsertionPoint(op);
 #ifdef USE_MLP
-    auto _weight0 = rewriter.create<ml_program::GlobalLoadOp>(
+    auto _weight0 = rewriter.create<ml_program::GlobalLoadConstOp>(
         loc, tensorType, SymbolRefAttr::get(context, "weight0"));
-    auto _weight1 = rewriter.create<ml_program::GlobalLoadOp>(
+    auto _weight1 = rewriter.create<ml_program::GlobalLoadConstOp>(
         loc, tensorType, SymbolRefAttr::get(context, "weight1"));
-    auto _weight2 = rewriter.create<ml_program::GlobalLoadOp>(
+    auto _weight2 = rewriter.create<ml_program::GlobalLoadConstOp>(
         loc, tensorType, SymbolRefAttr::get(context, "weight2"));
-    auto _bias2 = rewriter.create<ml_program::GlobalLoadOp>(
+    auto _bias2 = rewriter.create<ml_program::GlobalLoadConstOp>(
         loc, tensorType, SymbolRefAttr::get(context, "bias2"));
 #else
     auto _weight0Memref =
@@ -281,7 +281,7 @@ void LowerModulePass::runOnOperation() {
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect, memref::MemRefDialect,
                          bufferization::BufferizationDialect>();
-  target.addIllegalOp<mix::MLPOp, mix::LinearOp, mix::RMSNormOp>();
+  target.addIllegalOp<mix::MLPOp, mix::LinearOp, mix::RMSNormOp>(); //
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerModulePatterns(patterns);
