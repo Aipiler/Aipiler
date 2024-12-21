@@ -52,8 +52,18 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                  TypedValue<RankedTensorType> &residual,
                  TypedValue<RankedTensorType> &attention_mask) {
   auto hidden_statesType = hidden_states.getType();
-  auto self_attn_output = builder.create<mix::SelfAttentionOp>(
-      loc, hidden_statesType, hidden_states, residual, attention_mask);
+  // auto self_attn_output = builder.create<mix::SelfAttentionOp>(
+  //     loc, hidden_statesType, hidden_states, residual, attention_mask);
+
+  auto i32Type = builder.getI32Type();
+  auto attr_i0 = IntegerAttr::get(i32Type, 0);
+  auto attr_i1 = IntegerAttr::get(i32Type, 1);
+
+  SmallVector<Attribute> transpose1_dim{attr_i1, attr_i0};
+  auto transpose1_dim_attr = mlir::ArrayAttr::get(&context, transpose1_dim);
+  auto transpose1 = builder.create<mix::PermuteOp>(
+      loc, hidden_statesType, hidden_states, transpose1_dim_attr);
+
   return self_attn_output;
 }
 
