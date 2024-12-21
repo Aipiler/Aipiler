@@ -19,7 +19,7 @@
 
 using namespace mlir;
 
-// 单目运算符
+// 单目运算符，不改变shape
 
 LogicalResult mix::SiLUOp::inferReturnTypes(
     MLIRContext *context, std::optional<::mlir::Location> location,
@@ -225,7 +225,7 @@ ELEMENTWISE_SHAPE_INFER(mix::MulOp)
 ELEMENTWISE_SHAPE_INFER(mix::DivOp)
 ELEMENTWISE_SHAPE_INFER(mix::PowOp)
 
-// 特殊的shape inference 算子
+// 特殊的shape inference 算子，需要改变shape
 
 LogicalResult mix::MatMulOp::verify() {
   auto lhs = this->getLhs();

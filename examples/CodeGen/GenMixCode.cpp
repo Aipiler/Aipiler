@@ -55,16 +55,18 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   // auto self_attn_output = builder.create<mix::SelfAttentionOp>(
   //     loc, hidden_statesType, hidden_states, residual, attention_mask);
 
+  /* 定义一些可重用的信息 */
   auto i32Type = builder.getI32Type();
   auto attr_i0 = IntegerAttr::get(i32Type, 0);
   auto attr_i1 = IntegerAttr::get(i32Type, 1);
 
+  /* 定义算子 */
   SmallVector<Attribute> transpose1_dim{attr_i1, attr_i0};
   auto transpose1_dim_attr = mlir::ArrayAttr::get(&context, transpose1_dim);
   auto transpose1 = builder.create<mix::PermuteOp>(
       loc, hidden_statesType, hidden_states, transpose1_dim_attr);
 
-  return self_attn_output;
+  return transpose1;
 }
 
 auto genRMSNorm(mlir::MLIRContext &context, mlir::OpBuilder &builder,
@@ -138,7 +140,7 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   }
   auto last_transformerBlock = mlir::dyn_cast<mix::MLPOp>(transformerBlock);
 
-  // 加入Linear层映射过去
+  // TODO:加入Linear层映射过去
   auto output_embedding = builder.create<mix::LinearOp>(
       last_transformerBlock->getLoc(), output_type,
       last_transformerBlock.getOutput(), nullptr);
