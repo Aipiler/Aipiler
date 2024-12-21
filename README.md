@@ -10,9 +10,9 @@ $ git submodule update --init
 ### Build and Test LLVM/MLIR/CLANG
 
 ```
-$ cd mix-mlir
-$ mkdir llvm/build
-$ cd llvm/build
+$ cd mix-mlir/llvm
+$ git apply ../patch/ml_program_globalop_bufferize.patch
+$ mkdir build && cd build
 $ cmake -G Ninja ../llvm \
     -DLLVM_ENABLE_PROJECTS="mlir;clang" \
     -DLLVM_ENABLE_ASSERTIONS=ON \

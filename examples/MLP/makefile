@@ -17,20 +17,6 @@ mlp_tosa.mlir: mlp.mlir
 			lower-mix-primary-to-tosa \
 		)" -o $@
 
-mlp_memref.mlir: mlp_tosa.mlir
-	${MIX_OPT} $^ \
-		--pass-pipeline="builtin.module( \
-			func.func( \
-			tosa-to-linalg-named, \
-			tosa-to-linalg, \
-			tosa-to-tensor \
-			), \
-			empty-tensor-to-alloc-tensor, \
-			one-shot-bufferize, \
-			buffer-deallocation-pipeline, \
-			convert-linalg-to-loops \
-		)" -o $@
-
 mlp.ll: mlp_tosa.mlir
 	${MIX_OPT} $^ \
 		--pass-pipeline="builtin.module( \
@@ -41,10 +27,11 @@ mlp.ll: mlp_tosa.mlir
 			tosa-to-tensor \
 			), \
 			empty-tensor-to-alloc-tensor, \
-			one-shot-bufferize, \
+			one-shot-bufferize{bufferize-function-boundaries}, \
  			convert-linalg-to-loops, \
 			buffer-deallocation-pipeline, \
 			expand-strided-metadata, \
+			lower-affine, \
 			finalize-memref-to-llvm, \
 			convert-math-to-llvm, \
 			convert-scf-to-cf, \

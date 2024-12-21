@@ -1,0 +1,35 @@
+diff --git a/mlir/lib/Dialect/MLProgram/Transforms/BufferizableOpInterfaceImpl.cpp b/mlir/lib/Dialect/MLProgram/Transforms/BufferizableOpInterfaceImpl.cpp
+index 926d580ac785..1cf2bb1bac41 100644
+--- a/mlir/lib/Dialect/MLProgram/Transforms/BufferizableOpInterfaceImpl.cpp
++++ b/mlir/lib/Dialect/MLProgram/Transforms/BufferizableOpInterfaceImpl.cpp
+@@ -10,7 +10,10 @@
+ 
+ #include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+ #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
++#include "mlir/Dialect/MLProgram/IR/MLProgramAttributes.h"
+ #include "mlir/Dialect/MemRef/IR/MemRef.h"
++#include "mlir/IR/Attributes.h"
++#include "llvm/Support/Casting.h"
+ 
+ using namespace mlir;
+ using namespace mlir::bufferization;
+@@ -57,6 +60,10 @@ struct GlobalOpInterface
+     if (!globalOp.getValue().has_value())
+       return globalOp.emitError("global op must have a value");
+ 
++    Attribute value = globalOp.getValueAttr();
++    if (llvm::isa<ml_program::ExternAttr>(value)) {
++      value = Attribute{};
++    }
+     auto tensorType = cast<TensorType>(globalOp.getType());
+     auto memrefType = getMemRefTypeWithStaticIdentityLayout(tensorType);
+ 
+@@ -64,7 +71,7 @@ struct GlobalOpInterface
+         rewriter, globalOp, globalOp.getSymName(),
+         /*sym_visibility=*/globalOp.getSymVisibilityAttr(),
+         /*type=*/cast<MemRefType>(memrefType),
+-        /*initial_value=*/globalOp.getValue().value(),
++        /*initial_value=*/value,
+         /*constant=*/!globalOp.getIsMutable(),
+         /*alignment=*/nullptr);
+ 

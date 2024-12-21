@@ -9,6 +9,8 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstddef>
 #include <cstdint>
@@ -89,7 +91,7 @@ bool verifyBroadcastCompatibility(TensorType lhsTensor, TensorType rhsTensor) {
 template <typename T> LogicalResult verifyElementWiseOp(T op) {
   /*
 verify:
-  - element types are the same: refuse i32 + f32
+  - accept different element types
     - both are Tensor: boardcastable and element
     - one is Tensor, another is Scale: success
     - both are Scale: success
@@ -98,13 +100,6 @@ verify:
   auto rhsTy = op.getRhs().getType();
   auto lhsTensorTy = mlir::dyn_cast<RankedTensorType>(lhsTy);
   auto rhsTensorTy = mlir::dyn_cast<RankedTensorType>(rhsTy);
-  // check element types.
-  Type lhsElemTy = lhsTensorTy ? lhsTensorTy.getElementType() : lhsTy;
-  Type rhsElemTy = rhsTensorTy ? rhsTensorTy.getElementType() : rhsTy;
-  if (lhsElemTy != rhsElemTy) {
-    op->emitOpError() << "Expect the same element types for AddOp";
-    return failure();
-  }
 
   // check types are boradcastable
   if (lhsTensorTy && rhsTensorTy) {
@@ -138,14 +133,8 @@ verify:
 */
   auto lhsTy = this->getInput().getType();
   auto rhsTy = this->getExponent().getType();
-  auto lhsTensorTy = lhsTy.dyn_cast<RankedTensorType>();
-  auto rhsTensorTy = rhsTy.dyn_cast<RankedTensorType>();
-  // check element types.
-  Type lhsElemTy = lhsTensorTy ? lhsTensorTy.getElementType() : lhsTy;
-  Type rhsElemTy = rhsTensorTy ? rhsTensorTy.getElementType() : rhsTy;
-  if (lhsElemTy != rhsElemTy) {
-    return emitOpError() << "Expect the same element types for DivOp";
-  }
+  auto lhsTensorTy = dyn_cast<RankedTensorType>(lhsTy);
+  auto rhsTensorTy = dyn_cast<RankedTensorType>(rhsTy);
 
   // check types are boradcastable
   if (lhsTensorTy && rhsTensorTy) {
@@ -197,9 +186,10 @@ inferBinElementwiseOpReturnTypes(ValueRange operands,
   */
   auto lhsTy = operands[0].getType();
   auto rhsTy = operands[1].getType();
-  auto lhsTensorTy = lhsTy.dyn_cast<RankedTensorType>();
-  auto rhsTensorTy = rhsTy.dyn_cast<RankedTensorType>();
+  auto lhsTensorTy = dyn_cast<RankedTensorType>(lhsTy);
+  auto rhsTensorTy = dyn_cast<RankedTensorType>(rhsTy);
 
+  // TODO: infer type for different element types.
   if (!lhsTensorTy && !rhsTensorTy) {
     inferredReturnTypes.push_back(lhsTy);
     return success();
@@ -287,7 +277,7 @@ LogicalResult mix::MeanOp::verify() {
   auto dimArray = dimsAttr.getValue();
   SmallVector<int64_t> dims;
   for (auto attr : dimArray) {
-    if (auto dimAttr = attr.dyn_cast<IntegerAttr>()) {
+    if (auto dimAttr = dyn_cast<IntegerAttr>(attr)) {
       auto dim = dimAttr.getInt();
       if (size_t(dim) >= inputRank) {
         return this->emitError() << "Unexpected dim value: " << dim << ".";
@@ -361,6 +351,48 @@ LogicalResult mix::ReduceSumOp::inferReturnTypes(
   outputShape[axis] = 1;
   auto outputType = RankedTensorType::get(outputShape, elementTy);
   inferredReturnTypes.push_back(outputType);
+  return success();
+}
+
+LogicalResult mix::GeluOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    GeluOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = adaptor.getInput().getType();
+  inferredReturnTypes.push_back(inputType);
+  return success();
+}
+
+LogicalResult mix::TanhOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    TanhOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = adaptor.getInput().getType();
+  inferredReturnTypes.push_back(inputType);
+  return success();
+}
+
+LogicalResult mix::LinearOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    LinearOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto input = adaptor.getInput();
+  auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
+  auto shape = inputType.getShape();
+  auto output_feature = adaptor.getOutFeature();
+  SmallVector<int64_t> outputShape(shape);
+  outputShape.back() = output_feature;
+  auto returnType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(returnType);
+  return success();
+}
+
+LogicalResult mix::LinearOp::verify() {
+  auto input = this->getInput();
+  auto inputType = input.getType();
+  auto shape = inputType.getShape();
+  auto input_feature = this->getInFeature();
+  if (shape.back() != input_feature) {
+    return this->emitError() << "Unexpect input shape";
+  }
   return success();
 }
 

@@ -91,10 +91,13 @@ public:
     auto loc = op->getLoc();
     Value res = input;
     llvm::SmallVector<int64_t> resShape(inputShape);
+    float scale = 1.0f;
+    // TODO: how about dynamic shape?
     for (auto reduceDimAttr : dimsArrAttr) {
-      auto axis = reduceDimAttr.dyn_cast<IntegerAttr>();
+      auto axis = dyn_cast<IntegerAttr>(reduceDimAttr);
       auto axisNum = axis.getInt();
       res = rewriter.create<mix::ReduceSumOp>(loc, res, axis);
+      scale *= resShape[axisNum];
       if (keepDim) {
         resShape[axisNum] = 1;
       } else {
@@ -106,6 +109,10 @@ public:
       res = rewriter.create<mix::ReshapeOp>(loc, resType, res,
                                             rewriter.getI64ArrayAttr(resShape));
     }
+    auto scaleType = RankedTensorType::get({1}, elementTy);
+    auto scaleAttr = DenseElementsAttr::get(scaleType, float(1.0 / scale));
+    auto scaleValue = rewriter.create<arith::ConstantOp>(loc, scaleAttr);
+    res = rewriter.create<mix::MulOp>(loc, res, scaleValue);
     rewriter.replaceOp(op, res);
     return success();
   }
