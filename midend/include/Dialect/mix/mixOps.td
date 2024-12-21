@@ -46,6 +46,19 @@ def RMSNormOp : MIX_Op<"module.rmsnorm"> {
     );
 }
 
+def GeluOp : MIX_Op<"module.gelu", [Pure, InferTypeOpAdaptor]> {
+    let summary = "Gelu Op";
+    let description = [{
+        Gelu Op
+    }];
+    let arguments = (ins
+        mixTensor: $input
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+}
+
 def LinearOp : MIX_Op<"module.linear", [Pure]> {
     let summary = "Linear";
     let description = [{
@@ -375,6 +388,19 @@ def ReduceSumOp : MIX_Op<"prim.reduce_sum", [InferTypeOpAdaptor]> {
   );
 
   let hasVerifier = 1;
+}
+
+def TanhOp : MIX_Op<"prim.tanh", [Pure, InferTypeOpAdaptor]> {
+    let summary = "Element-wise tanh operation";
+    let description = [{
+        Computes the tanh of each element in the input tensor.
+    }];
+    let arguments = (ins
+        mixData: $input
+    );
+    let results = (outs
+        mixData: $output
+    );
 }
 
 #endif // MIX_OPS_TD

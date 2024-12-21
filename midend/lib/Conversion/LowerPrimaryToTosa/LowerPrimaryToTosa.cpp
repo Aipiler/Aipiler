@@ -53,12 +53,12 @@ public:
     auto lhsType = lhs.getType();
     auto rhsType = rhs.getType();
     auto resultType = op.getType();
-    auto resultTensorType = resultType.dyn_cast<RankedTensorType>();
+    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
     Value newop;
     if (!resultTensorType) {
-      if (auto resIntType = resultType.dyn_cast<IntegerType>()) {
+      if (auto resIntType = dyn_cast<IntegerType>(resultType)) {
         newop = rewriter.create<arith::AddIOp>(loc, lhs, rhs);
-      } else if (auto resFloatType = resultType.dyn_cast<FloatType>()) {
+      } else if (auto resFloatType = dyn_cast<FloatType>(resultType)) {
         newop = rewriter.create<arith::AddFOp>(loc, lhs, rhs);
       } else {
         return op.emitOpError() << "Unexpected types.";
