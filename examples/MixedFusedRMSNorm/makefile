@@ -9,37 +9,34 @@ MLIR_LIB := ../../llvm/build/lib
 MLIR_RUNNER_UTILS := ../../llvm/build/lib/libmlir_runner_utils.so
 MLIR_C_RUNNER_UTILS := ../../llvm/build/lib/libmlir_c_runner_utils.so
 
-rms_prim.mlir: rms.mlir
+rms_tosa.mlir: rms.mlir
 	${MIX_OPT} $^ \
 		--pass-pipeline="builtin.module( \
 			lower-mix-module, \
-			lower-mix-composite \
-		)" -o $@
-		
-rms_tosa.mlir: rms_prim.mlir
-	${MIX_OPT} $^ \
-		--pass-pipeline="builtin.module( \
+			lower-mix-composite, \
 			lower-mix-primary-to-tosa \
 		)" -o $@
 
 rms.ll: rms_tosa.mlir
 	${MIX_OPT} $^ \
 		--pass-pipeline="builtin.module( \
+			lower-mix-primary-to-tosa, \
 			func.func( \
-			tosa-to-linalg-named, \
-			tosa-to-linalg, \
-			tosa-to-tensor \
+				tosa-to-linalg-named, \
+				tosa-to-linalg, \
+				tosa-to-tensor \
 			), \
 			empty-tensor-to-alloc-tensor, \
-			arith-bufferize, \
-			func.func(tensor-bufferize, linalg-bufferize ), \
-			func-bufferize, \
-			func.func(buffer-deallocation, convert-linalg-to-loops), \
-			convert-scf-to-cf, \
-			convert-math-to-llvm, \
-			convert-func-to-llvm, \
+			one-shot-bufferize{bufferize-function-boundaries}, \
+ 			convert-linalg-to-loops, \
+			buffer-deallocation-pipeline, \
 			expand-strided-metadata, \
+			lower-affine, \
 			finalize-memref-to-llvm, \
+			convert-math-to-llvm, \
+			convert-scf-to-cf, \
+			convert-cf-to-llvm, \
+			convert-func-to-llvm, \
 			reconcile-unrealized-casts \
 		)" | \
 	${MLIR_TRANSLATE} --mlir-to-llvmir -o $@

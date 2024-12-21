@@ -7,6 +7,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
+#include "mlir/Dialect/MLProgram/IR/MLProgramAttributes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
@@ -58,17 +59,18 @@ public:
     auto module = op->getParentOfType<ModuleOp>();
     rewriter.setInsertionPointToStart(module.getBody());
 #ifdef USE_MLP
+    auto externalAttr = ml_program::ExternAttr::get(context, tensorType);
     rewriter.create<ml_program::GlobalOp>(loc, "weight0", tensorType, true,
-                                          nullptr,
+                                          externalAttr,
                                           rewriter.getStringAttr("public"));
     rewriter.create<ml_program::GlobalOp>(loc, "weight1", tensorType, true,
-                                          nullptr,
+                                          externalAttr,
                                           rewriter.getStringAttr("public"));
     rewriter.create<ml_program::GlobalOp>(loc, "weight2", tensorType, true,
-                                          nullptr,
+                                          externalAttr,
                                           rewriter.getStringAttr("public"));
     rewriter.create<ml_program::GlobalOp>(loc, "bias2", tensorType, true,
-                                          nullptr,
+                                          externalAttr,
                                           rewriter.getStringAttr("public"));
 #else
     auto tensorShape = tensorType.getShape();
@@ -92,31 +94,31 @@ public:
 #endif
     rewriter.setInsertionPoint(op);
 #ifdef USE_MLP
-    auto _weight0 = rewriter.create<ml_program::GlobalLoadConstOp>(
+    auto _weight0 = rewriter.create<ml_program::GlobalLoadOp>(
         loc, tensorType, SymbolRefAttr::get(context, "weight0"));
-    auto _weight1 = rewriter.create<ml_program::GlobalLoadConstOp>(
+    auto _weight1 = rewriter.create<ml_program::GlobalLoadOp>(
         loc, tensorType, SymbolRefAttr::get(context, "weight1"));
-    auto _weight2 = rewriter.create<ml_program::GlobalLoadConstOp>(
+    auto _weight2 = rewriter.create<ml_program::GlobalLoadOp>(
         loc, tensorType, SymbolRefAttr::get(context, "weight2"));
-    auto _bias2 = rewriter.create<ml_program::GlobalLoadConstOp>(
+    auto _bias2 = rewriter.create<ml_program::GlobalLoadOp>(
         loc, tensorType, SymbolRefAttr::get(context, "bias2"));
 #else
     auto _weight0Memref =
         rewriter.create<memref::GetGlobalOp>(loc, memrefType, "weight0");
     auto _weight0 = rewriter.create<bufferization::ToTensorOp>(
-        loc, tensorType, _weight0Memref, UnitAttr{});
+        loc, tensorType, _weight0Memref, true, true);
     auto _weight1Memref =
         rewriter.create<memref::GetGlobalOp>(loc, memrefType, "weight1");
     auto _weight1 = rewriter.create<bufferization::ToTensorOp>(
-        loc, tensorType, _weight1Memref, UnitAttr{});
+        loc, tensorType, _weight1Memref, true, true);
     auto _weight2Memref =
         rewriter.create<memref::GetGlobalOp>(loc, memrefType, "weight2");
     auto _weight2 = rewriter.create<bufferization::ToTensorOp>(
-        loc, tensorType, _weight2Memref, UnitAttr{});
+        loc, tensorType, _weight2Memref, true, true);
     auto _bias2Memref =
         rewriter.create<memref::GetGlobalOp>(loc, memrefType, "bias2");
     auto _bias2 = rewriter.create<bufferization::ToTensorOp>(
-        loc, tensorType, _bias2Memref, UnitAttr{});
+        loc, tensorType, _bias2Memref, true, true);
 #endif
     auto linear0 = rewriter.create<mix::LinearOp>(
         loc, tensorType, hidden_states, _weight0, nullptr);
@@ -174,8 +176,9 @@ public:
     auto module = op->getParentOfType<ModuleOp>();
     rewriter.setInsertionPointToStart(module.getBody());
 #ifdef USE_MLP
+    auto externalAttr = ml_program::ExternAttr::get(context, weightTensorType);
     rewriter.create<ml_program::GlobalOp>(loc, "weight3", weightTensorType,
-                                          true, nullptr,
+                                          true, externalAttr,
                                           rewriter.getStringAttr("public"));
 #else
     auto memrefType = MemRefType::get(weightShape, elementType);
@@ -193,7 +196,7 @@ public:
     auto _weight3Memref =
         rewriter.create<memref::GetGlobalOp>(loc, memrefType, "weight3");
     auto _weight3 = rewriter.create<bufferization::ToTensorOp>(
-        loc, weightTensorType, _weight3Memref, UnitAttr{});
+        loc, weightTensorType, _weight3Memref, , true, true);
 #endif
     auto constantTensorType = RankedTensorType::get({1}, elementType);
     auto constantTensor = DenseElementsAttr::get(constantTensorType, {2.0f});
