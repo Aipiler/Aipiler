@@ -21,8 +21,32 @@ mlp_tosa.mlir: mlp.mlir
 		--pass-pipeline="builtin.module( \
 			lower-mix-module, \
 			lower-mix-composite, \
-			lower-mix-primary-to-tosa \
+			lower-mix-primary-to-tosa, \
+			view-op-graph \
 		)" -o $@
+
+mlp_tmp.mlir: mlp_tosa.mlir
+	${MIX_OPT} $^ \
+		--pass-pipeline="builtin.module( \
+			one-shot-bufferize{bufferize-function-boundaries} \
+		)" -o $@
+
+mlp_memref.mlir: mlp_tosa.mlir
+	${MIX_OPT} $^ \
+		--pass-pipeline="builtin.module( \
+			func.func( \
+			tosa-to-linalg-named, \
+			tosa-to-linalg, \
+			tosa-to-tensor \
+			), \
+			one-shot-bufferize{bufferize-function-boundaries} \
+			)" -o $@
+# 			empty-tensor-to-alloc-tensor, \
+			one-shot-bufferize{bufferize-function-boundaries} \			
+#			buffer-deallocation-pipeline, \
+#			convert-linalg-to-loops \
+
+
 
 mlp.ll: mlp_tosa.mlir
 	${MIX_OPT} $^ \
@@ -35,9 +59,11 @@ mlp.ll: mlp_tosa.mlir
 			), \
 			empty-tensor-to-alloc-tensor, \
 			one-shot-bufferize{bufferize-function-boundaries}, \
+			one-shot-bufferize{bufferize-function-boundaries}, \
  			convert-linalg-to-loops, \
 			buffer-deallocation-pipeline, \
 			expand-strided-metadata, \
+			lower-affine, \
 			lower-affine, \
 			finalize-memref-to-llvm, \
 			convert-math-to-llvm, \
