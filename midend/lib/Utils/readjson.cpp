@@ -63,7 +63,7 @@ bool getElementFromJson(std::string dataPath, std::vector<double> &result) {
   // Read the JSON file
   std::ifstream jsonFile(jsonPath);
   if (!jsonFile.is_open()) {
-    errs() << "Error: Cannot open file " << jsonPath << "\n";
+    errs() << "Error: Cannot open file: " << jsonPath << "\n";
     return false;
   }
 
