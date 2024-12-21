@@ -32,9 +32,9 @@
 #include <iostream>
 
 using namespace mlir;
-
 std::unique_ptr<Pass> createLowerModulePass();
-
+std::unique_ptr<Pass> createLowerCompositePass();
+std::unique_ptr<Pass> createLowerPrimaryToTosa();
 int main() {
   mlir::MLIRContext context;
   context.getOrLoadDialect<mix::MIXDialect>();
@@ -78,6 +78,9 @@ int main() {
 
   mlir::PassManager pm(&context);
   pm.addPass(createLowerModulePass());
+  pm.addPass(createLowerCompositePass());
+  pm.addPass(createLowerPrimaryToTosa());
+
   if (mlir::failed(pm.run(theModule))) {
     return 4;
   }

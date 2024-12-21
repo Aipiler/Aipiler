@@ -35,4 +35,6 @@ target_link_libraries(genMLP
     ${conversion_libs}
     MLIRMIX
     LowerModule
+    LowerComposite
+    LowerPrimaryToTosa
 )
