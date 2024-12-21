@@ -9,6 +9,8 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstddef>
 #include <cstdint>
@@ -367,5 +369,32 @@ LogicalResult mix::TanhOp::inferReturnTypes(
   inferredReturnTypes.push_back(inputType);
   return success();
 }
+
+LogicalResult mix::LinearOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    LinearOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto input = adaptor.getInput();
+  auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
+  auto shape = inputType.getShape();
+  auto output_feature = adaptor.getOutFeature();
+  SmallVector<int64_t> outputShape(shape);
+  outputShape.back() = output_feature;
+  auto returnType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(returnType);
+  return success();
+}
+
+LogicalResult mix::LinearOp::verify() {
+  auto input = this->getInput();
+  auto inputType = input.getType();
+  auto shape = inputType.getShape();
+  auto input_feature = this->getInFeature();
+  if (shape.back() != input_feature) {
+    return this->emitError() << "Unexpect input shape";
+  }
+  return success();
+}
+
 #define GET_OP_CLASSES
 #include "mix/mixOps.cpp.inc"

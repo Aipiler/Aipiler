@@ -59,19 +59,32 @@ def GeluOp : MIX_Op<"module.gelu", [Pure, InferTypeOpAdaptor]> {
     );
 }
 
-def LinearOp : MIX_Op<"module.linear", [Pure]> {
+def LinearOp : MIX_Op<"module.linear", [Pure, InferTypeOpAdaptor]> {
     let summary = "Linear";
     let description = [{
         Linear
     }];
     let arguments = (ins
         mixTensor: $input,
-        mixTensor: $weight,
-        Optional<mixTensor>: $bias
+        StrAttr: $params_loc,
+        I32Attr: $in_feature,
+        I32Attr: $out_feature,
+        UnitAttr: $has_bias,
+        OptionalAttr<TypeAttr>: $dtype
     );
     let results = (outs
         mixTensor: $output
     );
+
+    let builders = [
+        OpBuilder<(ins "mlir::Value": $input, "llvm::StringRef": $params_loc, "int": $in_feature, "int": $out_feature, "bool": $has_bias, "mlir::Type": $dtype), [{
+            mlir::UnitAttr has_bisaUnit = has_bias ? $_builder.getUnitAttr() : nullptr;
+            return build($_builder, $_state, input, $_builder.getStringAttr(params_loc), $_builder.getI32IntegerAttr(in_feature), $_builder.getI32IntegerAttr(out_feature), has_bisaUnit, mlir::TypeAttr::get(dtype));
+        }]>
+
+    ];
+
+    let hasVerifier = 1;
 }
 
 def SiLUOp : MIX_Op<"comp.silu", [Pure, SameOperandsAndResultElementType, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
@@ -400,6 +413,19 @@ def TanhOp : MIX_Op<"prim.tanh", [Pure, InferTypeOpAdaptor]> {
     );
     let results = (outs
         mixData: $output
+    );
+}
+
+def WeightOp : MIX_Op<"prim.weight", [Pure]> {
+    let summary = "load param";
+    let description = [{
+        load param from model file.
+    }];
+    let arguments = (ins  
+        StrAttr: $param_loc
+    );
+    let results = (outs
+        mixTensor: $output
     );
 }
 
