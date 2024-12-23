@@ -3,7 +3,7 @@
 
 include "mlir/IR/BuiltinAttributes.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
-include "mlir/Interfaces/InferTypeOpInterface.td" 
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/CastInterfaces.td"
@@ -221,7 +221,7 @@ def DivOp : MIX_Op<"prim.div", [Pure, DeclareOpInterfaceMethods<InferTypeOpInter
     let hasVerifier = 1;
 }
 
-def ConcatOp : MIX_Op<"prim.concat", [Pure]> {
+def ConcatOp : MIX_Op<"prim.concat", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "Concatenate tensors along dimension";
   
   let arguments = (ins 
@@ -230,6 +230,38 @@ def ConcatOp : MIX_Op<"prim.concat", [Pure]> {
   );
   
   let results = (outs mixTensor:$output);
+
+  let hasVerifier = 1;
+}
+
+def SliceOp : MIX_Op<"prim.slice", [Pure, InferShapedTypeOpAdaptor]> {
+  let summary = "Slice";
+  
+  let arguments = (ins 
+    mixTensor:$inputs,
+    I64Attr:$dim,
+    I64Attr:$start,
+    I64Attr:$end,
+    I64Attr:$step
+  );
+  
+  let results = (outs mixTensor:$output);
+
+  let hasVerifier = 1;
+}
+
+def MaskedFillOp : MIX_Op<"comp.masked_fill", [Pure, InferShapedTypeOpAdaptor]> {
+  let summary = "Masked Fill";
+
+  let arguments = (ins 
+    mixTensor:$input,       // 输入张量
+    mixTensor:$mask,        // 掩码张量 (布尔类型)
+    F64Attr:$value        // 用于填充的标量值
+  );
+
+  let results = (outs mixTensor:$output);  // 输出张量
+
+  let hasVerifier = 1;  // 添加验证器支持
 }
 
 def MatMulOp : MIX_Op<"prim.matmul", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
@@ -259,9 +291,11 @@ def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
     let results = (outs
         mixTensor: $output
     );
+
+    //let hasVerifier = 1;
 }
 
-def ReshapeOp : MIX_Op<"prim.reshape", [Pure]> {
+def ReshapeOp : MIX_Op<"prim.reshape", [Pure, InferShapedTypeOpAdaptor]> {
     let summary = "Reshape a tensor to the specified shape";
     let description = [{
         Reshapes the input tensor to the specified shape without changing its data.
@@ -273,9 +307,11 @@ def ReshapeOp : MIX_Op<"prim.reshape", [Pure]> {
     let results = (outs
         mixTensor: $output
     );
+
+    let hasVerifier = 1;
 }
 
-def PermuteOp : MIX_Op<"prim.permute", [Pure]> {
+def PermuteOp : MIX_Op<"prim.permute", [Pure, InferShapedTypeOpAdaptor]> {
     let summary = "Permute the dimensions of a tensor";
     let description = [{
         Permutes the dimensions of the input tensor according to the specified order.
@@ -287,6 +323,8 @@ def PermuteOp : MIX_Op<"prim.permute", [Pure]> {
     let results = (outs
         mixTensor: $output
     );
+
+    let hasVerifier = 1;
 }
 
 

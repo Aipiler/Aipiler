@@ -30,6 +30,7 @@ include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
 
+# Add MLIR and LLVM headers to the include path
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 
