@@ -406,6 +406,27 @@ public:
 };
 
 #undef GET_DENSE
+
+class TanhOpLoweringPattern : public OpRewritePattern<mix::TanhOp> {
+public:
+  using OpRewritePattern<mix::TanhOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::TanhOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op->getLoc();
+    auto input = op.getInput();
+    auto resultType = op.getType();
+    auto resultTensorType = resultType.dyn_cast<RankedTensorType>();
+    Value newop;
+    if (!resultTensorType) {
+      // TODO
+      return op.emitOpError() << "Not support scale pow now.";
+    } else {
+      newop = rewriter.create<tosa::TanhOp>(loc, resultTensorType, input);
+    }
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
@@ -413,7 +434,7 @@ void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
                DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
                ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
                ReshapeLoweringPattern, RsqrtSumLoweringPattern,
-               WeightOpLoweringPattern>(patterns.getContext());
+               WeightOpLoweringPattern, TanhOpLoweringPattern>(patterns.getContext());
 }
 
 namespace {
@@ -448,7 +469,7 @@ void LowerPrimaryToTosaPass::runOnOperation() {
   target.addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
                       mix::MatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp,
                       mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp,
-                      mix::WeightOp>();
+                      mix::WeightOp, mix::TanhOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);
