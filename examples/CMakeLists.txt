@@ -1,2 +1,3 @@
 add_subdirectory(CodeGen)
 add_subdirectory(MLP)
+add_subdirectory(Self_attention)
