@@ -378,10 +378,9 @@ LogicalResult mix::ReshapeOp::verify() {
   return success();
 }
 
-LogicalResult mix::ReshapeOp::inferReturnTypeComponents(
-    MLIRContext *context, ::std::optional<Location> location,
-    ReshapeOp::Adaptor adaptor,
-    SmallVectorImpl<ShapedTypeComponents> &inferredReturnShapes) {
+LogicalResult mix::ReshapeOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    ReshapeOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
   // Get the input tensor type
   auto inputType =
       mlir::dyn_cast<RankedTensorType>(adaptor.getInput().getType());
@@ -398,8 +397,9 @@ LogicalResult mix::ReshapeOp::inferReturnTypeComponents(
     outputShape.push_back(dimIAttr.getInt());
   }
   // Create output tensor type with target shape and same element type
-  ShapedTypeComponents resultType(outputShape, inputType.getElementType());
-  inferredReturnShapes.push_back(resultType);
+  auto resultType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(resultType);
 
   return success();
 }
@@ -552,36 +552,35 @@ LogicalResult mix::SliceOp::verify() {
   return success();
 }
 
-LogicalResult mix::SliceOp::inferReturnTypeComponents(
-    MLIRContext *context, ::std::optional<Location> location,
-    SliceOp::Adaptor adaptor,
-    SmallVectorImpl<ShapedTypeComponents> &inferredReturnShapes) {
-  // Get the input tensor.
+LogicalResult mix::SliceOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    SliceOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  // Get the input tensor
   auto inputType =
       mlir::dyn_cast<RankedTensorType>(adaptor.getInputs().getType());
   if (!inputType) {
     return emitOptionalError(location, "input must be a ranked tensor");
   }
 
-  // Get slicing parameters.
+  // Get slicing parameters
   int64_t dim = adaptor.getDim();
   int64_t start = adaptor.getStart();
   int64_t end = adaptor.getEnd();
   int64_t step = adaptor.getStep();
 
-  // Ensure dim is within range.
+  // Ensure dim is within range
   int64_t rank = inputType.getRank();
   if (dim < 0 || dim >= rank) {
     return emitOptionalError(
         location, "dimension (dim) must be in range [0, %d]", rank - 1);
   }
 
-  // Get the shape of the input tensor.
+  // Get the shape of the input tensor
   SmallVector<int64_t, 4> outputShape(inputType.getShape().begin(),
                                       inputType.getShape().end());
   int64_t dimSize = inputType.getShape()[dim];
 
-  // Compute the sliced size for the dimension.
+  // Compute the sliced size for the dimension
   if (dimSize != ShapedType::kDynamic) {
     int64_t slicedSize = 0;
     if (step > 0) {
@@ -591,13 +590,14 @@ LogicalResult mix::SliceOp::inferReturnTypeComponents(
     }
     outputShape[dim] = slicedSize;
   } else {
-    // If dynamic, set as dynamic.
+    // If dynamic, set as dynamic
     outputShape[dim] = ShapedType::kDynamic;
   }
 
-  // Create the output tensor type.
-  ShapedTypeComponents resultType(outputShape, inputType.getElementType());
-  inferredReturnShapes.push_back(resultType);
+  // Create the output tensor type
+  auto resultType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(resultType);
 
   return success();
 }
@@ -651,10 +651,9 @@ LogicalResult mix::MaskedFillOp::verify() {
   return success();
 }
 
-LogicalResult mix::MaskedFillOp::inferReturnTypeComponents(
-    MLIRContext *context, ::std::optional<Location> location,
-    MaskedFillOp::Adaptor adaptor,
-    SmallVectorImpl<ShapedTypeComponents> &inferredReturnShapes) {
+LogicalResult mix::MaskedFillOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    MaskedFillOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
   // 获取输入tensor类型
   auto inputType =
       mlir::dyn_cast<RankedTensorType>(adaptor.getInput().getType());
@@ -679,8 +678,9 @@ LogicalResult mix::MaskedFillOp::inferReturnTypeComponents(
   auto outputShape = llvm::to_vector<4>(inputType.getShape());
 
   // 创建输出tensor类型（保持与输入相同的shape和element type）
-  ShapedTypeComponents resultType(outputShape, inputType.getElementType());
-  inferredReturnShapes.push_back(resultType);
+  auto resultType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(resultType);
 
   return success();
 }
@@ -726,10 +726,9 @@ LogicalResult mix::PermuteOp::verify() {
   return success();
 }
 
-LogicalResult mix::PermuteOp::inferReturnTypeComponents(
-    MLIRContext *context, ::std::optional<Location> location,
-    PermuteOp::Adaptor adaptor,
-    SmallVectorImpl<ShapedTypeComponents> &inferredReturnShapes) {
+LogicalResult mix::PermuteOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    PermuteOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
   // Get the input tensor type
   auto inputType = mlir::dyn_cast<ShapedType>(adaptor.getInput().getType());
   if (!inputType) {
@@ -751,8 +750,9 @@ LogicalResult mix::PermuteOp::inferReturnTypeComponents(
   }
 
   // Create output tensor type with permuted shape and same element type
-  ShapedTypeComponents resultType(outputShape, inputType.getElementType());
-  inferredReturnShapes.push_back(resultType);
+  auto resultType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(resultType);
 
   return success();
 }

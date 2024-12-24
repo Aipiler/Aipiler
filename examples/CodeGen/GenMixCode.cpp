@@ -52,21 +52,57 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                  TypedValue<RankedTensorType> &residual,
                  TypedValue<RankedTensorType> &attention_mask) {
   auto hidden_statesType = hidden_states.getType();
-  auto self_attn_output = builder.create<mix::SelfAttentionOp>(
-      loc, hidden_statesType, hidden_states, residual, attention_mask);
+  //   auto self_attn_output = builder.create<mix::SelfAttentionOp>(
+  //       loc, hidden_statesType, hidden_states, residual, attention_mask);
+
+  // hidden_states dims
+  auto hidden_states_shape = hidden_statesType.getShape();
+  auto batch_size = hidden_states_shape[0];
+  auto seq_length = hidden_states_shape[1];
+  auto hidden_size = hidden_states_shape[2];
+  // RankedTensorType tensorType = RankedTensorType::get();
 
   /* 定义一些可重用的信息 */
-  auto i32Type = builder.getI32Type();
-  auto attr_i0 = IntegerAttr::get(i32Type, 0);
-  auto attr_i1 = IntegerAttr::get(i32Type, 1);
+
+  // types:
+  auto type_i32 = builder.getI32Type();
+  auto type_query_weight =
+      RankedTensorType::get({hidden_size, hidden_size}, builder.getF32Type());
+  // Attrs:
+  auto attr_i0 = IntegerAttr::get(type_i32, 0);
+  auto attr_i1 = IntegerAttr::get(type_i32, 1);
+  auto attr_i2 = IntegerAttr::get(type_i32, 2);
+  auto attr_i_batch_size = IntegerAttr::get(type_i32, batch_size);
+  auto attr_i_seq_length = IntegerAttr::get(type_i32, seq_length);
+  auto attr_i_hidden_size = IntegerAttr::get(type_i32, hidden_size);
+
+  // (1, 0)
+  SmallVector<Attribute> vec_1_0{attr_i1, attr_i0};
+  auto attr_1_0 = mlir::ArrayAttr::get(&context, vec_1_0);
+  // (seq_length, hidden_size)
+  SmallVector<Attribute> vec_seq_length_hidden_size{attr_i_seq_length,
+                                                    attr_i_hidden_size};
+  auto attr_seq_length_hidden_size =
+      mlir::ArrayAttr::get(&context, vec_seq_length_hidden_size);
 
   /* 定义算子 */
-  SmallVector<Attribute> transpose1_dim{attr_i1, attr_i0};
-  auto transpose1_dim_attr = mlir::ArrayAttr::get(&context, transpose1_dim);
-  // auto transpose1 = builder.create<mix::PermuteOp>(
-  //     loc, hidden_statesType, hidden_states, transpose1_dim_attr);
 
-  return self_attn_output;
+  // line 14: torch.aten.transpose.int
+  auto transpose14 =
+      builder.create<mix::PermuteOp>(loc, hidden_states, attr_1_0);
+
+  // %arg9
+  auto query_weight = builder.create<mix::WeightOp>(
+      transpose14->getLoc(), type_query_weight, "Self_attn.query.weight");
+
+  // line 16: torch.aten.t
+  auto t16 = builder.create<mix::PermuteOp>(loc, query_weight, attr_1_0);
+
+  // line 21: torch.aten.view
+  auto reshape21 = builder.create<mix::ReshapeOp>(
+      query_weight->getLoc(), t16.getType(), t16, attr_seq_length_hidden_size);
+
+  return reshape21;
 }
 
 auto genRMSNorm(mlir::MLIRContext &context, mlir::OpBuilder &builder,

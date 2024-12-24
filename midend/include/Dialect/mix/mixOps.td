@@ -264,7 +264,7 @@ def ConcatOp : MIX_Op<"prim.concat", [Pure, DeclareOpInterfaceMethods<InferTypeO
   let hasVerifier = 1;
 }
 
-def SliceOp : MIX_Op<"prim.slice", [Pure, InferShapedTypeOpAdaptor]> {
+def SliceOp : MIX_Op<"prim.slice", [Pure, InferTypeOpAdaptor]> {
   let summary = "Slice";
   
   let arguments = (ins 
@@ -280,7 +280,7 @@ def SliceOp : MIX_Op<"prim.slice", [Pure, InferShapedTypeOpAdaptor]> {
   let hasVerifier = 1;
 }
 
-def MaskedFillOp : MIX_Op<"comp.masked_fill", [Pure, InferShapedTypeOpAdaptor]> {
+def MaskedFillOp : MIX_Op<"comp.masked_fill", [Pure, InferTypeOpAdaptor]> {
   let summary = "Masked Fill";
 
   let arguments = (ins 
@@ -325,7 +325,7 @@ def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
     //let hasVerifier = 1;
 }
 
-def ReshapeOp : MIX_Op<"prim.reshape", [Pure, InferShapedTypeOpAdaptor]> {
+def ReshapeOp : MIX_Op<"prim.reshape", [Pure, InferTypeOpAdaptor]> {
     let summary = "Reshape a tensor to the specified shape";
     let description = [{
         Reshapes the input tensor to the specified shape without changing its data.
@@ -341,7 +341,7 @@ def ReshapeOp : MIX_Op<"prim.reshape", [Pure, InferShapedTypeOpAdaptor]> {
     let hasVerifier = 1;
 }
 
-def PermuteOp : MIX_Op<"prim.permute", [Pure, InferShapedTypeOpAdaptor]> {
+def PermuteOp : MIX_Op<"prim.permute", [Pure, InferTypeOpAdaptor]> {
     let summary = "Permute the dimensions of a tensor";
     let description = [{
         Permutes the dimensions of the input tensor according to the specified order.
