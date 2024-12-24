@@ -396,5 +396,33 @@ LogicalResult mix::LinearOp::verify() {
   return success();
 }
 
+LogicalResult mix::EmbeddingOp::verify() {
+  auto paddingIdx = this->getPaddingIdx();
+  auto embeddingNum = this->getEmbeddingDim();
+  if (paddingIdx.has_value()) {
+    auto padIdxNum = paddingIdx.value();
+    if (padIdxNum >= embeddingNum) {
+      return this->emitOpError("Padding_idx must be within num_embeddings");
+    }
+  }
+  return success();
+}
+
+LogicalResult mix::EmbeddingOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    EmbeddingOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+
+  auto input = adaptor.getInput();
+  auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
+  auto shape = inputType.getShape();
+  auto embeddingdim = adaptor.getEmbeddingDim();
+  SmallVector<int64_t> outputShape(shape);
+  outputShape.push_back(embeddingdim);
+  auto returnType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(returnType);
+  return success();
+}
+
 #define GET_OP_CLASSES
 #include "mix/mixOps.cpp.inc"

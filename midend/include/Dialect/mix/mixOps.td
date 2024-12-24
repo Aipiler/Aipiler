@@ -87,6 +87,36 @@ def LinearOp : MIX_Op<"module.linear", [Pure, InferTypeOpAdaptor]> {
     let hasVerifier = 1;
 }
 
+def EmbeddingOp : MIX_Op<"module.embedding", [Pure, InferTypeOpAdaptor]> {
+    let summary = "Embedding";
+    let description = [{
+        Embedding
+    }];
+    let arguments = (ins
+        mixTensor: $input,
+        StrAttr: $params_loc,
+        I32Attr: $num_embeddings,
+        I32Attr: $embedding_dim,
+        OptionalAttr<I32Attr>: $padding_idx,
+        OptionalAttr<F32Attr>: $max_norm,
+        OptionalAttr<TypeAttr>: $dtype
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+
+    let builders = [
+        OpBuilder<(ins "mlir::Value": $input, "llvm::StringRef": $params_loc, "int": $num_embeddings, "int": $embedding_dim, "mlir::IntegerAttr": $padding_idx, "mlir::FloatAttr": $max_norm, "mlir::Type": $dtype), [{
+            return build($_builder, $_state, input, $_builder.getStringAttr(params_loc), $_builder.getI32IntegerAttr(num_embeddings), $_builder.getI32IntegerAttr(embedding_dim), padding_idx, max_norm, mlir::TypeAttr::get(dtype));
+        }]>,
+        OpBuilder<(ins "mlir::Value": $input, "llvm::StringRef": $params_loc, "int": $num_embeddings, "int": $embedding_dim, "mlir::Type": $dtype), [{
+            return build($_builder, $_state, input, params_loc, num_embeddings, embedding_dim, mlir::IntegerAttr(), mlir::FloatAttr(), mlir::TypeAttr::get(dtype));
+        }]>
+    ];
+
+    let hasVerifier = 1;
+}
+
 def SiLUOp : MIX_Op<"comp.silu", [Pure, SameOperandsAndResultElementType, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "SiLU";
     let description = [{
@@ -428,5 +458,21 @@ def WeightOp : MIX_Op<"prim.weight", [Pure]> {
         mixTensor: $output
     );
 }
+
+def ConstantOp : MIX_Op<"prim.constant", [Pure, ConstantLike, AllTypesMatch<["value", "output"]>]> {
+    let summary = "constant op";
+    let description = [{
+        constant op
+    }];
+    let arguments = (ins
+        TypedAttrInterface: $value
+    );
+    let results = (outs
+        mixData: $output
+    );
+}
+
+
+
 
 #endif // MIX_OPS_TD

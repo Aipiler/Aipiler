@@ -399,13 +399,26 @@ public:
       return op.emitOpError() << "Unexpected type.";
     }
     // create consatant op
-    auto constantOp = rewriter.create<arith::ConstantOp>(loc, dataAttr);
+    auto constantOp = rewriter.create<mix::ConstantOp>(loc, dataAttr);
     rewriter.replaceOp(op, constantOp);
     return success();
   }
 };
 
 #undef GET_DENSE
+
+class ConstantLoweringPattern : public OpRewritePattern<mix::ConstantOp> {
+public:
+  using OpRewritePattern<mix::ConstantOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::ConstantOp op,
+                                PatternRewriter &rewriter) const override {
+    auto value = op.getValue();
+    auto loc = op.getLoc();
+    auto constOp = rewriter.create<mlir::arith::ConstantOp>(loc, value);
+    rewriter.replaceOp(op, constOp);
+    return success();
+  }
+};
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
@@ -413,7 +426,8 @@ void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
                DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
                ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
                ReshapeLoweringPattern, RsqrtSumLoweringPattern,
-               WeightOpLoweringPattern>(patterns.getContext());
+               WeightOpLoweringPattern, ConstantLoweringPattern>(
+      patterns.getContext());
 }
 
 namespace {
@@ -448,7 +462,7 @@ void LowerPrimaryToTosaPass::runOnOperation() {
   target.addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
                       mix::MatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp,
                       mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp,
-                      mix::WeightOp>();
+                      mix::WeightOp, mix::ConstantOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);
