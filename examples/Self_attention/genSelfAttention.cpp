@@ -39,6 +39,18 @@ std::unique_ptr<Pass> createLowerModulePass();
 std::unique_ptr<Pass> createLowerCompositePass();
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
 
+ArrayAttr createIntArrayAttr(MLIRContext &context,
+                             const std::vector<int64_t> &values) {
+  SmallVector<Attribute> attrs;
+  attrs.reserve(values.size());
+
+  for (auto value : values) {
+    attrs.push_back(IntegerAttr::get(IntegerType::get(&context, 64), value));
+  }
+
+  return ArrayAttr::get(&context, attrs);
+}
+
 auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                  Location loc, TypedValue<RankedTensorType> &hidden_states,
                  TypedValue<RankedTensorType> &residual,
@@ -57,7 +69,10 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto batch_size = hidden_states_shape[0];
   auto seq_length = hidden_states_shape[1];
   auto hidden_size = hidden_states_shape[2];
-
+  auto n_head = 32;
+  auto head_dim = hidden_size / 32;
+  auto key_value_projection_size = hidden_size * 2;
+  auto key_value_projection_head_dim = key_value_projection_size / 32;
   /* 定义一些可重用的信息 */
 
   // types:
@@ -65,48 +80,93 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto type_i64 = builder.getI64Type();
   auto type_query_weight =
       RankedTensorType::get({hidden_size, hidden_size}, builder.getF32Type());
-  // Attrs:
-  auto attr_0 = IntegerAttr::get(type_i64, 0);
-  auto attr_1 = IntegerAttr::get(type_i64, 1);
-  auto attr_2 = IntegerAttr::get(type_i64, 2);
-  auto attr_batch_size = IntegerAttr::get(type_i64, batch_size);
-  auto attr_seq_length = IntegerAttr::get(type_i64, seq_length);
-  auto attr_hidden_size = IntegerAttr::get(type_i64, hidden_size);
-
-  // (1, 0)
-  SmallVector<Attribute> vec_1_0{attr_1, attr_0};
-  auto attr_1_0 = mlir::ArrayAttr::get(&context, vec_1_0);
-  // (1, 0, 2)
-  SmallVector<Attribute> vec_1_0_2{attr_1, attr_0, attr_2};
-  auto attr_1_0_2 = mlir::ArrayAttr::get(&context, vec_1_0_2);
-  // (seq_length, hidden_size)
-  SmallVector<Attribute> vec_seq_length_hidden_size{attr_seq_length,
-                                                    attr_hidden_size};
-  auto attr_seq_length_hidden_size =
-      mlir::ArrayAttr::get(&context, vec_seq_length_hidden_size);
+  auto type_key_value_weight = RankedTensorType::get(
+      {hidden_size * 2, hidden_size}, builder.getF32Type());
+  auto type_dense_weight =
+      RankedTensorType::get({hidden_size, hidden_size}, builder.getF32Type());
+  auto type_dense_bias =
+      RankedTensorType::get({hidden_size}, builder.getF32Type());
 
   /* 定义算子 */
 
-  // line 14: torch.aten.transpose.int
-  auto transpose14 =
-      builder.create<mix::PermuteOp>(loc, hidden_states, attr_1_0_2);
+  // %arg0
+  auto query_weight = builder.create<mix::WeightOp>(loc, type_query_weight,
+                                                    "Self_attn.query.weight");
+  // %arg1
+  auto key_value_weight = builder.create<mix::WeightOp>(
+      loc, type_key_value_weight, "Self_attn.key_value.weight");
 
-  // %arg9
-  auto query_weight = builder.create<mix::WeightOp>(
-      transpose14->getLoc(), type_query_weight, "Self_attn.query.weight");
+  // %arg2
+  auto dense_weight = builder.create<mix::WeightOp>(loc, type_dense_weight,
+                                                    "Self_attn.dense.weight");
+
+  // %arg3
+  auto dense_bias = builder.create<mix::WeightOp>(loc, type_dense_bias,
+                                                  "Self_attn.dense.bias");
+
+  // line 14: torch.aten.transpose.int
+  auto transpose14 = builder.create<mix::PermuteOp>(
+      loc, hidden_states, createIntArrayAttr(context, {1, 0, 2}));
 
   // line 16: torch.aten.t
-  auto t16 = builder.create<mix::PermuteOp>(query_weight->getLoc(),
-                                            query_weight, attr_1_0);
+  auto t16 = builder.create<mix::PermuteOp>(
+      loc, query_weight, createIntArrayAttr(context, {1, 0}));
 
   // line 21: torch.aten.view
   auto reshape21 = builder.create<mix::ReshapeOp>(
-      query_weight->getLoc(), transpose14, attr_seq_length_hidden_size);
+      loc, transpose14, createIntArrayAttr(context, {seq_length, hidden_size}));
 
   // line 23: torch.aten.mm
-  auto matmul1 =
-      builder.create<mix::MatMulOp>(reshape21->getLoc(), reshape21, t16);
-  return matmul1;
+  auto matmul23 = builder.create<mix::MatMulOp>(loc, reshape21, t16);
+
+  // line 29: torch.aten.view
+  auto reshape29 = builder.create<mix::ReshapeOp>(
+      loc, matmul23,
+      createIntArrayAttr(context, {seq_length, batch_size, hidden_size}));
+
+  // line 36: torch.aten.view
+  auto reshape36 = builder.create<mix::ReshapeOp>(
+      loc, reshape29,
+      createIntArrayAttr(context, {seq_length, batch_size, n_head, head_dim}));
+
+  // line 38: torch.aten.t
+  auto t38 = builder.create<mix::PermuteOp>(
+      loc, key_value_weight, createIntArrayAttr(context, {1, 0}));
+
+  // line 43: torch.aten.view
+  auto reshape43 = builder.create<mix::ReshapeOp>(
+      loc, transpose14, createIntArrayAttr(context, {seq_length, hidden_size}));
+
+  // line 45: torch.aten.mm
+  auto matmul45 = builder.create<mix::MatMulOp>(loc, reshape43, t38);
+
+  // line 51: torch.aten.view
+  auto reshape51 = builder.create<mix::ReshapeOp>(
+      loc, matmul45,
+      createIntArrayAttr(context,
+                         {seq_length, batch_size, key_value_projection_size}));
+
+  // line 58: torch.aten.view
+  auto reshape58 = builder.create<mix::ReshapeOp>(
+      loc, reshape51,
+      createIntArrayAttr(context, {seq_length, batch_size, n_head,
+                                   key_value_projection_head_dim}));
+
+  // line 64: torch.aten.slice.Tensor
+  auto slice64 = builder.create<mix::SliceOp>(loc, reshape58, 3, 0, 160, 1);
+
+  // line 70: torch.aten.slice.Tensor
+  auto slice70 = builder.create<mix::SliceOp>(loc, reshape58, 3, 160, 320, 1);
+
+  // line 76: torch.aten.view
+  auto reshape76 = builder.create<mix::ReshapeOp>(
+      loc, reshape36, createIntArrayAttr(context, {seq_length, n_head, -1}));
+
+  // line 82: torch.aten.view
+  auto reshape82 = builder.create<mix::ReshapeOp>(
+      loc, slice64, createIntArrayAttr(context, {seq_length, n_head, -1}));
+
+  return t38;
 }
 
 int main() {

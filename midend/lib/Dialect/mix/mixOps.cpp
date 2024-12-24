@@ -355,21 +355,45 @@ LogicalResult mix::ReshapeOp::verify() {
 
   // Calculate total elements in target shape
   int64_t outputElements = 1;
-  for (auto dimAttr : targetShape) {
-    auto dimIAttr = dyn_cast<IntegerAttr>(dimAttr);
-    auto dim = dimIAttr.getInt();
-    if (dim == ShapedType::kDynamic) {
-      // If target shape has dynamic dimensions, skip element count verification
-      return success();
+  int64_t dynamicIndex = -1; // Track the index of the -1 dimension (if any)
+  for (int64_t i = 0; i < targetShape.size(); ++i) {
+    auto dimAttr = targetShape[i].dyn_cast<IntegerAttr>();
+    if (!dimAttr) {
+      return emitOpError("target shape must contain only integer attributes");
     }
-    if (dim < 0) {
-      return emitOpError("target shape dimensions must be non-negative");
+
+    auto dim = dimAttr.getInt();
+    if (dim == -1) {
+      if (dynamicIndex != -1) {
+        // More than one -1 is invalid
+        return emitOpError(
+            "target shape can have at most one dynamic dimension (-1)");
+      }
+      dynamicIndex = i; // Record the index of the -1
+    } else if (dim < 0) {
+      return emitOpError("target shape dimensions must be non-negative or -1");
+    } else {
+      outputElements *= dim;
     }
-    outputElements *= dim;
   }
 
-  // Verify that input and output element counts match
-  if (inputElements != outputElements) {
+  // If there is a -1, calculate its value
+  if (dynamicIndex != -1) {
+    if (inputElements % outputElements != 0) {
+      return emitOpError("input elements (")
+             << inputElements
+             << ") cannot be evenly divided by the fixed dimensions ("
+             << outputElements << ")";
+    }
+
+    // Replace -1 with the inferred dimension size
+    int64_t inferredDim = inputElements / outputElements;
+    if (inferredDim <= 0) {
+      return emitOpError("inferred dimension size must be positive, got ")
+             << inferredDim;
+    }
+  } else if (inputElements != outputElements) {
+    // If no -1 exists, verify that the element counts match
     return emitOpError("number of input elements (")
            << inputElements << ") does not match output elements ("
            << outputElements << ")";
@@ -392,11 +416,64 @@ LogicalResult mix::ReshapeOp::inferReturnTypes(
   auto targetShape = adaptor.getShape();
 
   SmallVector<int64_t> outputShape;
-  for (auto dimAttr : targetShape.getValue()) {
-    auto dimIAttr = mlir::dyn_cast<IntegerAttr>(dimAttr);
-    outputShape.push_back(dimIAttr.getInt());
+  int64_t inputElements = 1;
+  for (auto dim : inputType.getShape()) {
+    if (dim != ShapedType::kDynamic) {
+      inputElements *= dim;
+    }
   }
-  // Create output tensor type with target shape and same element type
+
+  int64_t outputElements = 1;
+  int64_t dynamicIndex = -1;
+
+  // Build the output shape and calculate inferred dimension
+  for (size_t i = 0; i < targetShape.size(); ++i) {
+    auto dimAttr = targetShape[i].dyn_cast<IntegerAttr>();
+    if (!dimAttr) {
+      return emitOptionalError(
+          location, "target shape must contain only integer attributes");
+    }
+
+    int64_t dim = dimAttr.getInt();
+    if (dim == -1) {
+      if (dynamicIndex != -1) {
+        return emitOptionalError(
+            location,
+            "target shape can have at most one dynamic dimension (-1)");
+      }
+      dynamicIndex = i;
+      outputShape.push_back(ShapedType::kDynamic);
+    } else {
+      outputShape.push_back(dim);
+      if (dim > 0) {
+        outputElements *= dim;
+      }
+    }
+  }
+
+  // Infer the dynamic dimension size if -1 exists
+  if (dynamicIndex != -1) {
+    if (outputElements == 0 || inputElements % outputElements != 0) {
+      char errorMessage[256];
+      snprintf(errorMessage, sizeof(errorMessage),
+               "input elements (%ld) cannot be evenly divided by the fixed "
+               "dimensions (%ld)",
+               inputElements, outputElements);
+      return emitOptionalError(location, errorMessage);
+    }
+
+    int64_t inferredDim = inputElements / outputElements;
+    if (inferredDim <= 0) {
+      char errorMessage[256];
+      snprintf(errorMessage, sizeof(errorMessage),
+               "inferred dimension size must be positive, got %ld",
+               inferredDim);
+      return emitOptionalError(location, errorMessage);
+    }
+    outputShape[dynamicIndex] = inferredDim;
+  }
+
+  // Create output tensor type with inferred shape
   auto resultType =
       RankedTensorType::get(outputShape, inputType.getElementType());
   inferredReturnTypes.push_back(resultType);
