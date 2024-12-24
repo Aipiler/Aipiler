@@ -29,6 +29,7 @@
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
 #include <iostream>
 
@@ -57,34 +58,49 @@ int main() {
   printfunc.setPrivate();
   auto tensorType = RankedTensorType::get({2, 2}, elementType);
 
-  auto functionTy = builder.getFunctionType({tensorType, tensorType}, {});
+  // graph0
+  auto functionTy = builder.getFunctionType({tensorType}, {});
   auto graph0 = builder.create<func::FuncOp>(loc, "graph0", functionTy);
   graph0.setPrivate();
   auto body = graph0.addEntryBlock();
   builder.setInsertionPointToEnd(body);
 
   auto hidden_states = graph0.getArgument(0);
-  auto residual = graph0.getArgument(1);
+  int hidden_size = 2;
+  float eps = 1e-6;
+  auto hidden_states_type =
+      llvm::dyn_cast<RankedTensorType>(hidden_states.getType());
+  auto hidden_states_shape = hidden_states_type.getShape();
+  auto hidden_states_rank = hidden_states_shape.size();
+  llvm::ArrayRef<int64_t> weightShape{int64_t(hidden_size)};
+  auto weightTensorType =
+      RankedTensorType::get(weightShape, hidden_states_type.getElementType());
 
-  auto linear0 = builder.create<mix::LinearOp>(loc, hidden_states,
-                                               "model_parameters.mlp.linear0",
-                                               2, 2, false, elementType);
+  auto _weight3 = builder.create<mix::WeightOp>(loc, weightTensorType,
+                                                "model_parameters.rms.weight");
+  auto cast1 = builder.create<tensor::CastOp>(loc, printInputType, _weight3);
+  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast1});
+  auto constantTensorType = RankedTensorType::get({1}, elementType);
+  auto constantTensor = DenseElementsAttr::get(constantTensorType, {2.0f});
+  auto c2Tensor = builder.create<arith::ConstantOp>(loc, constantTensor);
+  auto pow0 = builder.create<mix::PowOp>(loc, hidden_states, c2Tensor);
+  auto mean0 = builder.create<mix::MeanOp>(
+      loc, pow0, builder.getI32ArrayAttr({int32_t(hidden_states_rank - 1)}),
+      builder.getBoolAttr(true));
 
-  auto silu0 = builder.create<mix::SiLUOp>(loc, linear0);
+  auto epsAttr = builder.getFloatAttr(elementType, eps);
+  auto const_eps = builder.create<arith::ConstantOp>(loc, epsAttr);
+  auto add0 = builder.create<mix::AddOp>(loc, mean0, const_eps);
+  auto rsqrt0 = builder.create<mix::RsqrtOp>(loc, add0);
+  auto mul0 = builder.create<mix::MulOp>(loc, hidden_states, rsqrt0);
+  auto mul1 = builder.create<mix::MulOp>(loc, _weight3, mul0);
 
-  auto linear1 = builder.create<mix::LinearOp>(loc, hidden_states,
-                                               "model_parameters.mlp.linear1",
-                                               2, 2, false, elementType);
-  auto mul0 = builder.create<mix::MulOp>(loc, silu0, linear1);
-
-  auto linear2 = builder.create<mix::LinearOp>(
-      loc, mul0, "model_parameters.mlp.linear2", 2, 2, true, elementType);
-  auto output = builder.create<mix::AddOp>(loc, linear2, residual);
-
-  auto cast = builder.create<tensor::CastOp>(loc, printInputType, output);
+  auto cast = builder.create<tensor::CastOp>(loc, printInputType, mul1);
   builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
 
   builder.create<func::ReturnOp>(loc, ValueRange{});
+
+  // function main
 
   builder.setInsertionPointToEnd(theModule.getBody());
   auto mainfunc = builder.create<func::FuncOp>(loc, "main",
@@ -97,17 +113,11 @@ int main() {
       DenseElementsAttr::get(tensorType, llvm::ArrayRef<float>{1, 2, 3, 4});
 
   auto arg0 = builder.create<arith::ConstantOp>(loc, argAttr);
-  auto arg1 = builder.create<arith::ConstantOp>(loc, argAttr);
-  builder.create<func::CallOp>(loc, graph0, ValueRange{arg0, arg1});
-  builder.create<func::ReturnOp>(loc);
-  // mlir::PassManager pm(&context);
-  // pm.addPass(createLowerModulePass());
-  // pm.addPass(createLowerCompositePass());
-  // pm.addPass(createLowerPrimaryToTosa());
+  builder.create<func::CallOp>(loc, graph0, ValueRange{arg0});
 
-  // if (mlir::failed(pm.run(theModule))) {
-  //   return 4;
-  // }
+  auto cast2 = builder.create<tensor::CastOp>(loc, printInputType, arg0);
+  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast2});
+  builder.create<func::ReturnOp>(loc);
   theModule->dump();
 
   return 0;
