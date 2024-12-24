@@ -302,7 +302,7 @@ LogicalResult mix::MeanOp::verify() {
 LogicalResult mix::MeanOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> location,
     MeanOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
-  auto inputType = adaptor.getInput().getType().dyn_cast<RankedTensorType>();
+  auto inputType = dyn_cast<RankedTensorType>(adaptor.getInput().getType());
   auto inputShape = inputType.getShape();
   auto inputElementType = inputType.getElementType();
   auto dimsAttr = adaptor.getDimsAttr();
@@ -335,7 +335,7 @@ LogicalResult mix::ReshapeOp::verify() {
   }
 
   // Check if input is a ranked tensor
-  auto inputType = input.getType().dyn_cast<RankedTensorType>();
+  auto inputType = dyn_cast<RankedTensorType>(input.getType());
   if (!inputType) {
     return emitOpError("input must be a ranked tensor");
   }
@@ -511,7 +511,7 @@ LogicalResult mix::SliceOp::verify() {
   }
 
   // Check if input is a ranked tensor.
-  auto inputType = input.getType().dyn_cast<RankedTensorType>();
+  auto inputType = dyn_cast<RankedTensorType>(input.getType());
   if (!inputType) {
     return emitOpError("input must be a ranked tensor");
   }
@@ -608,7 +608,7 @@ LogicalResult mix::MaskedFillOp::verify() {
   if (!input) {
     return emitOpError("requires an input tensor");
   }
-  auto inputType = input.getType().dyn_cast<RankedTensorType>();
+  auto inputType = dyn_cast<RankedTensorType>(input.getType());
   if (!inputType) {
     return emitOpError("input must be a ranked tensor");
   }
@@ -618,7 +618,7 @@ LogicalResult mix::MaskedFillOp::verify() {
   if (!mask) {
     return emitOpError("requires a mask tensor");
   }
-  auto maskType = mask.getType().dyn_cast<RankedTensorType>();
+  auto maskType = dyn_cast<RankedTensorType>(mask.getType());
   if (!maskType) {
     return emitOpError("mask must be a ranked tensor");
   }
@@ -693,7 +693,7 @@ LogicalResult mix::PermuteOp::verify() {
   }
 
   // Check if input is a ranked tensor
-  auto inputType = input.getType().dyn_cast<ShapedType>();
+  auto inputType = dyn_cast<ShapedType>(input.getType());
   if (!inputType) {
     return emitOpError("input must be a ranked tensor");
   }
@@ -773,7 +773,7 @@ LogicalResult mix::ReduceSumOp::verify() {
 LogicalResult mix::ReduceSumOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> location,
     ReduceSumOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
-  auto inputType = adaptor.getInput().getType().dyn_cast<RankedTensorType>();
+  auto inputType = dyn_cast<RankedTensorType>(adaptor.getInput().getType());
   auto elementTy = inputType.getElementType();
   auto inputShape = inputType.getShape();
   auto axis = adaptor.getAxis();

@@ -1,4 +1,5 @@
 add_subdirectory(CodeGen)
+add_subdirectory(Gelu)
 add_subdirectory(MLP)
 add_subdirectory(Self_attention)
 add_subdirectory(MixedFusedRMSNorm)

@@ -104,43 +104,10 @@ public:
     return success();
   }
 };
-
-class GeluLoweringPattern : public OpRewritePattern<mix::GeluOp> {
-public:
-  using OpRewritePattern<mix::GeluOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::GeluOp op,
-                                PatternRewriter &rewriter) const override {
-    auto input = op.getInput();
-    auto inputType = input.getType();
-    auto elementType = inputType.getElementType();
-    auto loc = op->getLoc();
-    auto c5_n1 = rewriter.create<arith::ConstantOp>(
-        loc, rewriter.getF32FloatAttr(5.0e-1));
-    auto mul0 = rewriter.create<mix::MulOp>(loc, input, c5_n1);
-    auto cdot79788456 = rewriter.create<arith::ConstantOp>(
-        loc, rewriter.getF32FloatAttr(0.79788456));
-    auto mul1 = rewriter.create<mix::MulOp>(loc, input, cdot79788456);
-    auto cdot044715 = rewriter.create<arith::ConstantOp>(
-        loc, rewriter.getF32FloatAttr(0.044715));
-    auto mul2 = rewriter.create<mix::MulOp>(loc, input, cdot044715);
-    auto mul3 = rewriter.create<mix::MulOp>(loc, input, mul2);
-    auto c1 =
-        rewriter.create<arith::ConstantOp>(loc, rewriter.getF32FloatAttr(1.0f));
-    auto add0 = rewriter.create<mix::AddOp>(loc, c1, mul3);
-    auto mul4 = rewriter.create<mix::MulOp>(loc, mul1, add0);
-    auto tanh0 = rewriter.create<mix::TanhOp>(loc, mul4);
-    auto add1 = rewriter.create<mix::AddOp>(loc, tanh0, c1);
-    auto mul5 = rewriter.create<mix::MulOp>(loc, mul0, add1);
-    rewriter.replaceOp(op, mul5);
-    return success();
-  }
-};
-
 } // namespace
 
 void populateLowerModulePatterns(RewritePatternSet &patterns) {
-  patterns.add<LinearLoweringPattern, GeluLoweringPattern>(
-      patterns.getContext());
+  patterns.add<LinearLoweringPattern>(patterns.getContext());
 }
 
 namespace {
@@ -173,8 +140,7 @@ void LowerModulePass::runOnOperation() {
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect, memref::MemRefDialect,
                          bufferization::BufferizationDialect>();
-  target.addIllegalOp<mix::LinearOp,
-                      mix::GeluOp>(); //
+  target.addIllegalOp<mix::LinearOp, mix::RMSNormOp>(); //
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerModulePatterns(patterns);
