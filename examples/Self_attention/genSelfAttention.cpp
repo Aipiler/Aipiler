@@ -78,14 +78,15 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   // types:
   auto type_i32 = builder.getI32Type();
   auto type_i64 = builder.getI64Type();
+  auto type_f32 = builder.getF32Type();
+  auto type_f64 = builder.getF16Type();
   auto type_query_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, builder.getF32Type());
-  auto type_key_value_weight = RankedTensorType::get(
-      {hidden_size * 2, hidden_size}, builder.getF32Type());
+      RankedTensorType::get({hidden_size, hidden_size}, type_f32);
+  auto type_key_value_weight =
+      RankedTensorType::get({hidden_size * 2, hidden_size}, type_f32);
   auto type_dense_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, builder.getF32Type());
-  auto type_dense_bias =
-      RankedTensorType::get({hidden_size}, builder.getF32Type());
+      RankedTensorType::get({hidden_size, hidden_size}, type_f32);
+  auto type_dense_bias = RankedTensorType::get({hidden_size}, type_f32);
 
   /* 定义算子 */
 
@@ -165,6 +166,54 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   // line 82: torch.aten.view
   auto reshape82 = builder.create<mix::ReshapeOp>(
       loc, slice64, createIntArrayAttr(context, {seq_length, n_head, -1}));
+
+  // line 91: torch.aten.arange.start_step
+  SmallVector<int64_t> tmp91(80);
+  for (int i = 0, j = 0; i < 160; i++, j += 2) {
+    tmp91[i] = j;
+  }
+  auto dense91 = DenseI64ArrayAttr::get(&context, tmp91);
+  auto constant91 = builder.create<mix::ConstantOp>(loc, dense91);
+
+  // line 99: torch.aten._to_copy
+  auto convert71 =
+      builder.create<mix::ConvertOp>(loc, constant91, TypeAttr::get(type_f32));
+
+  // line 101: torch.constant.int
+  auto scalar101 = IntegerAttr::get(type_i64, 160);
+  auto constant101 = builder.create<mix::ConstantOp>(loc, scalar101);
+
+  // line 103: torch.aten.div.Tensor
+  auto dev103 = builder.create<mix::DivOp>(loc, convert71, constant101);
+
+  // line 105: torch.constant.float
+  auto scalar105 = FloatAttr::get(type_f64, 30420.108888514722);
+  auto constant105 = builder.create<mix::ConstantOp>(loc, scalar105);
+
+  // line 107: torch.aten.pow.Scalar
+  auto pow107 = builder.create<mix::PowOp>(loc, constant105, dev103);
+
+  // line 109: torch.aten.reciprocal
+  auto reciprocal109 = builder.create<mix::ReciprocalOp>(loc, pow107);
+
+  // line 111: torch.constant.float
+  auto scalar111 = FloatAttr::get(type_f64, 1.000000e+00);
+  auto constant111 = builder.create<mix::ConstantOp>(loc, scalar111);
+
+  // line 113: torch.aten.mul.Scalar
+  auto mul113 = builder.create<mix::MulOp>(loc, constant111, reciprocal109);
+
+  // line 120: torch.aten.arange
+  SmallVector<float> tmp120(8192);
+  for (int i = 0; i < 8192; i++) {
+    tmp120[i] = i;
+  }
+  auto dense120 = DenseF32ArrayAttr::get(&context, tmp120);
+  auto constant120 = builder.create<mix::ConstantOp>(loc, dense120);
+
+  // line 123: torch.aten.unsqueeze
+  auto unsqueeze123 = builder.create<mix::ReshapeOp>(
+      loc, createIntArrayAttr(context, {8192, 1}));
 
   return t38;
 }

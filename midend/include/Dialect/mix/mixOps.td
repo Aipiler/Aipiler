@@ -291,7 +291,7 @@ def MaskedFillOp : MIX_Op<"comp.masked_fill", [Pure, InferTypeOpAdaptor]> {
 
   let results = (outs mixTensor:$output);  // 输出张量
 
-  let hasVerifier = 1;  // 添加验证器支持
+  let hasVerifier = 1;
 }
 
 def MatMulOp : MIX_Op<"prim.matmul", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
@@ -510,6 +510,26 @@ def ConstantOp : MIX_Op<"prim.constant", [Pure, ConstantLike, AllTypesMatch<["va
     );
 }
 
+def ConvertOp : MIX_Op<"prim.convert",
+    [Pure, SameOperandsAndResultShape, InferTypeOpAdaptor]> { 
+  let summary = "Convert operation";
+  let description = [{
+    Performs an element-wise conversion from one element type to another on
+    `operand` tensor and produces a `result` tensor.
+
+    Example:
+    ```mlir
+    %result = prim.convert %operand : (tensor<3xi64>) -> tensor<3xcomplex<f64>>
+    ```
+  }];
+  let arguments = (ins
+      mixData: $value,
+      TypedAttrInterface: $element_ty
+  );
+  let results = (outs
+      mixData: $output
+  );
+}
 
 
 

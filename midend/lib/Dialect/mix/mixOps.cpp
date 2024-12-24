@@ -65,6 +65,64 @@ LogicalResult mix::RsqrtOp::inferReturnTypes(
   return success();
 }
 
+LogicalResult mix::ConvertOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    ConvertOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  // 获取输入类型
+  auto inputType = adaptor.getValue().getType();
+
+  // 获取目标元素类型
+  auto elementType = adaptor.getElementTyAttr().getType();
+  if (!mlir::isa<Type>(elementType)) {
+    return emitOptionalError(location,
+                             "element_ty attribute must be a valid type");
+  }
+
+  // 处理 RankedTensorType 输入
+  if (auto rankedTensorType = dyn_cast<RankedTensorType>(inputType)) {
+    // 使用输入张量的形状，创建新的类型
+    auto resultType =
+        RankedTensorType::get(rankedTensorType.getShape(), elementType);
+    inferredReturnTypes.push_back(resultType);
+    return success();
+  }
+
+  // 处理 UnrankedTensorType 输入
+  if (auto unrankedTensorType = dyn_cast<UnrankedTensorType>(inputType)) {
+    // 仅替换元素类型，不关心形状
+    auto resultType = UnrankedTensorType::get(elementType);
+    inferredReturnTypes.push_back(resultType);
+    return success();
+  }
+
+  // 处理其他类型（例如标量类型）
+  if (mlir::isa<ShapedType>(inputType)) {
+    auto shapedType = mlir::cast<ShapedType>(inputType);
+    if (shapedType.hasRank()) {
+      // 如果有 rank，但未显式定义为 RankedTensorType
+      auto resultType =
+          RankedTensorType::get(shapedType.getShape(), elementType);
+      inferredReturnTypes.push_back(resultType);
+      return success();
+    } else {
+      // 如果没有 rank
+      auto resultType = UnrankedTensorType::get(elementType);
+      inferredReturnTypes.push_back(resultType);
+      return success();
+    }
+  }
+
+  // 如果输入是标量类型
+  if (inputType.isa<TensorType>() || inputType.isa<Type>()) {
+    inferredReturnTypes.push_back(inputType);
+    return success();
+  }
+
+  // 如果输入是无法识别的类型
+  return emitOptionalError(location,
+                           "unsupported input type for ConvertOp: ", inputType);
+}
+
 // element wise Op verify
 
 bool verifyBroadcastCompatibility(TensorType lhsTensor, TensorType rhsTensor) {
