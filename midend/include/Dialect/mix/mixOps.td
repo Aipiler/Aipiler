@@ -251,7 +251,7 @@ def DivOp : MIX_Op<"prim.div", [Pure, DeclareOpInterfaceMethods<InferTypeOpInter
     let hasVerifier = 1;
 }
 
-def ConcatOp : MIX_Op<"prim.concat", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+def ConcatOp : MIX_Op<"prim.concat", [Pure, InferTypeOpAdaptor]> {
   let summary = "Concatenate tensors along dimension";
   
   let arguments = (ins 
@@ -387,7 +387,7 @@ def ExpOp : MIX_Op<"prim.exp", [Pure, DeclareOpInterfaceMethods<InferTypeOpInter
     );
 }
 
-def ReciprocalOp : MIX_Op<"prim.reciprocal", [Pure]> {
+def ReciprocalOp : MIX_Op<"prim.reciprocal", [Pure, InferTypeOpAdaptor]> {
     let summary = "Element-wise reciprocal of a tensor";
     let description = [{
         Computes the element-wise reciprocal (1/x) of the input tensor.
@@ -400,7 +400,7 @@ def ReciprocalOp : MIX_Op<"prim.reciprocal", [Pure]> {
     );
 }
 
-def CosOp : MIX_Op<"prim.cos", [Pure]> {
+def CosOp : MIX_Op<"prim.cos", [Pure, InferTypeOpAdaptor]> {
     let summary = "Element-wise cosine operation";
     let description = [{
         Computes the cosine of each element in the input tensor.
@@ -413,7 +413,7 @@ def CosOp : MIX_Op<"prim.cos", [Pure]> {
     );
 }
 
-def SinOp : MIX_Op<"prim.sin", [Pure]> {
+def SinOp : MIX_Op<"prim.sin", [Pure, InferTypeOpAdaptor]> {
     let summary = "Element-wise sine operation";
     let description = [{
         Computes the sine of each element in the input tensor.
@@ -524,7 +524,7 @@ def ConvertOp : MIX_Op<"prim.convert",
   }];
   let arguments = (ins
       mixData: $value,
-      TypedAttrInterface: $element_ty
+      TypeAttr: $element_ty
   );
   let results = (outs
       mixData: $output
