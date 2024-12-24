@@ -65,6 +65,27 @@ LogicalResult mix::RsqrtOp::inferReturnTypes(
   return success();
 }
 
+LogicalResult mix::CosOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    CosOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  inferredReturnTypes.push_back(adaptor.getInput().getType());
+  return success();
+}
+
+LogicalResult mix::SinOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    SinOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  inferredReturnTypes.push_back(adaptor.getInput().getType());
+  return success();
+}
+
+LogicalResult mix::ReciprocalOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ReciprocalOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  inferredReturnTypes.push_back(adaptor.getInput().getType());
+  return success();
+}
+
 LogicalResult mix::ConvertOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> location,
     ConvertOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
@@ -72,7 +93,7 @@ LogicalResult mix::ConvertOp::inferReturnTypes(
   auto inputType = adaptor.getValue().getType();
 
   // 获取目标元素类型
-  auto elementType = adaptor.getElementTyAttr().getType();
+  auto elementType = adaptor.getElementTy();
   if (!mlir::isa<Type>(elementType)) {
     return emitOptionalError(location,
                              "element_ty attribute must be a valid type");
@@ -588,24 +609,15 @@ LogicalResult mix::ConcatOp::verify() {
 }
 
 LogicalResult mix::ConcatOp::inferReturnTypes(
-    MLIRContext *context, std::optional<::mlir::Location> location,
-    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
-  // Ensure there are inputs.
-  if (operands.empty()) {
-    return emitOptionalError(location, "requires at least one input tensor");
-  }
+    MLIRContext *context, std::optional<Location> location,
+    ConcatOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
 
   // Get the axis attribute.
-  auto axisAttr = mlir::dyn_cast<IntegerAttr>(attributes.get("axis"));
-  if (!axisAttr) {
-    return emitOptionalError(location, "requires an 'axis' attribute");
-  }
-  int64_t axis = axisAttr.getInt();
+  auto axis = adaptor.getAxis();
 
   // Get the first tensor type.
   auto firstTensorType =
-      mlir::dyn_cast<RankedTensorType>(operands[0].getType());
+      mlir::dyn_cast<RankedTensorType>(adaptor.getInputs()[0].getType());
   if (!firstTensorType) {
     return emitOptionalError(location, "all inputs must be ranked tensors");
   }
@@ -620,7 +632,8 @@ LogicalResult mix::ConcatOp::inferReturnTypes(
   // Compute the output shape.
   SmallVector<int64_t, 4> outputShape(firstTensorType.getShape().begin(),
                                       firstTensorType.getShape().end());
-  for (auto operand : operands) {
+  outputShape[axis] = 0;
+  for (auto operand : adaptor.getInputs()) {
     auto tensorType = mlir::dyn_cast<RankedTensorType>(operand.getType());
     if (!tensorType) {
       return emitOptionalError(location, "all inputs must be ranked tensors");
@@ -714,6 +727,11 @@ LogicalResult mix::SliceOp::inferReturnTypes(
   SmallVector<int64_t, 4> outputShape(inputType.getShape().begin(),
                                       inputType.getShape().end());
   int64_t dimSize = inputType.getShape()[dim];
+
+  // Adjust the end value if it exceeds the dimension size
+  if (dimSize != ShapedType::kDynamic && end > dimSize) {
+    end = dimSize;
+  }
 
   // Compute the sliced size for the dimension
   if (dimSize != ShapedType::kDynamic) {

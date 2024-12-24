@@ -9,6 +9,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -167,17 +168,19 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto reshape82 = builder.create<mix::ReshapeOp>(
       loc, slice64, createIntArrayAttr(context, {seq_length, n_head, -1}));
 
+  // 下面是RotaryEmbedding 的代码，应该在genRotaryEmbedding中实现
+
   // line 91: torch.aten.arange.start_step
   SmallVector<int64_t> tmp91(80);
   for (int i = 0, j = 0; i < 160; i++, j += 2) {
     tmp91[i] = j;
   }
-  auto dense91 = DenseI64ArrayAttr::get(&context, tmp91);
+  auto dense91 = DenseElementsAttr::get(RankedTensorType::get({80}, type_i64),
+                                        ArrayRef<int64_t>(tmp91));
   auto constant91 = builder.create<mix::ConstantOp>(loc, dense91);
 
   // line 99: torch.aten._to_copy
-  auto convert71 =
-      builder.create<mix::ConvertOp>(loc, constant91, TypeAttr::get(type_f32));
+  auto convert71 = builder.create<mix::ConvertOp>(loc, constant91, type_f32);
 
   // line 101: torch.constant.int
   auto scalar101 = IntegerAttr::get(type_i64, 160);
@@ -208,12 +211,13 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   for (int i = 0; i < 8192; i++) {
     tmp120[i] = i;
   }
-  auto dense120 = DenseF32ArrayAttr::get(&context, tmp120);
+  auto dense120 = DenseElementsAttr::get(
+      RankedTensorType::get({8192}, type_f32), ArrayRef<float>(tmp120));
   auto constant120 = builder.create<mix::ConstantOp>(loc, dense120);
 
   // line 123: torch.aten.unsqueeze
   auto unsqueeze123 = builder.create<mix::ReshapeOp>(
-      loc, createIntArrayAttr(context, {8192, 1}));
+      loc, constant120, createIntArrayAttr(context, {8192, 1}));
 
   return t38;
 }
