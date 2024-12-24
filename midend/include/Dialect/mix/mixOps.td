@@ -510,7 +510,34 @@ def ConstantOp : MIX_Op<"prim.constant", [Pure, ConstantLike, AllTypesMatch<["va
     );
 }
 
+def GetItem : MIX_Op<"comp.getitem", [Pure, InferTypeOpAdaptor]> {
+    let summary = "GetItem";
+    let description = [{
+        Get item from tensor
+    }];
+    let arguments = (ins
+        mixTensor: $value,
+        AnyTypeOf<[mixTensor, mixInt]>: $indice
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+}
 
+def GatherOp : MIX_Op<"prim.gather", [Pure, InferTypeOpAdaptor]> {
+    let summary = "Gather";
+    let description = [{
+        gather op.
+    }];
+    let arguments = (ins
+        mixTensor: $values,
+        mixTensor: $indices
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+    let hasVerifier = 1;
+}
 
 
 #endif // MIX_OPS_TD
