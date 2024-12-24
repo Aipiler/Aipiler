@@ -52,6 +52,151 @@ ArrayAttr createIntArrayAttr(MLIRContext &context,
   return ArrayAttr::get(&context, attrs);
 }
 
+std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
+                                           mlir::OpBuilder &builder,
+                                           Location loc) {
+
+  // hidden_states dims
+  auto hidden_size = 5120;
+  auto n_head = 32;
+  auto head_dim = hidden_size / n_head;
+  auto key_value_projection_size = hidden_size * 2;
+  auto key_value_projection_head_dim = key_value_projection_size / n_head;
+  auto seq_len = 8192;
+
+  /* 定义一些可重用的信息 */
+
+  // types:
+  auto type_i32 = builder.getI32Type();
+  auto type_i64 = builder.getI64Type();
+  auto type_f32 = builder.getF32Type();
+  auto type_f64 = builder.getF16Type();
+  auto type_query_weight =
+      RankedTensorType::get({hidden_size, hidden_size}, type_f32);
+  auto type_key_value_weight =
+      RankedTensorType::get({key_value_projection_size, hidden_size}, type_f32);
+  auto type_dense_weight =
+      RankedTensorType::get({hidden_size, hidden_size}, type_f32);
+  auto type_dense_bias = RankedTensorType::get({hidden_size}, type_f32);
+
+  /* 定义算子 */
+
+  // 下面是RotaryEmbedding 的代码，应该在genRotaryEmbedding中实现
+
+  // line 94: torch.aten.arange.start_step
+  SmallVector<int64_t> tmp94(80);
+  for (int i = 0, j = 0; i < 80; i++, j += 2) {
+    tmp94[i] = j;
+  }
+  auto dense94 = DenseElementsAttr::get(RankedTensorType::get({80}, type_i64),
+                                        ArrayRef<int64_t>(tmp94));
+  auto constant94 = builder.create<mix::ConstantOp>(loc, dense94);
+
+  // line 102: torch.aten._to_copy
+  auto convert102 = builder.create<mix::ConvertOp>(loc, constant94, type_f32);
+
+  // line 104: torch.constant.int
+  auto scalar101 = IntegerAttr::get(type_i64, 160);
+  auto constant101 = builder.create<mix::ConstantOp>(loc, scalar101);
+
+  // line 106: torch.aten.div.Tensor
+  auto dev106 = builder.create<mix::DivOp>(loc, convert102, constant101);
+
+  // line 108: torch.constant.float
+  auto scalar108 = FloatAttr::get(type_f64, 30420.108888514722);
+  auto constant108 = builder.create<mix::ConstantOp>(loc, scalar108);
+
+  // line 110: torch.aten.pow.Scalar
+  auto pow110 = builder.create<mix::PowOp>(loc, constant108, dev106);
+
+  // line 112: torch.aten.reciprocal
+  auto reciprocal112 = builder.create<mix::ReciprocalOp>(loc, pow110);
+
+  // line 114: torch.constant.float
+  auto scalar114 = FloatAttr::get(type_f64, 1.000000e+00);
+  auto constant114 = builder.create<mix::ConstantOp>(loc, scalar114);
+
+  // line 116: torch.aten.mul.Scalar
+  auto mul116 = builder.create<mix::MulOp>(loc, constant114, reciprocal112);
+
+  // line 123: torch.aten.arange
+  SmallVector<float> tmp123(8192);
+  for (int i = 0; i < 8192; i++) {
+    tmp123[i] = i;
+  }
+  auto dense123 = DenseElementsAttr::get(
+      RankedTensorType::get({8192}, type_f32), ArrayRef<float>(tmp123));
+  auto constant123 = builder.create<mix::ConstantOp>(loc, dense123);
+
+  // line 126: torch.aten.unsqueeze
+  auto unsqueeze126 = builder.create<mix::ReshapeOp>(
+      loc, constant123, createIntArrayAttr(context, {8192, 1}));
+
+  // line 131: torch.aten.permute
+  auto permute131 = builder.create<mix::PermuteOp>(
+      loc, unsqueeze126, createIntArrayAttr(context, {0, 1}));
+
+  // line 134: torch.aten.unsqueeze
+  auto unsqueeze134 = builder.create<mix::ReshapeOp>(
+      loc, mul116, createIntArrayAttr(context, {80, 1}));
+
+  // line 139: torch.aten.permute
+  auto permute139 = builder.create<mix::PermuteOp>(
+      loc, unsqueeze134, createIntArrayAttr(context, {1, 0}));
+
+  // line 141: torch.aten.mul.Tensor
+  auto mul141 = builder.create<mix::MulOp>(loc, permute131, permute139);
+
+  // line 145: torch.aten.cat
+  SmallVector<Value> tmp145{mul141, mul141};
+  auto cat145 = builder.create<mix::ConcatOp>(
+      loc, tmp145, IntegerAttr::get(IntegerType::get(&context, 64), 1));
+
+  // line 147: torch.aten.cos
+  auto cos147 = builder.create<mix::CosOp>(loc, cat145);
+
+  // line 153: torch.aten.slice.Tensor
+  auto slice148 = builder.create<mix::SliceOp>(loc, cos147, 0, 0, INT32_MAX, 1);
+
+  // line 156: torch.aten.unsqueeze
+  auto unsqueeze156 = builder.create<mix::ReshapeOp>(
+      loc, slice148, createIntArrayAttr(context, {8192, 1, 160}));
+
+  // line 162: torch.aten.slice.Tensor
+  auto slice162 =
+      builder.create<mix::SliceOp>(loc, unsqueeze156, 2, 0, INT32_MAX, 1);
+
+  // line 164: torch.constant.float
+  auto scalar164 = FloatAttr::get(type_f64, 1.000000e+00);
+  auto constant164 = builder.create<mix::ConstantOp>(loc, scalar164);
+
+  // line 166: torch.aten.mul.Scalar
+  auto mul166 = builder.create<mix::MulOp>(loc, slice162, constant164);
+
+  // line 168: torch.aten.sin
+  auto sin168 = builder.create<mix::SinOp>(loc, cat145);
+
+  // line 174: torch.aten.slice.Tensor
+  auto slice174 = builder.create<mix::SliceOp>(loc, sin168, 0, 0, INT32_MAX, 1);
+
+  // line 177: torch.aten.unsqueeze
+  auto unsqueeze177 = builder.create<mix::ReshapeOp>(
+      loc, slice174, createIntArrayAttr(context, {8192, 1, 160}));
+
+  // line 183: torch.aten.slice.Tensor
+  auto slice183 =
+      builder.create<mix::SliceOp>(loc, unsqueeze177, 2, 0, INT32_MAX, 1);
+
+  // line 185: torch.constant.float
+  auto scalar185 = FloatAttr::get(type_f64, 1.000000e+00);
+  auto constant185 = builder.create<mix::ConstantOp>(loc, scalar185);
+
+  // line 187: torch.aten.mul.Scalar
+  auto mul187 = builder.create<mix::MulOp>(loc, slice183, constant185);
+
+  return {mul166, mul187};
+}
+
 auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                  Location loc, TypedValue<RankedTensorType> &hidden_states,
                  TypedValue<RankedTensorType> &residual,
@@ -169,55 +314,6 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, slice64, createIntArrayAttr(context, {seq_length, n_head, -1}));
 
   // 下面是RotaryEmbedding 的代码，应该在genRotaryEmbedding中实现
-
-  // line 91: torch.aten.arange.start_step
-  SmallVector<int64_t> tmp91(80);
-  for (int i = 0, j = 0; i < 160; i++, j += 2) {
-    tmp91[i] = j;
-  }
-  auto dense91 = DenseElementsAttr::get(RankedTensorType::get({80}, type_i64),
-                                        ArrayRef<int64_t>(tmp91));
-  auto constant91 = builder.create<mix::ConstantOp>(loc, dense91);
-
-  // line 99: torch.aten._to_copy
-  auto convert71 = builder.create<mix::ConvertOp>(loc, constant91, type_f32);
-
-  // line 101: torch.constant.int
-  auto scalar101 = IntegerAttr::get(type_i64, 160);
-  auto constant101 = builder.create<mix::ConstantOp>(loc, scalar101);
-
-  // line 103: torch.aten.div.Tensor
-  auto dev103 = builder.create<mix::DivOp>(loc, convert71, constant101);
-
-  // line 105: torch.constant.float
-  auto scalar105 = FloatAttr::get(type_f64, 30420.108888514722);
-  auto constant105 = builder.create<mix::ConstantOp>(loc, scalar105);
-
-  // line 107: torch.aten.pow.Scalar
-  auto pow107 = builder.create<mix::PowOp>(loc, constant105, dev103);
-
-  // line 109: torch.aten.reciprocal
-  auto reciprocal109 = builder.create<mix::ReciprocalOp>(loc, pow107);
-
-  // line 111: torch.constant.float
-  auto scalar111 = FloatAttr::get(type_f64, 1.000000e+00);
-  auto constant111 = builder.create<mix::ConstantOp>(loc, scalar111);
-
-  // line 113: torch.aten.mul.Scalar
-  auto mul113 = builder.create<mix::MulOp>(loc, constant111, reciprocal109);
-
-  // line 120: torch.aten.arange
-  SmallVector<float> tmp120(8192);
-  for (int i = 0; i < 8192; i++) {
-    tmp120[i] = i;
-  }
-  auto dense120 = DenseElementsAttr::get(
-      RankedTensorType::get({8192}, type_f32), ArrayRef<float>(tmp120));
-  auto constant120 = builder.create<mix::ConstantOp>(loc, dense120);
-
-  // line 123: torch.aten.unsqueeze
-  auto unsqueeze123 = builder.create<mix::ReshapeOp>(
-      loc, constant120, createIntArrayAttr(context, {8192, 1}));
 
   return t38;
 }
