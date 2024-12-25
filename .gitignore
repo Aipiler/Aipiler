@@ -18,3 +18,6 @@ log*
 
 # Clangd configurations
 .clangd
+
+# Pytorch binary files
+*.bin
