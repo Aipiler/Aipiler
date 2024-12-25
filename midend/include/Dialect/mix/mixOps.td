@@ -247,7 +247,7 @@ def MatMulOp : MIX_Op<"prim.matmul", [Pure, DeclareOpInterfaceMethods<InferTypeO
     let hasVerifier = 1;
 }
 
-def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
+def BatchMatMulOp : MIX_Op<"prim.batch_matmul", [Pure]> {
     let summary = "Batch matrix multiplication of tensors";
     let description = [{
         Performs batch matrix multiplication on the input tensors.
