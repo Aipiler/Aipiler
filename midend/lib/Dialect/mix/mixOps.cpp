@@ -144,6 +144,43 @@ LogicalResult mix::ConvertOp::inferReturnTypes(
                            "unsupported input type for ConvertOp: ", inputType);
 }
 
+LogicalResult mix::SoftmaxOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    SoftmaxOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  // Extract the input type
+  auto inputType = adaptor.getInput().getType().dyn_cast<RankedTensorType>();
+
+  // Ensure the input is a ranked tensor
+  if (!inputType) {
+    return emitOptionalError(location, "Input must be a ranked tensor.");
+  }
+
+  // Extract shape and element type of the input
+  auto inputShape = inputType.getShape();
+  auto elementType = inputType.getElementType();
+
+  // Extract and validate the axis
+  auto axis = adaptor.getAxis();
+
+  // Handle negative axis values (convert to positive index)
+  if (axis < 0) {
+    axis += inputShape.size();
+  }
+
+  // Ensure the axis is valid after adjustment
+  if (axis < 0 || axis >= static_cast<int64_t>(inputShape.size())) {
+    char errorMessage[256];
+    snprintf(errorMessage, sizeof(errorMessage),
+             "Axis value %d is out of bounds for input tensor with rank %ld.",
+             axis, static_cast<long>(inputShape.size()));
+    return emitOptionalError(location, errorMessage);
+  }
+
+  // The output type is the same as the input type
+  inferredReturnTypes.push_back(inputType);
+  return success();
+}
+
 // element wise Op verify
 
 bool verifyBroadcastCompatibility(TensorType lhsTensor, TensorType rhsTensor) {
@@ -346,6 +383,128 @@ LogicalResult mix::MatMulOp::inferReturnTypes(
   SmallVector<int64_t> resultShape{lhsShape[0], rhsShape[1]};
   auto resultType = RankedTensorType::get(resultShape, elementTy);
   inferredReturnTypes.push_back(resultType);
+  return success();
+}
+
+LogicalResult mix::BatchMatMulOp::verify() {
+  auto lhs = this->getLhs();
+  auto rhs = this->getRhs();
+  auto lhsType = lhs.getType().cast<RankedTensorType>();
+  auto rhsType = rhs.getType().cast<RankedTensorType>();
+
+  // Ensure both tensors are ranked
+  if (!lhsType || !rhsType) {
+    this->emitOpError() << "Both inputs must be ranked tensors.";
+    return failure();
+  }
+
+  auto lhsShape = lhsType.getShape();
+  auto rhsShape = rhsType.getShape();
+  auto lhsRank = lhsShape.size();
+  auto rhsRank = rhsShape.size();
+
+  // Ensure both tensors have the same rank
+  if (lhsRank != rhsRank) {
+    this->emitOpError()
+        << "Input tensors must have the same rank, got lhs rank " << lhsRank
+        << " and rhs rank " << rhsRank << ".";
+    return failure();
+  }
+
+  // Ensure the rank is at least 3 (batch dimension + 2D matrices)
+  if (lhsRank < 3) {
+    this->emitOpError()
+        << "Inputs must have rank >= 3 for batch matrix multiplication.";
+    return failure();
+  }
+
+  // Ensure element types match
+  auto lhsElemTy = lhsType.getElementType();
+  auto rhsElemTy = rhsType.getElementType();
+  if (lhsElemTy != rhsElemTy) {
+    this->emitOpError()
+        << "Element types of inputs must match, got lhs element type "
+        << lhsElemTy << " and rhs element type " << rhsElemTy << ".";
+    return failure();
+  }
+
+  // Check matrix multiplication dimensions
+  for (int64_t i = 0; i < lhsRank - 2; ++i) {
+    if (lhsShape[i] != rhsShape[i] && lhsShape[i] != ShapedType::kDynamic &&
+        rhsShape[i] != ShapedType::kDynamic) {
+      this->emitOpError()
+          << "Batch dimensions must match for inputs, mismatch at dimension "
+          << i << ".";
+      return failure();
+    }
+  }
+
+  // Check the inner matrix dimensions
+  if (lhsShape[lhsRank - 1] != rhsShape[rhsRank - 2] &&
+      lhsShape[lhsRank - 1] != ShapedType::kDynamic &&
+      rhsShape[rhsRank - 2] != ShapedType::kDynamic) {
+    this->emitOpError()
+        << "Inner dimensions of inputs do not match for matrix multiplication, "
+        << "got lhs inner dimension " << lhsShape[lhsRank - 1]
+        << " and rhs inner dimension " << rhsShape[rhsRank - 2] << ".";
+    return failure();
+  }
+
+  return success();
+}
+
+LogicalResult mix::BatchMatMulOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    BatchMatMulOp::Adaptor adaptor,
+    SmallVectorImpl<Type> &inferredReturnTypes) {
+  // Extract the input tensor types
+  auto lhsTy = adaptor.getLhs().getType().dyn_cast<RankedTensorType>();
+  auto rhsTy = adaptor.getRhs().getType().dyn_cast<RankedTensorType>();
+
+  // Ensure both inputs are ranked tensors
+  if (!lhsTy || !rhsTy) {
+    return emitOptionalError(location, "Both inputs must be ranked tensors.");
+  }
+
+  // Extract shapes and element types
+  auto lhsShape = lhsTy.getShape();
+  auto rhsShape = rhsTy.getShape();
+  auto elementTy = lhsTy.getElementType();
+
+  // Ensure ranks match
+  if (lhsShape.size() != rhsShape.size()) {
+
+    return emitOptionalError(location,
+                             "Input tensors must have the same rank.");
+  }
+
+  // Compute result shape
+  SmallVector<int64_t> resultShape;
+  auto rank = lhsShape.size();
+
+  // Batch dimensions
+  for (int64_t i = 0; i < rank - 2; ++i) {
+    if (lhsShape[i] == rhsShape[i] || lhsShape[i] == ShapedType::kDynamic ||
+        rhsShape[i] == ShapedType::kDynamic) {
+      resultShape.push_back(lhsShape[i] == rhsShape[i] ? lhsShape[i]
+                                                       : ShapedType::kDynamic);
+    } else {
+
+      return emitOptionalError(location,
+                               "Mismatch in batch dimensions at index %ld : "
+                               "lhs has %ld, rhs has %ld.",
+                               i, lhsShape[i], rhsShape[i]);
+    }
+  }
+
+  // Matrix multiplication dimensions
+  resultShape.push_back(lhsShape[rank - 2]);
+  resultShape.push_back(rhsShape[rank - 1]);
+
+  // Create result type
+  auto resultType = RankedTensorType::get(resultShape, elementTy);
+  inferredReturnTypes.push_back(resultType);
+
   return success();
 }
 
@@ -903,6 +1062,132 @@ LogicalResult mix::PermuteOp::inferReturnTypes(
   }
 
   // Create output tensor type with permuted shape and same element type
+  auto resultType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(resultType);
+
+  return success();
+}
+
+LogicalResult mix::TransposeOp::verify() {
+  // Get the input tensor
+  auto input = getInput();
+  if (!input) {
+    return emitOpError("requires an input tensor");
+  }
+
+  // Check if input is a ranked tensor
+  auto inputType = dyn_cast<RankedTensorType>(input.getType());
+  if (!inputType) {
+    return emitOpError("input must be a ranked tensor");
+  }
+
+  // Get dimensions to transpose
+  int64_t dim1 = getDim1();
+  int64_t dim2 = getDim2();
+
+  // Verify that dimensions are within bounds
+  int64_t rank = inputType.getRank();
+  if (dim1 < 0 || dim1 >= rank || dim2 < 0 || dim2 >= rank) {
+    return emitOpError("dimensions to transpose (")
+           << dim1 << ", " << dim2 << ") must be within the rank (" << rank
+           << ")";
+  }
+
+  return success();
+}
+
+LogicalResult mix::TransposeOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    TransposeOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  // Get the input tensor type
+  auto inputType = dyn_cast<RankedTensorType>(adaptor.getInput().getType());
+  if (!inputType) {
+    return emitOptionalError(location, "input must be a ranked tensor");
+  }
+
+  // Get dimensions to transpose
+  int64_t dim1 = adaptor.getDim1();
+  int64_t dim2 = adaptor.getDim2();
+
+  // Verify that dimensions are within bounds
+  int64_t rank = inputType.getRank();
+  if (dim1 < 0 || dim1 >= rank || dim2 < 0 || dim2 >= rank) {
+    return emitOptionalError(location, "dimensions to transpose (%dim1, %dim2) "
+                                       "must be within the rank (%rank)");
+  }
+
+  // Generate the output shape
+  SmallVector<int64_t> outputShape(inputType.getShape().begin(),
+                                   inputType.getShape().end());
+  std::swap(outputShape[dim1], outputShape[dim2]);
+
+  // Create output tensor type
+  auto resultType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(resultType);
+
+  return success();
+}
+
+LogicalResult mix::UnsqueezeOp::verify() {
+  // Get the input tensor
+  auto input = getInput();
+  if (!input) {
+    return emitOpError("requires an input tensor");
+  }
+
+  // Check if input is a ranked tensor
+  auto inputType = dyn_cast<RankedTensorType>(input.getType());
+  if (!inputType) {
+    return emitOpError("input must be a ranked tensor");
+  }
+
+  // Get the axis
+  int64_t axis = getAxis();
+
+  // Verify that the axis is within the bounds of the new rank
+  int64_t rank = inputType.getRank();
+  if (axis < 0 || axis > rank) {
+    return emitOpError("axis (")
+           << axis << ") must be within [0, " << rank << "]";
+  }
+
+  return success();
+}
+
+LogicalResult mix::UnsqueezeOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    UnsqueezeOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  // Get the input tensor type
+  auto inputType = dyn_cast<RankedTensorType>(adaptor.getInput().getType());
+  if (!inputType) {
+    return emitOptionalError(location, "input must be a ranked tensor");
+  }
+
+  // Get the axis
+  int64_t axis = adaptor.getAxis();
+
+  // Verify that the axis is within the bounds of the new rank
+  int64_t rank = inputType.getRank();
+  if (axis < 0 || axis > rank) {
+    return emitOptionalError(location, "axis (%d) must be within [0, rank]",
+                             axis);
+  }
+
+  // Generate the output shape
+  SmallVector<int64_t> outputShape;
+  outputShape.reserve(rank + 1);
+
+  for (int64_t i = 0; i < rank + 1; ++i) {
+    if (i == axis) {
+      outputShape.push_back(1); // Insert the unsqueezed dimension
+    } else {
+      outputShape.push_back(inputType.getShape()[i - (i > axis ? 1 : 0)]);
+    }
+  }
+
+  // Create output tensor type
   auto resultType =
       RankedTensorType::get(outputShape, inputType.getElementType());
   inferredReturnTypes.push_back(resultType);

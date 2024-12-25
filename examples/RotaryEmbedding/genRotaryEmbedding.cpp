@@ -40,6 +40,7 @@ using namespace mlir;
 std::unique_ptr<Pass> createLowerModulePass();
 std::unique_ptr<Pass> createLowerCompositePass();
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
+const int seq_len = 40;
 
 ArrayAttr createIntArrayAttr(MLIRContext &context,
                              const std::vector<int64_t> &values) {
@@ -63,7 +64,6 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   auto head_dim = hidden_size / n_head;
   auto key_value_projection_size = hidden_size * 2;
   auto key_value_projection_head_dim = key_value_projection_size / n_head;
-  auto seq_len = 8192;
 
   /* 定义一些可重用的信息 */
 
@@ -79,6 +79,13 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   auto type_dense_weight =
       RankedTensorType::get({hidden_size, hidden_size}, type_f32);
   auto type_dense_bias = RankedTensorType::get({hidden_size}, type_f32);
+
+  // attrs:
+  auto attr_i32_n1 = IntegerAttr::get(IntegerType::get(&context, 32), -1);
+  auto attr_i32_0 = IntegerAttr::get(IntegerType::get(&context, 32), 0);
+  auto attr_i32_1 = IntegerAttr::get(IntegerType::get(&context, 32), 1);
+  auto attr_i32_2 = IntegerAttr::get(IntegerType::get(&context, 32), 2);
+  auto attr_i32_3 = IntegerAttr::get(IntegerType::get(&context, 32), 3);
 
   /* 定义算子 */
 
@@ -121,25 +128,24 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   auto mul116 = builder.create<mix::MulOp>(loc, constant114, reciprocal112);
 
   // line 123: torch.aten.arange
-  SmallVector<float> tmp123(8192);
-  for (int i = 0; i < 8192; i++) {
+  SmallVector<float> tmp123(seq_len);
+  for (int i = 0; i < seq_len; i++) {
     tmp123[i] = i;
   }
   auto dense123 = DenseElementsAttr::get(
-      RankedTensorType::get({8192}, type_f32), ArrayRef<float>(tmp123));
+      RankedTensorType::get({seq_len}, type_f32), ArrayRef<float>(tmp123));
   auto constant123 = builder.create<mix::ConstantOp>(loc, dense123);
 
   // line 126: torch.aten.unsqueeze
-  auto unsqueeze126 = builder.create<mix::ReshapeOp>(
-      loc, constant123, createIntArrayAttr(context, {8192, 1}));
+  auto unsqueeze126 =
+      builder.create<mix::UnsqueezeOp>(loc, constant123, attr_i32_1);
 
   // line 131: torch.aten.permute
   auto permute131 = builder.create<mix::PermuteOp>(
       loc, unsqueeze126, createIntArrayAttr(context, {0, 1}));
 
   // line 134: torch.aten.unsqueeze
-  auto unsqueeze134 = builder.create<mix::ReshapeOp>(
-      loc, mul116, createIntArrayAttr(context, {80, 1}));
+  auto unsqueeze134 = builder.create<mix::UnsqueezeOp>(loc, mul116, attr_i32_1);
 
   // line 139: torch.aten.permute
   auto permute139 = builder.create<mix::PermuteOp>(
@@ -160,8 +166,8 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   auto slice148 = builder.create<mix::SliceOp>(loc, cos147, 0, 0, INT32_MAX, 1);
 
   // line 156: torch.aten.unsqueeze
-  auto unsqueeze156 = builder.create<mix::ReshapeOp>(
-      loc, slice148, createIntArrayAttr(context, {8192, 1, 160}));
+  auto unsqueeze156 =
+      builder.create<mix::UnsqueezeOp>(loc, slice148, attr_i32_1);
 
   // line 162: torch.aten.slice.Tensor
   auto slice162 =
@@ -181,8 +187,8 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   auto slice174 = builder.create<mix::SliceOp>(loc, sin168, 0, 0, INT32_MAX, 1);
 
   // line 177: torch.aten.unsqueeze
-  auto unsqueeze177 = builder.create<mix::ReshapeOp>(
-      loc, slice174, createIntArrayAttr(context, {8192, 1, 160}));
+  auto unsqueeze177 =
+      builder.create<mix::UnsqueezeOp>(loc, slice174, attr_i32_1);
 
   // line 183: torch.aten.slice.Tensor
   auto slice183 =
