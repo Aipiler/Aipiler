@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.20)
 
 if(POLICY CMP0077)
   cmake_policy(SET CMP0077 NEW)
@@ -46,4 +46,4 @@ add_subdirectory(midend)
 add_subdirectory(tools)
 add_subdirectory(examples)
 # add_subdirectory(runtime)
-
+add_subdirectory(thirdparty/pybind11)
