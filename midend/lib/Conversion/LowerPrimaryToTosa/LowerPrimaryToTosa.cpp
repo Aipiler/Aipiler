@@ -6,6 +6,7 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -223,7 +224,6 @@ public:
         loc, lhs, rewriter.getDenseI64ArrayAttr(newLhsShape));
     auto newRhs = rewriter.create<tosa::ReshapeOp>(
         loc, rhs, rewriter.getDenseI64ArrayAttr(newRhsShape));
-
     auto matmul0 =
         rewriter.create<tosa::MatMulOp>(loc, newResType, newLhs, newRhs);
     auto res = rewriter.create<tosa::ReshapeOp>(
@@ -419,7 +419,7 @@ public:
     Value newop;
     if (!resultTensorType) {
       // TODO
-      return op.emitOpError() << "Not support scale pow now.";
+      return op.emitOpError() << "Not support scale tanh now.";
     } else {
       newop = rewriter.create<tosa::TanhOp>(loc, resultTensorType, input);
     }
@@ -440,6 +440,18 @@ public:
     return success();
   }
 };
+
+class GatherLoweringPattern : public OpRewritePattern<mix::GatherOp> {
+public:
+  using OpRewritePattern<mix::GatherOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::GatherOp op,
+                                PatternRewriter &rewriter) const override {
+    auto gather0 = rewriter.create<tosa::GatherOp>(
+        op->getLoc(), op.getType(), op.getValues(), op.getIndices());
+    rewriter.replaceOp(op, gather0);
+    return success();
+  }
+};
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
@@ -448,7 +460,8 @@ void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
                ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
                ReshapeLoweringPattern, RsqrtSumLoweringPattern,
                WeightOpLoweringPattern, TanhOpLoweringPattern,
-               ConstantLoweringPattern>(patterns.getContext());
+               ConstantLoweringPattern, GatherLoweringPattern>(
+      patterns.getContext());
 }
 
 namespace {
@@ -480,10 +493,10 @@ void LowerPrimaryToTosaPass::runOnOperation() {
                          mix::MIXDialect, tosa::TosaDialect,
                          tensor::TensorDialect,
                          bufferization::BufferizationDialect>();
-  target.addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
-                      mix::MatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp,
-                      mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp,
-                      mix::WeightOp, mix::TanhOp, mix::ConstantOp>();
+  target.addIllegalOp<
+      mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp, mix::MatMulOp, mix::NegOp,
+      mix::ExpOp, mix::PowOp, mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp,
+      mix::WeightOp, mix::TanhOp, mix::ConstantOp, mix::GatherOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);

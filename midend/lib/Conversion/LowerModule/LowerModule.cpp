@@ -75,6 +75,66 @@ public:
   }
 };
 
+class EmbeddingLoweringPattern : public OpRewritePattern<mix::EmbeddingOp> {
+public:
+  using OpRewritePattern<mix::EmbeddingOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::EmbeddingOp op,
+                                PatternRewriter &rewriter) const override {
+    auto input = op.getInput();
+    auto inputType = input.getType();
+    auto loc = op.getLoc();
+    auto num_embeddings = op.getNumEmbeddings();
+    auto embedding_dim = op.getEmbeddingDim();
+    auto opt_pad_idx = op.getPaddingIdx();
+    auto opt_max_norm = op.getMaxNorm();
+    auto dtypeAttr = op.getDtype();
+    Type dtype =
+        dtypeAttr.has_value() ? dtypeAttr.value() : rewriter.getF32Type();
+    std::string params_loc(op.getParamsLoc());
+    auto weight_loc = params_loc + ".weight";
+    // load weight
+    SmallVector<int64_t> weightShape{1, num_embeddings, embedding_dim};
+    auto weightType = RankedTensorType::get(weightShape, dtype);
+    Value weight = rewriter.create<mix::WeightOp>(loc, weightType, weight_loc);
+    // process weight
+    if (opt_pad_idx.has_value()) {
+      auto pad_idx = opt_pad_idx.value();
+      std::vector<float> mask_data(num_embeddings, 1.0f);
+      mask_data[pad_idx] = 0.0f;
+      SmallVector<int64_t> mask_shape{num_embeddings, 1};
+      auto mask_type = RankedTensorType::get(mask_shape, rewriter.getF32Type());
+      auto mask = rewriter.create<mix::ConstantOp>(
+          loc, DenseElementsAttr::get(mask_type, ArrayRef<float>(mask_data)));
+      weight = rewriter.create<mix::MulOp>(loc, weight, mask);
+    }
+    // TODO: process max_norm
+    if (opt_max_norm.has_value()) {
+      auto max_norm = opt_max_norm.value().convertToFloat();
+      return op.emitOpError("max_norm is unsupport now");
+    }
+
+    auto inputShape = input.getType().getShape();
+    int64_t inputCount = 1;
+    for (auto dimSize : inputShape) {
+      inputCount *= dimSize;
+    }
+    auto reshape0 = rewriter.create<mix::ReshapeOp>(
+        loc, input, rewriter.getI64ArrayAttr({1, inputCount}));
+    auto inputElementType = inputType.getElementType();
+    auto integerElementTy = dyn_cast<IntegerType>(inputElementType);
+    Value gatherIndices = reshape0;
+    if (!integerElementTy || inputElementType.getIntOrFloatBitWidth() != 32) {
+      auto newType = RankedTensorType::get(inputShape, rewriter.getI32Type());
+      gatherIndices = rewriter.create<mix::ConvertOp>(loc, reshape0, newType);
+    }
+    auto gather0 = rewriter.create<mix::GatherOp>(loc, weight, gatherIndices);
+    auto output = rewriter.create<mix::ReshapeOp>(
+        loc, gather0, rewriter.getI64ArrayAttr(op.getType().getShape()));
+    rewriter.replaceOp(op, output);
+    return success();
+  }
+};
+
 class SelfAttentionLoweringPattern
     : public OpRewritePattern<mix::SelfAttentionOp> {
 public:
@@ -107,7 +167,8 @@ public:
 } // namespace
 
 void populateLowerModulePatterns(RewritePatternSet &patterns) {
-  patterns.add<LinearLoweringPattern>(patterns.getContext());
+  patterns.add<LinearLoweringPattern, EmbeddingLoweringPattern>(
+      patterns.getContext());
 }
 
 namespace {
@@ -140,7 +201,7 @@ void LowerModulePass::runOnOperation() {
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect, memref::MemRefDialect,
                          bufferization::BufferizationDialect>();
-  target.addIllegalOp<mix::LinearOp, mix::RMSNormOp>(); //
+  target.addIllegalOp<mix::LinearOp, mix::EmbeddingOp>(); //
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerModulePatterns(patterns);

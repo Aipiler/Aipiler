@@ -291,7 +291,7 @@ def MaskedFillOp : MIX_Op<"comp.masked_fill", [Pure, InferTypeOpAdaptor]> {
 
   let results = (outs mixTensor:$output);  // 输出张量
 
-  let hasVerifier = 1;  // 添加验证器支持
+  let hasVerifier = 1;
 }
 
 def MatMulOp : MIX_Op<"prim.matmul", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
@@ -510,7 +510,32 @@ def ConstantOp : MIX_Op<"prim.constant", [Pure, ConstantLike, AllTypesMatch<["va
     );
 }
 
-def GetItem : MIX_Op<"comp.getitem", [Pure, InferTypeOpAdaptor]> {
+def ConvertOp : MIX_Op<"prim.convert",
+    [Pure, SameOperandsAndResultShape, InferTypeOpAdaptor]> { 
+  let summary = "Convert operation";
+  let description = [{
+    Performs an element-wise conversion from one element type to another on
+    `operand` tensor and produces a `result` tensor.
+
+    Example:
+    ```mlir
+    %result = prim.convert %operand : (tensor<3xi64>) -> tensor<3xcomplex<f64>>
+    ```
+  }];
+  let arguments = (ins
+      mixData: $value,
+      TypeAttr: $element_ty
+  );
+  let results = (outs
+      mixData: $output
+  );
+//   let builders = [
+//     OpBuilder<(ins "mlir::Value": $value, "mlir::Type": $element_ty), [{
+//         return build($_builder, $_state, value, mlir::TypeAttr::get(element_ty));
+//     }]>
+//   ];
+}
+def GetItemOp : MIX_Op<"comp.getitem", [Pure, InferTypeOpAdaptor]> {
     let summary = "GetItem";
     let description = [{
         Get item from tensor
@@ -531,12 +556,11 @@ def GatherOp : MIX_Op<"prim.gather", [Pure, InferTypeOpAdaptor]> {
     }];
     let arguments = (ins
         mixTensor: $values,
-        mixTensor: $indices
+        RankedTensorOf<[I32]>: $indices
     );
     let results = (outs
         mixTensor: $output
     );
-    let hasVerifier = 1;
 }
 
 

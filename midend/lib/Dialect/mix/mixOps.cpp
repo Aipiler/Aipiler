@@ -5,6 +5,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
@@ -64,6 +65,64 @@ LogicalResult mix::RsqrtOp::inferReturnTypes(
     RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
   inferredReturnTypes.push_back(operands[0].getType());
   return success();
+}
+
+LogicalResult mix::ConvertOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    ConvertOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  // 获取输入类型
+  auto inputType = adaptor.getValue().getType();
+
+  // 获取目标元素类型
+  auto elementType = adaptor.getElementTyAttr().getValue();
+  if (!mlir::isa<Type>(elementType)) {
+    return emitOptionalError(location,
+                             "element_ty attribute must be a valid type");
+  }
+
+  // 处理 RankedTensorType 输入
+  if (auto rankedTensorType = dyn_cast<RankedTensorType>(inputType)) {
+    // 使用输入张量的形状，创建新的类型
+    auto resultType =
+        RankedTensorType::get(rankedTensorType.getShape(), elementType);
+    inferredReturnTypes.push_back(resultType);
+    return success();
+  }
+
+  // 处理 UnrankedTensorType 输入
+  if (auto unrankedTensorType = dyn_cast<UnrankedTensorType>(inputType)) {
+    // 仅替换元素类型，不关心形状
+    auto resultType = UnrankedTensorType::get(elementType);
+    inferredReturnTypes.push_back(resultType);
+    return success();
+  }
+
+  // 处理其他类型（例如标量类型）
+  if (mlir::isa<ShapedType>(inputType)) {
+    auto shapedType = mlir::cast<ShapedType>(inputType);
+    if (shapedType.hasRank()) {
+      // 如果有 rank，但未显式定义为 RankedTensorType
+      auto resultType =
+          RankedTensorType::get(shapedType.getShape(), elementType);
+      inferredReturnTypes.push_back(resultType);
+      return success();
+    } else {
+      // 如果没有 rank
+      auto resultType = UnrankedTensorType::get(elementType);
+      inferredReturnTypes.push_back(resultType);
+      return success();
+    }
+  }
+
+  // 如果输入是标量类型
+  if (inputType.isa<TensorType>() || inputType.isa<Type>()) {
+    inferredReturnTypes.push_back(inputType);
+    return success();
+  }
+
+  // 如果输入是无法识别的类型
+  return emitOptionalError(location,
+                           "unsupported input type for ConvertOp: ", inputType);
 }
 
 // element wise Op verify
@@ -356,21 +415,45 @@ LogicalResult mix::ReshapeOp::verify() {
 
   // Calculate total elements in target shape
   int64_t outputElements = 1;
-  for (auto dimAttr : targetShape) {
-    auto dimIAttr = dyn_cast<IntegerAttr>(dimAttr);
-    auto dim = dimIAttr.getInt();
-    if (dim == ShapedType::kDynamic) {
-      // If target shape has dynamic dimensions, skip element count verification
-      return success();
+  int64_t dynamicIndex = -1; // Track the index of the -1 dimension (if any)
+  for (int64_t i = 0; i < targetShape.size(); ++i) {
+    auto dimAttr = targetShape[i].dyn_cast<IntegerAttr>();
+    if (!dimAttr) {
+      return emitOpError("target shape must contain only integer attributes");
     }
-    if (dim < 0) {
-      return emitOpError("target shape dimensions must be non-negative");
+
+    auto dim = dimAttr.getInt();
+    if (dim == -1) {
+      if (dynamicIndex != -1) {
+        // More than one -1 is invalid
+        return emitOpError(
+            "target shape can have at most one dynamic dimension (-1)");
+      }
+      dynamicIndex = i; // Record the index of the -1
+    } else if (dim < 0) {
+      return emitOpError("target shape dimensions must be non-negative or -1");
+    } else {
+      outputElements *= dim;
     }
-    outputElements *= dim;
   }
 
-  // Verify that input and output element counts match
-  if (inputElements != outputElements) {
+  // If there is a -1, calculate its value
+  if (dynamicIndex != -1) {
+    if (inputElements % outputElements != 0) {
+      return emitOpError("input elements (")
+             << inputElements
+             << ") cannot be evenly divided by the fixed dimensions ("
+             << outputElements << ")";
+    }
+
+    // Replace -1 with the inferred dimension size
+    int64_t inferredDim = inputElements / outputElements;
+    if (inferredDim <= 0) {
+      return emitOpError("inferred dimension size must be positive, got ")
+             << inferredDim;
+    }
+  } else if (inputElements != outputElements) {
+    // If no -1 exists, verify that the element counts match
     return emitOpError("number of input elements (")
            << inputElements << ") does not match output elements ("
            << outputElements << ")";
@@ -393,11 +476,64 @@ LogicalResult mix::ReshapeOp::inferReturnTypes(
   auto targetShape = adaptor.getShape();
 
   SmallVector<int64_t> outputShape;
-  for (auto dimAttr : targetShape.getValue()) {
-    auto dimIAttr = mlir::dyn_cast<IntegerAttr>(dimAttr);
-    outputShape.push_back(dimIAttr.getInt());
+  int64_t inputElements = 1;
+  for (auto dim : inputType.getShape()) {
+    if (dim != ShapedType::kDynamic) {
+      inputElements *= dim;
+    }
   }
-  // Create output tensor type with target shape and same element type
+
+  int64_t outputElements = 1;
+  int64_t dynamicIndex = -1;
+
+  // Build the output shape and calculate inferred dimension
+  for (size_t i = 0; i < targetShape.size(); ++i) {
+    auto dimAttr = targetShape[i].dyn_cast<IntegerAttr>();
+    if (!dimAttr) {
+      return emitOptionalError(
+          location, "target shape must contain only integer attributes");
+    }
+
+    int64_t dim = dimAttr.getInt();
+    if (dim == -1) {
+      if (dynamicIndex != -1) {
+        return emitOptionalError(
+            location,
+            "target shape can have at most one dynamic dimension (-1)");
+      }
+      dynamicIndex = i;
+      outputShape.push_back(ShapedType::kDynamic);
+    } else {
+      outputShape.push_back(dim);
+      if (dim > 0) {
+        outputElements *= dim;
+      }
+    }
+  }
+
+  // Infer the dynamic dimension size if -1 exists
+  if (dynamicIndex != -1) {
+    if (outputElements == 0 || inputElements % outputElements != 0) {
+      char errorMessage[256];
+      snprintf(errorMessage, sizeof(errorMessage),
+               "input elements (%ld) cannot be evenly divided by the fixed "
+               "dimensions (%ld)",
+               inputElements, outputElements);
+      return emitOptionalError(location, errorMessage);
+    }
+
+    int64_t inferredDim = inputElements / outputElements;
+    if (inferredDim <= 0) {
+      char errorMessage[256];
+      snprintf(errorMessage, sizeof(errorMessage),
+               "inferred dimension size must be positive, got %ld",
+               inferredDim);
+      return emitOptionalError(location, errorMessage);
+    }
+    outputShape[dynamicIndex] = inferredDim;
+  }
+
+  // Create output tensor type with inferred shape
   auto resultType =
       RankedTensorType::get(outputShape, inputType.getElementType());
   inferredReturnTypes.push_back(resultType);
@@ -844,20 +980,22 @@ LogicalResult mix::EmbeddingOp::inferReturnTypes(
     EmbeddingOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
 
   auto input = adaptor.getInput();
+  auto opt_dtype = adaptor.getDtype();
+  auto dtype = opt_dtype.has_value() ? opt_dtype.value()
+                                     : mlir::FloatType::getF32(context);
   auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
   auto shape = inputType.getShape();
   auto embeddingdim = adaptor.getEmbeddingDim();
   SmallVector<int64_t> outputShape(shape);
   outputShape.push_back(embeddingdim);
-  auto returnType =
-      RankedTensorType::get(outputShape, inputType.getElementType());
+  auto returnType = RankedTensorType::get(outputShape, dtype);
   inferredReturnTypes.push_back(returnType);
   return success();
 }
 
-LogicalResult mix::GetItem::inferReturnTypes(
+LogicalResult mix::GetItemOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> location,
-    GetItem::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+    GetItemOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
   auto value = adaptor.getValue();
   auto valueType = mlir::dyn_cast<RankedTensorType>(value.getType());
   auto valueElementType = valueType.getElementType();
@@ -875,6 +1013,22 @@ LogicalResult mix::GetItem::inferReturnTypes(
     returnType = RankedTensorType::get(outputShape, valueElementType);
   }
   inferredReturnTypes.push_back(returnType);
+  return success();
+}
+
+LogicalResult mix::GatherOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    GatherOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto indices = adaptor.getIndices();
+  auto indicesType = mlir::dyn_cast<RankedTensorType>(indices.getType());
+  SmallVector<int64_t> indicesShape(indicesType.getShape());
+  auto value = adaptor.getValues();
+  auto valueType = mlir::dyn_cast<RankedTensorType>(value.getType());
+  auto embeddingDim = valueType.getShape().back();
+  indicesShape.push_back(embeddingDim);
+  auto retType =
+      RankedTensorType::get(indicesShape, valueType.getElementType());
+  inferredReturnTypes.push_back(retType);
   return success();
 }
 
