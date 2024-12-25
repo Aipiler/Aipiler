@@ -140,7 +140,7 @@ void LowerModulePass::runOnOperation() {
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect, memref::MemRefDialect,
                          bufferization::BufferizationDialect>();
-  target.addIllegalOp<mix::LinearOp, mix::RMSNormOp>(); //
+  target.addIllegalOp<mix::LinearOp>(); //
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerModulePatterns(patterns);

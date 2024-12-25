@@ -919,14 +919,6 @@ LogicalResult mix::ReduceSumOp::inferReturnTypes(
   return success();
 }
 
-LogicalResult mix::GeluOp::inferReturnTypes(
-    MLIRContext *context, std::optional<Location> location,
-    GeluOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
-  auto inputType = adaptor.getInput().getType();
-  inferredReturnTypes.push_back(inputType);
-  return success();
-}
-
 LogicalResult mix::TanhOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> location,
     TanhOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {

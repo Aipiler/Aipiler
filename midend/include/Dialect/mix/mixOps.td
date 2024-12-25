@@ -17,48 +17,6 @@ include "mixTypes.td"
 
 // 组合算子
 
-def MLPOp : MIX_Op<"module.mlp"> {
-    let summary = "MultiLayerPerceptron";
-    let description = [{
-        Multi Layer Perceptron.
-    }];
-    let arguments = (ins 
-        mixTensor: $hidden_states,
-        mixTensor: $residual
-    );
-    let results = (outs
-        mixTensor: $output
-    );
-}
-
-def RMSNormOp : MIX_Op<"module.rmsnorm"> {
-    let summary = "MixedFusedRMSNorm";
-    let description = [{
-        Mixed Fused RMSNorm.
-    }];
-    let arguments = (ins 
-        mixTensor: $hidden_states,
-        I64Attr: $hidden_size,
-        F64Attr: $eps
-    );
-    let results = (outs
-        mixTensor: $output
-    );
-}
-
-def GeluOp : MIX_Op<"module.gelu", [Pure, InferTypeOpAdaptor]> {
-    let summary = "Gelu Op";
-    let description = [{
-        Gelu Op
-    }];
-    let arguments = (ins
-        mixTensor: $input
-    );
-    let results = (outs
-        mixTensor: $output
-    );
-}
-
 def LinearOp : MIX_Op<"module.linear", [Pure, InferTypeOpAdaptor]> {
     let summary = "Linear";
     let description = [{
@@ -309,7 +267,7 @@ def MatMulOp : MIX_Op<"prim.matmul", [Pure, DeclareOpInterfaceMethods<InferTypeO
     let hasVerifier = 1;
 }
 
-def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
+def BatchMatMulOp : MIX_Op<"prim.batch_matmul", [Pure]> {
     let summary = "Batch matrix multiplication of tensors";
     let description = [{
         Performs batch matrix multiplication on the input tensors.
