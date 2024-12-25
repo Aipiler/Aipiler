@@ -5,7 +5,9 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/IntegerSet.h"
+#include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/SmallVector.h"
@@ -1273,14 +1275,55 @@ LogicalResult mix::EmbeddingOp::inferReturnTypes(
     EmbeddingOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
 
   auto input = adaptor.getInput();
+  auto opt_dtype = adaptor.getDtype();
+  auto dtype = opt_dtype.has_value() ? opt_dtype.value()
+                                     : mlir::FloatType::getF32(context);
   auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
   auto shape = inputType.getShape();
   auto embeddingdim = adaptor.getEmbeddingDim();
   SmallVector<int64_t> outputShape(shape);
   outputShape.push_back(embeddingdim);
-  auto returnType =
-      RankedTensorType::get(outputShape, inputType.getElementType());
+  auto returnType = RankedTensorType::get(outputShape, dtype);
   inferredReturnTypes.push_back(returnType);
+  return success();
+}
+
+LogicalResult mix::GetItemOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    GetItemOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto value = adaptor.getValue();
+  auto valueType = mlir::dyn_cast<RankedTensorType>(value.getType());
+  auto valueElementType = valueType.getElementType();
+  auto valueShape = valueType.getShape();
+  auto embeddingDim = valueShape.back();
+  auto indices = adaptor.getIndice();
+  auto indiceType = indices.getType();
+  Type returnType;
+  if (auto integerType = dyn_cast<IntegerType>(indiceType)) {
+    SmallVector<int64_t> outputShape;
+    outputShape.push_back(embeddingDim);
+    returnType = RankedTensorType::get(outputShape, valueElementType);
+  } else if (auto tensorType = dyn_cast<RankedTensorType>(indiceType)) {
+    SmallVector<int64_t> outputShape(valueShape);
+    returnType = RankedTensorType::get(outputShape, valueElementType);
+  }
+  inferredReturnTypes.push_back(returnType);
+  return success();
+}
+
+LogicalResult mix::GatherOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    GatherOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto indices = adaptor.getIndices();
+  auto indicesType = mlir::dyn_cast<RankedTensorType>(indices.getType());
+  SmallVector<int64_t> indicesShape(indicesType.getShape());
+  auto value = adaptor.getValues();
+  auto valueType = mlir::dyn_cast<RankedTensorType>(value.getType());
+  auto embeddingDim = valueType.getShape().back();
+  indicesShape.push_back(embeddingDim);
+  auto retType =
+      RankedTensorType::get(indicesShape, valueType.getElementType());
+  inferredReturnTypes.push_back(retType);
   return success();
 }
 

@@ -433,18 +433,31 @@ public:
     return success();
   }
 };
+
+class GatherLoweringPattern : public OpRewritePattern<mix::GatherOp> {
+public:
+  using OpRewritePattern<mix::GatherOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::GatherOp op,
+                                PatternRewriter &rewriter) const override {
+    auto gather0 = rewriter.create<tosa::GatherOp>(
+        op->getLoc(), op.getType(), op.getValues(), op.getIndices());
+    rewriter.replaceOp(op, gather0);
+    return success();
+  }
+};
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
-  patterns
-      .add<AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
-           DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
-           ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
-           ReshapeLoweringPattern, RsqrtLoweringPattern,
-           WeightOpLoweringPattern, TanhLoweringPattern, ConcatLoweringPattern,
-           ReciprocalLoweringPattern, CosLoweringPattern, SinLoweringPattern,
-           BatchMatmulLoweringPattern, ConstantLoweringPattern>(
-          patterns.getContext());
+  patterns.add<
+      AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
+      DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
+      ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
+      ReshapeLoweringPattern, RsqrtLoweringPattern, WeightOpLoweringPattern,
+      TanhLoweringPattern, ConcatLoweringPattern, ReciprocalLoweringPattern,
+      CosLoweringPattern, SinLoweringPattern, BatchMatmulLoweringPattern,
+      ConstantLoweringPattern, GatherLoweringPattern>(
+
+      patterns.getContext());
 }
 
 namespace {
@@ -481,7 +494,7 @@ void LowerPrimaryToTosaPass::runOnOperation() {
                     mix::MatMulOp, mix::BatchMatMulOp, mix::NegOp, mix::ExpOp,
                     mix::PowOp, mix::ConcatOp, mix::ReduceSumOp, mix::ReshapeOp,
                     mix::RsqrtOp, mix::WeightOp, mix::TanhOp, mix::ConstantOp,
-                    mix::ReciprocalOp, mix::CosOp, mix::SinOp>();
+                    mix::ReciprocalOp, mix::CosOp, mix::SinOp, mix::GatherOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);

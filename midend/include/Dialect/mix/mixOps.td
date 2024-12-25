@@ -294,7 +294,7 @@ def MatMulOp : MIX_Op<"prim.matmul", [Pure, DeclareOpInterfaceMethods<InferTypeO
     let hasVerifier = 1;
 }
 
-def BatchMatMulOp : MIX_Op<"prim.batch_matmul", [Pure]> {
+def BatchMatMulOp : MIX_Op<"prim.batch_matmul", [Pure, InferTypeOpAdaptor]> {
     let summary = "Batch matrix multiplication of tensors";
     let description = [{
         Performs batch matrix multiplication on the input tensors.
@@ -514,8 +514,39 @@ def ConvertOp : MIX_Op<"prim.convert",
   let results = (outs
       mixData: $output
   );
+//   let builders = [
+//     OpBuilder<(ins "mlir::Value": $value, "mlir::Type": $element_ty), [{
+//         return build($_builder, $_state, value, mlir::TypeAttr::get(element_ty));
+//     }]>
+//   ];
+}
+def GetItemOp : MIX_Op<"comp.getitem", [Pure, InferTypeOpAdaptor]> {
+    let summary = "GetItem";
+    let description = [{
+        Get item from tensor
+    }];
+    let arguments = (ins
+        mixTensor: $value,
+        AnyTypeOf<[mixTensor, mixInt]>: $indice
+    );
+    let results = (outs
+        mixTensor: $output
+    );
 }
 
+def GatherOp : MIX_Op<"prim.gather", [Pure, InferTypeOpAdaptor]> {
+    let summary = "Gather";
+    let description = [{
+        gather op.
+    }];
+    let arguments = (ins
+        mixTensor: $values,
+        RankedTensorOf<[I32]>: $indices
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+}
 
 
 #endif // MIX_OPS_TD
