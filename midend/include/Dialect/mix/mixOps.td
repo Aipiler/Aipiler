@@ -159,14 +159,14 @@ def SelfAttentionOp : MIX_Op<"module.self_attn", [Pure]> {
     );
 }
 
-def SoftmaxOp : MIX_Op<"comp.softmax", [Pure]> {
+def SoftmaxOp : MIX_Op<"comp.softmax", [Pure, InferTypeOpAdaptor]> {
     let summary = "Compute the softmax of a tensor along a specific axis";
     let description = [{
         Computes the softmax of the input tensor along the specified axis.
     }];
     let arguments = (ins
         mixTensor: $input,
-        I64Attr: $axis
+        SI32Attr: $axis
     );
     let results = (outs
         mixTensor: $output
@@ -280,6 +280,33 @@ def SliceOp : MIX_Op<"prim.slice", [Pure, InferTypeOpAdaptor]> {
   let hasVerifier = 1;
 }
 
+def TransposeOp : MIX_Op<"prim.transpose", [Pure, InferTypeOpAdaptor]> {
+  let summary = "transpose";
+  
+  let arguments = (ins 
+    mixTensor:$input,
+    I32Attr:$dim1,
+    I32Attr:$dim2
+  );
+  
+  let results = (outs mixTensor:$output);
+
+  let hasVerifier = 1;
+}
+
+def UnsqueezeOp : MIX_Op<"prim.unsqueeze", [Pure, InferTypeOpAdaptor]> {
+  let summary = "unsqueeze";
+  
+  let arguments = (ins 
+    mixTensor:$input,
+    I32Attr:$axis
+  );
+  
+  let results = (outs mixTensor:$output);
+
+  let hasVerifier = 1;
+}
+
 def MaskedFillOp : MIX_Op<"comp.masked_fill", [Pure, InferTypeOpAdaptor]> {
   let summary = "Masked Fill";
 
@@ -309,7 +336,7 @@ def MatMulOp : MIX_Op<"prim.matmul", [Pure, DeclareOpInterfaceMethods<InferTypeO
     let hasVerifier = 1;
 }
 
-def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
+def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure, InferTypeOpAdaptor]> {
     let summary = "Batch matrix multiplication of tensors";
     let description = [{
         Performs batch matrix multiplication on the input tensors.
@@ -322,7 +349,7 @@ def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
         mixTensor: $output
     );
 
-    //let hasVerifier = 1;
+    let hasVerifier = 1;
 }
 
 def ReshapeOp : MIX_Op<"prim.reshape", [Pure, InferTypeOpAdaptor]> {
