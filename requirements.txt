@@ -1,0 +1,3 @@
+torch==2.5.0
+--extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+pybind11
