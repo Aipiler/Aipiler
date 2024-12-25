@@ -17,48 +17,6 @@ include "mixTypes.td"
 
 // 组合算子
 
-def MLPOp : MIX_Op<"module.mlp"> {
-    let summary = "MultiLayerPerceptron";
-    let description = [{
-        Multi Layer Perceptron.
-    }];
-    let arguments = (ins 
-        mixTensor: $hidden_states,
-        mixTensor: $residual
-    );
-    let results = (outs
-        mixTensor: $output
-    );
-}
-
-def RMSNormOp : MIX_Op<"module.rmsnorm"> {
-    let summary = "MixedFusedRMSNorm";
-    let description = [{
-        Mixed Fused RMSNorm.
-    }];
-    let arguments = (ins 
-        mixTensor: $hidden_states,
-        I64Attr: $hidden_size,
-        F64Attr: $eps
-    );
-    let results = (outs
-        mixTensor: $output
-    );
-}
-
-def GeluOp : MIX_Op<"module.gelu", [Pure, InferTypeOpAdaptor]> {
-    let summary = "Gelu Op";
-    let description = [{
-        Gelu Op
-    }];
-    let arguments = (ins
-        mixTensor: $input
-    );
-    let results = (outs
-        mixTensor: $output
-    );
-}
-
 def LinearOp : MIX_Op<"module.linear", [Pure, InferTypeOpAdaptor]> {
     let summary = "Linear";
     let description = [{
@@ -159,14 +117,14 @@ def SelfAttentionOp : MIX_Op<"module.self_attn", [Pure]> {
     );
 }
 
-def SoftmaxOp : MIX_Op<"comp.softmax", [Pure]> {
+def SoftmaxOp : MIX_Op<"comp.softmax", [Pure, InferTypeOpAdaptor]> {
     let summary = "Compute the softmax of a tensor along a specific axis";
     let description = [{
         Computes the softmax of the input tensor along the specified axis.
     }];
     let arguments = (ins
         mixTensor: $input,
-        I64Attr: $axis
+        SI32Attr: $axis
     );
     let results = (outs
         mixTensor: $output
@@ -251,7 +209,7 @@ def DivOp : MIX_Op<"prim.div", [Pure, DeclareOpInterfaceMethods<InferTypeOpInter
     let hasVerifier = 1;
 }
 
-def ConcatOp : MIX_Op<"prim.concat", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+def ConcatOp : MIX_Op<"prim.concat", [Pure, InferTypeOpAdaptor]> {
   let summary = "Concatenate tensors along dimension";
   
   let arguments = (ins 
@@ -273,6 +231,33 @@ def SliceOp : MIX_Op<"prim.slice", [Pure, InferTypeOpAdaptor]> {
     I64Attr:$start,
     I64Attr:$end,
     I64Attr:$step
+  );
+  
+  let results = (outs mixTensor:$output);
+
+  let hasVerifier = 1;
+}
+
+def TransposeOp : MIX_Op<"prim.transpose", [Pure, InferTypeOpAdaptor]> {
+  let summary = "transpose";
+  
+  let arguments = (ins 
+    mixTensor:$input,
+    I32Attr:$dim1,
+    I32Attr:$dim2
+  );
+  
+  let results = (outs mixTensor:$output);
+
+  let hasVerifier = 1;
+}
+
+def UnsqueezeOp : MIX_Op<"prim.unsqueeze", [Pure, InferTypeOpAdaptor]> {
+  let summary = "unsqueeze";
+  
+  let arguments = (ins 
+    mixTensor:$input,
+    I32Attr:$axis
   );
   
   let results = (outs mixTensor:$output);
@@ -309,7 +294,7 @@ def MatMulOp : MIX_Op<"prim.matmul", [Pure, DeclareOpInterfaceMethods<InferTypeO
     let hasVerifier = 1;
 }
 
-def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
+def BatchMatMulOp : MIX_Op<"prim.batch_matmul", [Pure, InferTypeOpAdaptor]> {
     let summary = "Batch matrix multiplication of tensors";
     let description = [{
         Performs batch matrix multiplication on the input tensors.
@@ -322,7 +307,7 @@ def BatchMatMulOp : MIX_Op<"unknown.batch_matmul", [Pure]> {
         mixTensor: $output
     );
 
-    //let hasVerifier = 1;
+    let hasVerifier = 1;
 }
 
 def ReshapeOp : MIX_Op<"prim.reshape", [Pure, InferTypeOpAdaptor]> {
@@ -387,7 +372,7 @@ def ExpOp : MIX_Op<"prim.exp", [Pure, DeclareOpInterfaceMethods<InferTypeOpInter
     );
 }
 
-def ReciprocalOp : MIX_Op<"prim.reciprocal", [Pure]> {
+def ReciprocalOp : MIX_Op<"prim.reciprocal", [Pure, InferTypeOpAdaptor]> {
     let summary = "Element-wise reciprocal of a tensor";
     let description = [{
         Computes the element-wise reciprocal (1/x) of the input tensor.
@@ -400,7 +385,7 @@ def ReciprocalOp : MIX_Op<"prim.reciprocal", [Pure]> {
     );
 }
 
-def CosOp : MIX_Op<"prim.cos", [Pure]> {
+def CosOp : MIX_Op<"prim.cos", [Pure, InferTypeOpAdaptor]> {
     let summary = "Element-wise cosine operation";
     let description = [{
         Computes the cosine of each element in the input tensor.
@@ -413,7 +398,7 @@ def CosOp : MIX_Op<"prim.cos", [Pure]> {
     );
 }
 
-def SinOp : MIX_Op<"prim.sin", [Pure]> {
+def SinOp : MIX_Op<"prim.sin", [Pure, InferTypeOpAdaptor]> {
     let summary = "Element-wise sine operation";
     let description = [{
         Computes the sine of each element in the input tensor.

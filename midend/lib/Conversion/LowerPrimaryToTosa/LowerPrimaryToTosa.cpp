@@ -8,6 +8,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
@@ -45,30 +46,51 @@ using namespace mlir;
 
 namespace {
 
-class AddLoweringPattern : public OpRewritePattern<mix::AddOp> {
-public:
-  using OpRewritePattern<mix::AddOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::AddOp op,
+template <typename SourceOp, typename TargetOp>
+class UnaryLoweringPattern : public OpRewritePattern<SourceOp> {
+  using OpRewritePattern<SourceOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(SourceOp op,
                                 PatternRewriter &rewriter) const override {
-    auto lhs = op.getLhs();
-    auto rhs = op.getRhs();
     auto loc = op->getLoc();
-    auto lhsType = lhs.getType();
-    auto rhsType = rhs.getType();
-    auto resultType = op.getType();
-    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
+    auto input = op.getInput();
+    Type resultType = op.getType();
+    // auto resultTensorType = resultType.dyn_cast<RankedTensorType>();
     Value newop;
-    if (!resultTensorType) {
-      if (auto resIntType = dyn_cast<IntegerType>(resultType)) {
-        newop = rewriter.create<arith::AddIOp>(loc, lhs, rhs);
-      } else if (auto resFloatType = dyn_cast<FloatType>(resultType)) {
-        newop = rewriter.create<arith::AddFOp>(loc, lhs, rhs);
-      } else {
-        return op.emitOpError() << "Unexpected types.";
-      }
+    if (auto resultTensorType = resultType.dyn_cast<RankedTensorType>()) {
+      newop = rewriter.create<TargetOp>(loc, resultTensorType, input);
     } else {
-      auto lhsTensorType = dyn_cast<RankedTensorType>(lhsType);
-      auto rhsTensorType = dyn_cast<RankedTensorType>(rhsType);
+      newop = rewriter.create<TargetOp>(loc, resultType, input);
+    }
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+using NegLoweringPattern = UnaryLoweringPattern<mix::NegOp, tosa::NegateOp>;
+using ExpLoweringPattern = UnaryLoweringPattern<mix::ExpOp, tosa::ExpOp>;
+using RsqrtLoweringPattern = UnaryLoweringPattern<mix::RsqrtOp, tosa::RsqrtOp>;
+using TanhLoweringPattern = UnaryLoweringPattern<mix::TanhOp, tosa::TanhOp>;
+using ReciprocalLoweringPattern =
+    UnaryLoweringPattern<mix::ReciprocalOp, tosa::ReciprocalOp>;
+using CosLoweringPattern = UnaryLoweringPattern<mix::CosOp, tosa::CosOp>;
+using SinLoweringPattern = UnaryLoweringPattern<mix::SinOp, tosa::SinOp>;
+
+template <typename SourceOp, typename Target0Op, typename Target1OpI,
+          typename Target1OpF>
+class BinaryLoweringPattern : public OpRewritePattern<SourceOp> {
+public:
+  using OpRewritePattern<SourceOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(SourceOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op->getLoc();
+    auto lhs = op.getOperand(0);
+    auto rhs = op.getOperand(1);
+    Type lhsType = lhs.getType();
+    Type rhsType = rhs.getType();
+    Type resultType = op.getType();
+    Value newop;
+    if (auto resultTensorType = dyn_cast<RankedTensorType>(resultType)) {
+      auto lhsTensorType = lhsType.dyn_cast<RankedTensorType>();
+      auto rhsTensorType = rhsType.dyn_cast<RankedTensorType>();
       auto elemTy = resultTensorType.getElementType();
       auto tensorTy = RankedTensorType::get({1}, elemTy);
       if (!lhsTensorType) {
@@ -77,51 +99,27 @@ public:
       if (!rhsTensorType) {
         rhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, rhs);
       }
-      newop = rewriter.create<tosa::AddOp>(loc, resultTensorType, lhs, rhs);
-    }
-    rewriter.replaceOp(op, newop);
-    return success();
-  }
-};
-
-class SubLoweringPattern : public OpRewritePattern<mix::SubOp> {
-public:
-  using OpRewritePattern<mix::SubOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::SubOp op,
-                                PatternRewriter &rewriter) const override {
-    auto lhs = op.getLhs();
-    auto rhs = op.getRhs();
-    auto loc = op->getLoc();
-    auto lhsType = lhs.getType();
-    auto rhsType = rhs.getType();
-    auto resultType = op.getType();
-    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
-    Value newop;
-    if (!resultTensorType) {
+      newop = rewriter.create<Target0Op>(loc, resultTensorType, lhs, rhs);
+    } else {
       if (auto resIntType = dyn_cast<IntegerType>(resultType)) {
-        newop = rewriter.create<arith::SubIOp>(loc, lhs, rhs);
+        newop = rewriter.create<Target1OpI>(loc, lhs, rhs);
       } else if (auto resFloatType = dyn_cast<FloatType>(resultType)) {
-        newop = rewriter.create<arith::SubFOp>(loc, lhs, rhs);
+        newop = rewriter.create<Target1OpF>(loc, lhs, rhs);
       } else {
         return op.emitOpError() << "Unexpected types.";
       }
-    } else {
-      auto lhsTensorType = dyn_cast<RankedTensorType>(lhsType);
-      auto rhsTensorType = dyn_cast<RankedTensorType>(rhsType);
-      auto elemTy = resultTensorType.getElementType();
-      auto tensorTy = RankedTensorType::get({1}, elemTy);
-      if (!lhsTensorType) {
-        lhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, lhs);
-      } else if (!rhsTensorType) {
-        rhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, rhs);
-      }
-      newop = rewriter.create<tosa::SubOp>(loc, resultTensorType, lhs, rhs);
     }
     rewriter.replaceOp(op, newop);
     return success();
   }
 };
 
+using AddLoweringPattern = BinaryLoweringPattern<mix::AddOp, tosa::AddOp,
+                                                 arith::AddIOp, arith::AddFOp>;
+using SubLoweringPattern = BinaryLoweringPattern<mix::SubOp, tosa::SubOp,
+                                                 arith::SubIOp, arith::SubFOp>;
+// using MulLoweringPattern = BinaryLoweringPattern<mix::MulOp, tosa::MulOp,
+// arith::MulIOp, arith::MulFOp>;
 class MulLoweringPattern : public OpRewritePattern<mix::MulOp> {
 public:
   using OpRewritePattern<mix::MulOp>::OpRewritePattern;
@@ -233,30 +231,51 @@ public:
   }
 };
 
-class NegLoweringPattern : public OpRewritePattern<mix::NegOp> {
+class BatchMatmulLoweringPattern : public OpRewritePattern<mix::BatchMatMulOp> {
 public:
-  using OpRewritePattern<mix::NegOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::NegOp op,
+  using OpRewritePattern<mix::BatchMatMulOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::BatchMatMulOp op,
                                 PatternRewriter &rewriter) const override {
-    auto input = op.getInput();
-    auto resultType = op.getType();
-    auto loc = op->getLoc();
-    auto neg0 = rewriter.create<tosa::NegateOp>(loc, resultType, input);
-    rewriter.replaceOp(op, neg0);
-    return success();
-  }
-};
+    auto lhs = op.getLhs();
+    auto rhs = op.getRhs();
+    auto resType = op.getType();
+    auto loc = op.getLoc();
+    auto lhsType = lhs.getType();
+    auto rhsType = rhs.getType();
+    auto lhsShape = lhsType.getShape();
 
-class ExpLoweringPattern : public OpRewritePattern<mix::ExpOp> {
-public:
-  using OpRewritePattern<mix::ExpOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::ExpOp op,
-                                PatternRewriter &rewriter) const override {
-    auto input = op.getInput();
-    auto resultType = op.getType();
-    auto loc = op->getLoc();
-    auto exp0 = rewriter.create<tosa::ExpOp>(loc, resultType, input);
-    rewriter.replaceOp(op, exp0);
+    Value newop;
+    if (lhsShape.size() != 3) {
+      auto rhsShape = rhsType.getShape();
+      auto resShape = resType.getShape();
+      SmallVector<int64_t> newLhsShape;
+      SmallVector<int64_t> newRhsShape;
+      SmallVector<int64_t> newResShape;
+      switch (lhsShape.size()) {
+      case 1:
+        newLhsShape = {1, 1, lhsShape[1]};
+        newRhsShape = {1, 1, rhsShape[1]};
+        newResShape = {1, 1, resShape[1]};
+        break;
+      case 2:
+        newLhsShape = {1, lhsShape[0], lhsShape[1]};
+        newRhsShape = {1, rhsShape[0], rhsShape[1]};
+        newResShape = {1, resShape[0], resShape[1]};
+        break;
+      default:
+        llvm_unreachable("unsupported shape");
+        auto newResType =
+            RankedTensorType::get(newResShape, resType.getElementType());
+        auto newLhs = rewriter.create<tosa::ReshapeOp>(
+            loc, lhs, rewriter.getDenseI64ArrayAttr(newLhsShape));
+        auto newRhs = rewriter.create<tosa::ReshapeOp>(
+            loc, rhs, rewriter.getDenseI64ArrayAttr(newRhsShape));
+        newop =
+            rewriter.create<tosa::MatMulOp>(loc, newResType, newLhs, newRhs);
+      }
+    }
+    newop = rewriter.create<tosa::MatMulOp>(loc, resType, lhs, rhs);
+    rewriter.replaceOp(op, newop);
     return success();
   }
 };
@@ -267,8 +286,8 @@ public:
   LogicalResult matchAndRewrite(mix::PowOp op,
                                 PatternRewriter &rewriter) const override {
 
-    auto lhs = op.getInput();
-    auto rhs = op.getExponent();
+    auto lhs = op.getOperand(0);
+    auto rhs = op.getOperand(1);
     auto loc = op->getLoc();
     auto lhsType = lhs.getType();
     auto rhsType = rhs.getType();
@@ -300,11 +319,29 @@ public:
   using OpRewritePattern<mix::ReduceSumOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(mix::ReduceSumOp op,
                                 PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
     auto input = op.getInput();
     auto axis = op.getAxis();
-    auto loc = op.getLoc();
-    auto reducesum0 = rewriter.create<tosa::ReduceSumOp>(loc, input, axis);
-    rewriter.replaceOp(op, reducesum0);
+
+    auto newop = rewriter.create<tosa::ReduceSumOp>(
+        loc, input, rewriter.getI32IntegerAttr(axis));
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
+class ConcatLoweringPattern : public OpConversionPattern<mix::ConcatOp> {
+public:
+  using OpConversionPattern<mix::ConcatOp>::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(mix::ConcatOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto loc = op->getLoc();
+    auto inputs = op.getODSOperands(0);
+    auto axis = op.getAxis();
+    mlir::ValueRange valueRange(inputs);
+    auto newop = rewriter.create<tosa::ConcatOp>(loc, valueRange, axis);
+    rewriter.replaceOp(op, newop);
     return success();
   }
 };
@@ -326,28 +363,6 @@ public:
     auto reshape0 = rewriter.create<tosa::ReshapeOp>(
         loc, input, rewriter.getDenseI64ArrayAttr(shapeNum));
     rewriter.replaceOp(op, reshape0);
-    return success();
-  }
-};
-
-class RsqrtSumLoweringPattern : public OpRewritePattern<mix::RsqrtOp> {
-public:
-  using OpRewritePattern<mix::RsqrtOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::RsqrtOp op,
-                                PatternRewriter &rewriter) const override {
-
-    auto input = op.getInput();
-    auto loc = op->getLoc();
-    auto resultType = op.getType();
-    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
-    Value newop;
-    if (!resultTensorType) {
-      // TODO
-      return op.emitOpError() << "Not support scale pow now.";
-    } else {
-      newop = rewriter.create<tosa::RsqrtOp>(loc, resultTensorType, input);
-    }
-    rewriter.replaceOp(op, newop);
     return success();
   }
 };
@@ -404,29 +419,7 @@ public:
     return success();
   }
 };
-
 #undef GET_DENSE
-
-class TanhOpLoweringPattern : public OpRewritePattern<mix::TanhOp> {
-public:
-  using OpRewritePattern<mix::TanhOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::TanhOp op,
-                                PatternRewriter &rewriter) const override {
-    auto loc = op->getLoc();
-    auto input = op.getInput();
-    auto resultType = op.getType();
-    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
-    Value newop;
-    if (!resultTensorType) {
-      // TODO
-      return op.emitOpError() << "Not support scale tanh now.";
-    } else {
-      newop = rewriter.create<tosa::TanhOp>(loc, resultTensorType, input);
-    }
-    rewriter.replaceOp(op, newop);
-    return success();
-  }
-};
 
 class ConstantLoweringPattern : public OpRewritePattern<mix::ConstantOp> {
 public:
@@ -455,12 +448,15 @@ public:
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
-  patterns.add<AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
-               DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
-               ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
-               ReshapeLoweringPattern, RsqrtSumLoweringPattern,
-               WeightOpLoweringPattern, TanhOpLoweringPattern,
-               ConstantLoweringPattern, GatherLoweringPattern>(
+  patterns.add<
+      AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
+      DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
+      ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
+      ReshapeLoweringPattern, RsqrtLoweringPattern, WeightOpLoweringPattern,
+      TanhLoweringPattern, ConcatLoweringPattern, ReciprocalLoweringPattern,
+      CosLoweringPattern, SinLoweringPattern, BatchMatmulLoweringPattern,
+      ConstantLoweringPattern, GatherLoweringPattern>(
+
       patterns.getContext());
 }
 
@@ -479,7 +475,7 @@ public:
   void runOnOperation() override;
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<arith::ArithDialect, tosa::TosaDialect,
+    registry.insert<arith::ArithDialect, tosa::TosaDialect, math::MathDialect,
                     tensor::TensorDialect>();
   }
 };
@@ -491,12 +487,14 @@ void LowerPrimaryToTosaPass::runOnOperation() {
   ConversionTarget target(context);
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect, tosa::TosaDialect,
-                         tensor::TensorDialect,
+                         tensor::TensorDialect, math::MathDialect,
                          bufferization::BufferizationDialect>();
-  target.addIllegalOp<
-      mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp, mix::MatMulOp, mix::NegOp,
-      mix::ExpOp, mix::PowOp, mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp,
-      mix::WeightOp, mix::TanhOp, mix::ConstantOp, mix::GatherOp>();
+  target
+      .addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
+                    mix::MatMulOp, mix::BatchMatMulOp, mix::NegOp, mix::ExpOp,
+                    mix::PowOp, mix::ConcatOp, mix::ReduceSumOp, mix::ReshapeOp,
+                    mix::RsqrtOp, mix::WeightOp, mix::TanhOp, mix::ConstantOp,
+                    mix::ReciprocalOp, mix::CosOp, mix::SinOp, mix::GatherOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);
