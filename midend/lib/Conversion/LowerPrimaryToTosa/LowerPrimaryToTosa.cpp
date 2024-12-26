@@ -64,13 +64,33 @@ class UnaryLoweringPattern : public OpRewritePattern<SourceOp> {
     return success();
   }
 };
+
+template <typename SourceOp, typename Target1Op, typename Target2Op>
+class Unary2LoweringPattern : public OpRewritePattern<SourceOp> {
+  using OpRewritePattern<SourceOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(SourceOp op, PatternRewriter &rewriter) const override {
+    auto loc = op->getLoc();
+    auto input = op.getInput();
+    Type resultType = op.getType();
+    // auto resultTensorType = resultType.dyn_cast<RankedTensorType>();
+    Value newop;
+    if (auto resultTensorType = resultType.dyn_cast<RankedTensorType>()) {
+      newop = rewriter.create<Target1Op>(loc, resultTensorType, input);
+    } else {
+      newop = rewriter.create<Target2Op>(loc, resultType, input);
+    }
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
 using NegLoweringPattern = UnaryLoweringPattern<mix::NegOp, tosa::NegateOp>;
 using ExpLoweringPattern = UnaryLoweringPattern<mix::ExpOp, tosa::ExpOp>;
 using RsqrtLoweringPattern = UnaryLoweringPattern<mix::RsqrtOp, tosa::RsqrtOp>;
 using TanhLoweringPattern = UnaryLoweringPattern<mix::TanhOp, tosa::TanhOp>;
 using ReciprocalLoweringPattern = UnaryLoweringPattern<mix::ReciprocalOp, tosa::ReciprocalOp>;
-using CosLoweringPattern = UnaryLoweringPattern<mix::CosOp, tosa::CosOp>;
-using SinLoweringPattern = UnaryLoweringPattern<mix::SinOp, tosa::SinOp>;
+using CosLoweringPattern = Unary2LoweringPattern<mix::CosOp, tosa::CosOp, math::CosOp>;
+using SinLoweringPattern = Unary2LoweringPattern<mix::SinOp, tosa::SinOp, math::SinOp>;
 
 template <typename SourceOp, typename Target0Op, typename Target1OpI, typename Target1OpF>
 class BinaryLoweringPattern : public OpRewritePattern<SourceOp> {
@@ -202,10 +222,25 @@ public:
     auto rhs = op.getRhs();
     auto resType = op.getType();
     auto loc = op.getLoc();
-
-    auto newop =
-        rewriter.create<linalg::MatmulOp>(loc, resType, lhs, rhs);
-    rewriter.replaceOp(op, newop);
+    auto lhsType = lhs.getType();
+    auto rhsType = rhs.getType();
+    auto lhsShape = lhsType.getShape();
+    auto rhsShape = rhsType.getShape();
+    auto resShape = resType.getShape();
+    SmallVector<int64_t> newLhsShape{1, lhsShape[0], lhsShape[1]};
+    SmallVector<int64_t> newRhsShape{1, rhsShape[0], rhsShape[1]};
+    SmallVector<int64_t> newResShape{1, resShape[0], resShape[1]};
+    auto newResType =
+        RankedTensorType::get(newResShape, resType.getElementType());
+    auto newLhs = rewriter.create<tosa::ReshapeOp>(
+        loc, lhs, rewriter.getDenseI64ArrayAttr(newLhsShape));
+    auto newRhs = rewriter.create<tosa::ReshapeOp>(
+        loc, rhs, rewriter.getDenseI64ArrayAttr(newRhsShape));
+    auto matmul0 =
+        rewriter.create<tosa::MatMulOp>(loc, newResType, newLhs, newRhs);
+    auto res = rewriter.create<tosa::ReshapeOp>(
+        loc, matmul0, rewriter.getDenseI64ArrayAttr(resShape));
+    rewriter.replaceOp(op, res);
     return success();
   }
 };
@@ -398,27 +433,6 @@ public:
 };
 #undef GET_DENSE
 
-class TanhOpLoweringPattern : public OpRewritePattern<mix::TanhOp> {
-public:
-  using OpRewritePattern<mix::TanhOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::TanhOp op,
-                                PatternRewriter &rewriter) const override {
-    auto loc = op->getLoc();
-    auto input = op.getInput();
-    auto resultType = op.getType();
-    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
-    Value newop;
-    if (!resultTensorType) {
-      // TODO
-      return op.emitOpError() << "Not support scale pow now.";
-    } else {
-      newop = rewriter.create<tosa::TanhOp>(loc, resultTensorType, input);
-    }
-    rewriter.replaceOp(op, newop);
-    return success();
-  }
-};
-
 class ConstantLoweringPattern : public OpRewritePattern<mix::ConstantOp> {
 public:
   using OpRewritePattern<mix::ConstantOp>::OpRewritePattern;
@@ -431,6 +445,163 @@ public:
     return success();
   }
 };
+
+class SliceLoweringPattern : public OpRewritePattern<mix::SliceOp> {
+public:
+  using OpRewritePattern<mix::SliceOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::SliceOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    auto input = op.getInputs();
+    auto dim = op.getDim();
+    auto begin = op.getStart();
+    auto end = op.getEnd();
+    auto step = op.getStep();
+    auto shape = input.getType().getShape();
+    auto shapeNum = shape.size();
+    auto resultType = dyn_cast<ShapedType>(op.getType());
+    if (llvm::isa<UnrankedTensorType>(resultType))
+      return failure();
+    SmallVector<int64_t> offset(shapeNum, 0);
+    SmallVector<int64_t> size = llvm::to_vector(shape);
+    SmallVector<int64_t> stride(shapeNum, 1);
+    offset[dim] = begin;
+    size[dim] = end - begin;
+    stride[dim] = step;
+
+    auto newop = rewriter.create<tensor::ExtractSliceOp>(loc, op.getType(), input, 
+        ValueRange({}), ValueRange({}), ValueRange({}), 
+        rewriter.getDenseI64ArrayAttr(offset), 
+        rewriter.getDenseI64ArrayAttr(size), rewriter.getDenseI64ArrayAttr(stride));
+    
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
+class TransposeLoweringPattern : public OpRewritePattern<mix::TransposeOp> {
+public:
+  using OpRewritePattern<mix::TransposeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::TransposeOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    auto input = op.getInput();
+    auto dim1= op.getDim1();
+    auto dim2= op.getDim2();
+    auto resultType = dyn_cast<ShapedType>(op.getType());
+    if (llvm::isa<UnrankedTensorType>(resultType))
+      return failure();
+
+    SmallVector<int32_t> dimsVector;
+    for (auto i = 0; i < resultType.getRank(); i++) {
+      dimsVector[i] = i;
+    }
+    dimsVector[dim1] = dim2;
+    dimsVector[dim2] = dim1;
+    SmallVector<Value> dimsValues;
+    for (auto dim : dimsVector) {
+      dimsValues.push_back(rewriter.create<arith::ConstantIndexOp>(loc, dim));
+    }
+    
+    Value perm = rewriter.create<tensor::FromElementsOp>(loc, dimsValues);
+    auto newop = rewriter.create<tosa::TransposeOp>(loc, op.getType()
+        , input, perm);
+      
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
+class PermuteLoweringPattern : public OpRewritePattern<mix::PermuteOp> {
+public:
+  using OpRewritePattern<mix::PermuteOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::PermuteOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    auto input = op.getInput();
+    auto dims = op.getDims();
+    auto resultType = dyn_cast<ShapedType>(op.getType());
+    if (llvm::isa<UnrankedTensorType>(resultType))
+      return failure();
+
+    SmallVector<int64_t> dimsVector;
+    for (auto dim : dims){
+      dimsVector.push_back(dim.cast<IntegerAttr>().getInt());
+    }
+
+    SmallVector<Value> dimsValues;
+    for (auto dim : dimsVector) {
+      dimsValues.push_back(rewriter.create<arith::ConstantIndexOp>(loc, dim));
+    }
+    Value perm = rewriter.create<tensor::FromElementsOp>(loc, dimsValues);
+    auto newop = rewriter.create<tosa::TransposeOp>(loc, op.getType()
+        , input, perm);
+      
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
+class ConvertLoweringPattern : public OpRewritePattern<mix::ConvertOp> {
+public:
+  using OpRewritePattern<mix::ConvertOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::ConvertOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    auto input = op.getValue();
+    auto dims = op.getElementTy();
+    auto resultType = op.getType();
+
+    Value newop;
+    if(auto resTensorType = llvm::dyn_cast<RankedTensorType>(resultType)){
+      newop = rewriter.create<tosa::CastOp>(loc, resultType, input);
+    }
+    newop = rewriter.create<arith::BitcastOp>(loc, resultType, input);
+      
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
+class UnsqueezeLoweringPattern : public OpRewritePattern<mix::UnsqueezeOp> {
+public:
+  using OpRewritePattern<mix::UnsqueezeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::UnsqueezeOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    auto input = op.getInput();
+    auto axis= op.getAxis();
+    auto inputType = dyn_cast<RankedTensorType>(input.getType());
+    if (!inputType)
+      return failure();
+
+    auto rank = inputType.getRank();
+    auto elemTy = inputType.getElementType();
+    if (!elemTy.isIntOrFloat()) {
+      return rewriter.notifyMatchFailure(
+          op, "Only floating-point or integer datatype legalization supported");
+    }
+
+    if(axis > rank)
+       return rewriter.notifyMatchFailure(op, "axis is invalid");
+
+    llvm::SmallVector<int64_t> shapeNum;
+    for (auto dim : inputType.getShape()) { 
+      if (dim == axis)
+        shapeNum.push_back(1);
+      else {
+        shapeNum.push_back(dim);
+      }
+    } 
+    if (axis == rank)
+    shapeNum.push_back(1);
+
+    rewriter.replaceOpWithNewOp<tosa::ReshapeOp>(
+        op, op.getType().dyn_cast<RankedTensorType>(), input,
+        rewriter.getDenseI64ArrayAttr(shapeNum));
+  }
+};
+
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
@@ -441,7 +612,9 @@ void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
                WeightOpLoweringPattern, TanhLoweringPattern,
                ConcatLoweringPattern, ReciprocalLoweringPattern,
                CosLoweringPattern, SinLoweringPattern,
-               BatchMatmulLoweringPattern,
+               BatchMatmulLoweringPattern, ConvertLoweringPattern,
+               PermuteLoweringPattern, SliceLoweringPattern,
+               UnsqueezeLoweringPattern, TransposeLoweringPattern,
                ConstantLoweringPattern>(patterns.getContext());
 }
 
