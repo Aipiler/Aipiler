@@ -482,7 +482,7 @@ def WeightOp : MIX_Op<"comp.weight", [Pure]> {
     );
 }
 
-def ConstantOp : MIX_Op<"prim.constant", [Pure, ConstantLike, AllTypesMatch<["value", "output"]>]> {
+def ConstantOp : MIX_Op<"prim.constant", [Pure, AllTypesMatch<["value", "output"]>]> {
     let summary = "constant op";
     let description = [{
         constant op

@@ -37,6 +37,39 @@ using namespace mlir;
 std::unique_ptr<Pass> createLowerModulePass();
 std::unique_ptr<Pass> createLowerCompositePass();
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
+
+mlir::Value FusedRMSNorm(mlir::OpBuilder &builder, mlir::Location loc,
+                         mlir::Value hidden_states) {
+  auto elementType = builder.getF32Type();
+  int hidden_size = 2;
+  float eps = 1e-6;
+  auto hidden_states_type =
+      llvm::dyn_cast<RankedTensorType>(hidden_states.getType());
+  auto hidden_states_shape = hidden_states_type.getShape();
+  auto hidden_states_rank = hidden_states_shape.size();
+  llvm::ArrayRef<int64_t> weightShape{int64_t(hidden_size)};
+  auto weightTensorType =
+      RankedTensorType::get(weightShape, hidden_states_type.getElementType());
+
+  auto _weight3 = builder.create<mix::WeightOp>(loc, weightTensorType,
+                                                "model_parameters.rms.weight");
+  auto constantTensorType = RankedTensorType::get({1}, elementType);
+  auto constantTensor = DenseElementsAttr::get(constantTensorType, {2.0f});
+  auto c2Tensor = builder.create<arith::ConstantOp>(loc, constantTensor);
+  auto pow0 = builder.create<mix::PowOp>(loc, hidden_states, c2Tensor);
+  auto mean0 = builder.create<mix::MeanOp>(
+      loc, pow0, builder.getI32ArrayAttr({int32_t(hidden_states_rank - 1)}),
+      builder.getBoolAttr(true));
+
+  auto epsAttr = builder.getFloatAttr(elementType, eps);
+  auto const_eps = builder.create<arith::ConstantOp>(loc, epsAttr);
+  auto add0 = builder.create<mix::AddOp>(loc, mean0, const_eps);
+  auto rsqrt0 = builder.create<mix::RsqrtOp>(loc, add0);
+  auto mul0 = builder.create<mix::MulOp>(loc, hidden_states, rsqrt0);
+  auto mul1 = builder.create<mix::MulOp>(loc, _weight3, mul0);
+  return mul1;
+}
+
 int main() {
   mlir::MLIRContext context;
   context.getOrLoadDialect<mix::MIXDialect>();
@@ -66,39 +99,11 @@ int main() {
   builder.setInsertionPointToEnd(body);
 
   auto hidden_states = graph0.getArgument(0);
-  int hidden_size = 2;
-  float eps = 1e-6;
-  auto hidden_states_type =
-      llvm::dyn_cast<RankedTensorType>(hidden_states.getType());
-  auto hidden_states_shape = hidden_states_type.getShape();
-  auto hidden_states_rank = hidden_states_shape.size();
-  llvm::ArrayRef<int64_t> weightShape{int64_t(hidden_size)};
-  auto weightTensorType =
-      RankedTensorType::get(weightShape, hidden_states_type.getElementType());
+  auto res = FusedRMSNorm(builder, loc, hidden_states);
+  graph0.setFunctionType(
+      builder.getFunctionType({tensorType}, {res.getType()}));
 
-  auto _weight3 = builder.create<mix::WeightOp>(loc, weightTensorType,
-                                                "model_parameters.rms.weight");
-  auto cast1 = builder.create<tensor::CastOp>(loc, printInputType, _weight3);
-  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast1});
-  auto constantTensorType = RankedTensorType::get({1}, elementType);
-  auto constantTensor = DenseElementsAttr::get(constantTensorType, {2.0f});
-  auto c2Tensor = builder.create<arith::ConstantOp>(loc, constantTensor);
-  auto pow0 = builder.create<mix::PowOp>(loc, hidden_states, c2Tensor);
-  auto mean0 = builder.create<mix::MeanOp>(
-      loc, pow0, builder.getI32ArrayAttr({int32_t(hidden_states_rank - 1)}),
-      builder.getBoolAttr(true));
-
-  auto epsAttr = builder.getFloatAttr(elementType, eps);
-  auto const_eps = builder.create<arith::ConstantOp>(loc, epsAttr);
-  auto add0 = builder.create<mix::AddOp>(loc, mean0, const_eps);
-  auto rsqrt0 = builder.create<mix::RsqrtOp>(loc, add0);
-  auto mul0 = builder.create<mix::MulOp>(loc, hidden_states, rsqrt0);
-  auto mul1 = builder.create<mix::MulOp>(loc, _weight3, mul0);
-
-  auto cast = builder.create<tensor::CastOp>(loc, printInputType, mul1);
-  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
-
-  builder.create<func::ReturnOp>(loc, ValueRange{});
+  builder.create<func::ReturnOp>(loc, ValueRange{res});
 
   // function main
 
@@ -113,9 +118,10 @@ int main() {
       DenseElementsAttr::get(tensorType, llvm::ArrayRef<float>{1, 2, 3, 4});
 
   auto arg0 = builder.create<arith::ConstantOp>(loc, argAttr);
-  builder.create<func::CallOp>(loc, graph0, ValueRange{arg0});
+  auto rms_res = builder.create<func::CallOp>(loc, graph0, ValueRange{arg0});
 
-  auto cast2 = builder.create<tensor::CastOp>(loc, printInputType, arg0);
+  auto cast2 = builder.create<tensor::CastOp>(loc, printInputType,
+                                              rms_res->getResult(0));
   builder.create<func::CallOp>(loc, printfunc, ValueRange{cast2});
   builder.create<func::ReturnOp>(loc);
   theModule->dump();

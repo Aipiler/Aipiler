@@ -434,11 +434,12 @@ void LowerPrimaryToTosaPass::runOnOperation() {
                          mix::MIXDialect, tosa::TosaDialect,
                          tensor::TensorDialect, math::MathDialect,
                          bufferization::BufferizationDialect>();
-  target.addIllegalOp<
-      mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp, mix::MatMulOp,
-      mix::BatchMatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp, mix::ConcatOp,
-      mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp, mix::WeightOp,
-      mix::TanhOp, mix::ReciprocalOp, mix::CosOp, mix::SinOp, mix::GatherOp>();
+  target
+      .addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
+                    mix::MatMulOp, mix::BatchMatMulOp, mix::NegOp, mix::ExpOp,
+                    mix::PowOp, mix::ConcatOp, mix::ReduceSumOp, mix::ReshapeOp,
+                    mix::RsqrtOp, mix::TanhOp, mix::ReciprocalOp, mix::CosOp,
+                    mix::SinOp, mix::GatherOp, mix::ConstantOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);
