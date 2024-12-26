@@ -645,7 +645,7 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto F16Type = builder.getF16Type();
   auto BoolType = builder.getI1Type();
   auto input_ids_type = RankedTensorType::get({1, seq_len}, F16Type);
-  auto output_type = RankedTensorType::get({seq_len, vocab_size}, F16Type);
+  auto output_type = RankedTensorType::get({1, seq_len, vocab_size}, F16Type);
   auto functionTy = builder.getFunctionType({input_ids_type}, {output_type});
 
   // 创建func.func

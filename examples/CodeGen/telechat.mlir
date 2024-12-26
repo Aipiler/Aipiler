@@ -1,5 +1,5 @@
 "builtin.module"() ({
-  "func.func"() <{function_type = (tensor<1x40xf16>) -> tensor<40x120000xf16>, sym_name = "Telechat", sym_visibility = "private"}> ({
+  "func.func"() <{function_type = (tensor<1x40xf16>) -> tensor<1x40x120000xf16>, sym_name = "Telechat", sym_visibility = "private"}> ({
   ^bb0(%arg0: tensor<1x40xf16>):
     %0 = "mix.module.embedding"(%arg0) <{dtype = f16, embedding_dim = 5120 : i32, num_embeddings = 120000 : i32, params_loc = "transformer.word_embeddings.weight"}> : (tensor<1x40xf16>) -> tensor<1x40x5120xf16>
     %1 = "mix.prim.constant"() <{value = dense<true> : tensor<1x1x5x5xi1>}> : () -> tensor<1x1x5x5xi1>
