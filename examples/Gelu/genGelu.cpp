@@ -15,6 +15,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
@@ -36,6 +37,29 @@ using namespace mlir;
 std::unique_ptr<Pass> createLowerModulePass();
 std::unique_ptr<Pass> createLowerCompositePass();
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
+
+mlir::Value Gelu(mlir::OpBuilder &builder, mlir::Location loc,
+                 mlir::Value input) {
+  auto c5_n1 =
+      builder.create<arith::ConstantOp>(loc, builder.getF32FloatAttr(5.0e-1));
+  auto mul0 = builder.create<mix::MulOp>(loc, input, c5_n1);
+  auto cdot79788456 = builder.create<arith::ConstantOp>(
+      loc, builder.getF32FloatAttr(0.79788456));
+  auto mul1 = builder.create<mix::MulOp>(loc, input, cdot79788456);
+  auto cdot044715 =
+      builder.create<arith::ConstantOp>(loc, builder.getF32FloatAttr(0.044715));
+  auto mul2 = builder.create<mix::MulOp>(loc, input, cdot044715);
+  auto mul3 = builder.create<mix::MulOp>(loc, input, mul2);
+  auto c1 =
+      builder.create<arith::ConstantOp>(loc, builder.getF32FloatAttr(1.0f));
+  auto add0 = builder.create<mix::AddOp>(loc, c1, mul3);
+  auto mul4 = builder.create<mix::MulOp>(loc, mul1, add0);
+  auto tanh0 = builder.create<mix::TanhOp>(loc, mul4);
+  auto add1 = builder.create<mix::AddOp>(loc, tanh0, c1);
+  auto mul5 = builder.create<mix::MulOp>(loc, mul0, add1);
+  return mul5;
+}
+
 int main() {
   mlir::MLIRContext context;
   context.getOrLoadDialect<mix::MIXDialect>();
@@ -60,31 +84,16 @@ int main() {
   // Graph0
   auto tensorType = RankedTensorType::get({2, 2}, elementType);
 
-  auto functionTy = builder.getFunctionType({tensorType, tensorType}, {tensorType});
+  auto functionTy =
+      builder.getFunctionType({tensorType, tensorType}, {tensorType});
   auto graph0 = builder.create<func::FuncOp>(loc, "graph0", functionTy);
   graph0.setPrivate();
   auto body = graph0.addEntryBlock();
   builder.setInsertionPointToEnd(body);
 
   auto input = graph0.getArgument(0);
-  auto c5_n1 = builder.create<arith::ConstantOp>(
-      loc, builder.getF32FloatAttr(5.0e-1));
-  auto mul0 = builder.create<mix::MulOp>(loc, input, c5_n1);
-  auto cdot79788456 = builder.create<arith::ConstantOp>(
-      loc, builder.getF32FloatAttr(0.79788456));
-  auto mul1 = builder.create<mix::MulOp>(loc, input, cdot79788456);
-  auto cdot044715 = builder.create<arith::ConstantOp>(
-      loc, builder.getF32FloatAttr(0.044715));
-  auto mul2 = builder.create<mix::MulOp>(loc, input, cdot044715);
-  auto mul3 = builder.create<mix::MulOp>(loc, input, mul2);
-  auto c1 =
-      builder.create<arith::ConstantOp>(loc, builder.getF32FloatAttr(1.0f));
-  auto add0 = builder.create<mix::AddOp>(loc, c1, mul3);
-  auto mul4 = builder.create<mix::MulOp>(loc, mul1, add0);
-  auto tanh0 = builder.create<mix::TanhOp>(loc, mul4);
-  auto add1 = builder.create<mix::AddOp>(loc, tanh0, c1);
-  auto mul5 = builder.create<mix::MulOp>(loc, mul0, add1);
-  builder.create<func::ReturnOp>(loc, ValueRange{mul5});
+  auto res = Gelu(builder, loc, input);
+  builder.create<func::ReturnOp>(loc, ValueRange{res});
 
   // Main
   builder.setInsertionPointToEnd(theModule.getBody());
@@ -100,7 +109,8 @@ int main() {
   auto arg0 = builder.create<arith::ConstantOp>(loc, argAttr);
   auto arg1 = builder.create<arith::ConstantOp>(loc, argAttr);
   auto gelu = builder.create<func::CallOp>(loc, graph0, ValueRange{arg0, arg1});
-  auto cast = builder.create<tensor::CastOp>(loc, printInputType, gelu.getResults()[0]);
+  auto cast =
+      builder.create<tensor::CastOp>(loc, printInputType, gelu.getResults()[0]);
   builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
   builder.create<func::ReturnOp>(loc);
   theModule->dump();

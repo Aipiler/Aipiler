@@ -36,6 +36,27 @@ using namespace mlir;
 std::unique_ptr<Pass> createLowerModulePass();
 std::unique_ptr<Pass> createLowerCompositePass();
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
+
+mlir::Value MLP(mlir::OpBuilder &builder, mlir::Location loc,
+                mlir::Value hidden_states, mlir::Value residual) {
+  auto elementType = builder.getF32Type();
+  auto linear0 = builder.create<mix::LinearOp>(loc, hidden_states,
+                                               "model_parameters.mlp.linear0",
+                                               2, 2, false, elementType);
+
+  auto silu0 = builder.create<mix::SiLUOp>(loc, linear0);
+
+  auto linear1 = builder.create<mix::LinearOp>(loc, hidden_states,
+                                               "model_parameters.mlp.linear1",
+                                               2, 2, false, elementType);
+  auto mul0 = builder.create<mix::MulOp>(loc, silu0, linear1);
+
+  auto linear2 = builder.create<mix::LinearOp>(
+      loc, mul0, "model_parameters.mlp.linear2", 2, 2, true, elementType);
+  auto output = builder.create<mix::AddOp>(loc, linear2, residual);
+  return output;
+}
+
 int main() {
   mlir::MLIRContext context;
   context.getOrLoadDialect<mix::MIXDialect>();
@@ -65,21 +86,7 @@ int main() {
 
   auto hidden_states = graph0.getArgument(0);
   auto residual = graph0.getArgument(1);
-
-  auto linear0 = builder.create<mix::LinearOp>(loc, hidden_states,
-                                               "model_parameters.mlp.linear0",
-                                               2, 2, false, elementType);
-
-  auto silu0 = builder.create<mix::SiLUOp>(loc, linear0);
-
-  auto linear1 = builder.create<mix::LinearOp>(loc, hidden_states,
-                                               "model_parameters.mlp.linear1",
-                                               2, 2, false, elementType);
-  auto mul0 = builder.create<mix::MulOp>(loc, silu0, linear1);
-
-  auto linear2 = builder.create<mix::LinearOp>(
-      loc, mul0, "model_parameters.mlp.linear2", 2, 2, true, elementType);
-  auto output = builder.create<mix::AddOp>(loc, linear2, residual);
+  auto output = MLP(builder, loc, hidden_states, residual);
 
   auto cast = builder.create<tensor::CastOp>(loc, printInputType, output);
   builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
