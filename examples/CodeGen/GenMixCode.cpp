@@ -8,6 +8,7 @@
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -40,11 +41,24 @@ auto genFFN(mlir::MLIRContext &context, mlir::OpBuilder &builder, Location loc,
             TypedValue<RankedTensorType> &hidden_states,
             TypedValue<RankedTensorType> &residual) {
 
-  auto tensorType = hidden_states.getType();
+  auto elementType = builder.getF32Type();
 
-  auto mlp_output =
-      builder.create<mix::MLPOp>(loc, tensorType, hidden_states, residual);
-  return mlp_output;
+  auto linear0 = builder.create<mix::LinearOp>(loc, hidden_states,
+                                               "model_parameters.mlp.linear0",
+                                               2, 2, false, elementType);
+
+  auto silu0 = builder.create<mix::SiLUOp>(loc, linear0);
+
+  auto linear1 = builder.create<mix::LinearOp>(loc, hidden_states,
+                                               "model_parameters.mlp.linear1",
+                                               2, 2, false, elementType);
+  auto mul0 = builder.create<mix::MulOp>(loc, silu0, linear1);
+
+  auto linear2 = builder.create<mix::LinearOp>(
+      loc, mul0, "model_parameters.mlp.linear2", 2, 2, true, elementType);
+  auto output = builder.create<mix::AddOp>(loc, linear2, residual);
+
+  return output;
 }
 
 auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
@@ -179,7 +193,7 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
     transformerBlock = genTransformerBlock(context, builder, graph->getLoc(),
                                            hidden_states, hidden_states);
 
-    hidden_states = mlir::dyn_cast<mix::MLPOp>(transformerBlock).getOutput();
+    hidden_states = transformerBlock.getOutput();
   }
   auto last_transformerBlock = mlir::dyn_cast<mix::MLPOp>(transformerBlock);
 
@@ -199,6 +213,10 @@ int main() {
   context.getOrLoadDialect<mix::MIXDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::ml_program::MLProgramDialect>();
+  context.getOrLoadDialect<mix::MIXDialect>();
+  context.getOrLoadDialect<mlir::arith::ArithDialect>();
+  context.getOrLoadDialect<mlir::func::FuncDialect>();
+  context.getOrLoadDialect<mlir::tensor::TensorDialect>();
 
   mlir::OpBuilder builder(&context);
   auto loc = builder.getUnknownLoc();
