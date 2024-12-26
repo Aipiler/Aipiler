@@ -235,7 +235,7 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto type_dense_bias = RankedTensorType::get({hidden_size}, type_f32);
 
   // attrs:
-  auto attr_i32_n1 = IntegerAttr::get(IntegerType::get(&context, 32), -1);
+  auto attr_i32_n1 = builder.getSI32IntegerAttr(-1);
   auto attr_i32_0 = IntegerAttr::get(IntegerType::get(&context, 32), 0);
   auto attr_i32_1 = IntegerAttr::get(IntegerType::get(&context, 32), 1);
   auto attr_i32_2 = IntegerAttr::get(IntegerType::get(&context, 32), 2);
@@ -556,7 +556,7 @@ int main() {
   auto hidden_states_type =
       RankedTensorType::get({1, seq_len, 5120}, elementType);
   auto attention_mask_type =
-      RankedTensorType::get({1, 1, seq_len, seq_len}, elementType);
+      RankedTensorType::get({1, 1, seq_len, seq_len}, builder.getI1Type());
 
   auto hidden_states = builder.create<mix::WeightOp>(
       graph0->getLoc(), hidden_states_type, "hidden_states");
@@ -594,7 +594,7 @@ int main() {
   mlir::PassManager pm(&context);
   pm.addPass(createLowerModulePass());
   pm.addPass(createLowerCompositePass());
-  pm.addPass(createLowerPrimaryToTosa());
+  //   pm.addPass(createLowerPrimaryToTosa());
 
   theModule->dump();
 
