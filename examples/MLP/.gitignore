@@ -1,4 +1,4 @@
 log*
-mlp_*
+*.mlir
 *.ll
 mlp

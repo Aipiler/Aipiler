@@ -125,19 +125,19 @@ public:
     auto lhsType = lhs.getType();
     auto rhsType = rhs.getType();
     auto resultType = op.getType();
-    auto resultTensorType = resultType.dyn_cast<RankedTensorType>();
+    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
     Value newop;
     if (!resultTensorType) {
-      if (auto resIntType = resultType.dyn_cast<IntegerType>()) {
+      if (auto resIntType = dyn_cast<IntegerType>(resultType)) {
         newop = rewriter.create<arith::MulIOp>(loc, lhs, rhs);
-      } else if (auto resFloatType = resultType.dyn_cast<FloatType>()) {
+      } else if (auto resFloatType = dyn_cast<FloatType>(resultType)) {
         newop = rewriter.create<arith::MulFOp>(loc, lhs, rhs);
       } else {
         return op.emitOpError() << "Unexpected types.";
       }
     } else {
-      auto lhsTensorType = lhsType.dyn_cast<RankedTensorType>();
-      auto rhsTensorType = rhsType.dyn_cast<RankedTensorType>();
+      auto lhsTensorType = dyn_cast<RankedTensorType>(lhsType);
+      auto rhsTensorType = dyn_cast<RankedTensorType>(rhsType);
       auto elemTy = resultTensorType.getElementType();
       auto tensorTy = RankedTensorType::get({1}, elemTy);
       if (!lhsTensorType) {
@@ -163,19 +163,19 @@ public:
     auto lhsType = lhs.getType();
     auto rhsType = rhs.getType();
     auto resultType = op.getType();
-    auto resultTensorType = resultType.dyn_cast<RankedTensorType>();
+    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
     Value newop;
     if (!resultTensorType) {
-      if (auto resIntType = resultType.dyn_cast<IntegerType>()) {
+      if (auto resIntType = dyn_cast<IntegerType>(resultType)) {
         newop = rewriter.create<arith::DivSIOp>(loc, lhs, rhs);
-      } else if (auto resFloatType = resultType.dyn_cast<FloatType>()) {
+      } else if (auto resFloatType = dyn_cast<FloatType>(resultType)) {
         newop = rewriter.create<arith::DivFOp>(loc, lhs, rhs);
       } else {
         return op.emitOpError() << "Unexpected types.";
       }
     } else {
-      auto lhsTensorType = lhsType.dyn_cast<RankedTensorType>();
-      auto rhsTensorType = rhsType.dyn_cast<RankedTensorType>();
+      auto lhsTensorType = dyn_cast<RankedTensorType>(lhsType);
+      auto rhsTensorType = dyn_cast<RankedTensorType>(rhsType);
       auto elemTy = resultTensorType.getElementType();
       auto tensorTy = RankedTensorType::get({1}, elemTy);
       if (!lhsTensorType) {
@@ -272,14 +272,14 @@ public:
     auto lhsType = lhs.getType();
     auto rhsType = rhs.getType();
     auto resultType = op.getType();
-    auto resultTensorType = resultType.dyn_cast<RankedTensorType>();
+    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
     Value newop;
     if (!resultTensorType) {
       // TODO
       return op.emitOpError() << "Not support scale pow now.";
     } else {
-      auto lhsTensorType = lhsType.dyn_cast<RankedTensorType>();
-      auto rhsTensorType = rhsType.dyn_cast<RankedTensorType>();
+      auto lhsTensorType = dyn_cast<RankedTensorType>(lhsType);
+      auto rhsTensorType = dyn_cast<RankedTensorType>(rhsType);
       auto elemTy = resultTensorType.getElementType();
       auto tensorTy = RankedTensorType::get({1}, elemTy);
       if (!lhsTensorType) {
@@ -332,7 +332,7 @@ public:
     auto shape = op.getShape().getValue();
     llvm::SmallVector<int64_t> shapeNum;
     for (auto attr : shape) {
-      auto numAttr = attr.dyn_cast<IntegerAttr>();
+      auto numAttr = dyn_cast<IntegerAttr>(attr);
       auto num = numAttr.getInt();
       shapeNum.push_back(num);
     }
@@ -391,12 +391,46 @@ public:
       return op.emitOpError() << "Unexpected type.";
     }
     // create consatant op
-    auto constantOp = rewriter.create<arith::ConstantOp>(loc, dataAttr);
+    auto constantOp = rewriter.create<mix::ConstantOp>(loc, dataAttr);
     rewriter.replaceOp(op, constantOp);
     return success();
   }
 };
 #undef GET_DENSE
+
+class TanhOpLoweringPattern : public OpRewritePattern<mix::TanhOp> {
+public:
+  using OpRewritePattern<mix::TanhOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::TanhOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op->getLoc();
+    auto input = op.getInput();
+    auto resultType = op.getType();
+    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
+    Value newop;
+    if (!resultTensorType) {
+      // TODO
+      return op.emitOpError() << "Not support scale pow now.";
+    } else {
+      newop = rewriter.create<tosa::TanhOp>(loc, resultTensorType, input);
+    }
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
+class ConstantLoweringPattern : public OpRewritePattern<mix::ConstantOp> {
+public:
+  using OpRewritePattern<mix::ConstantOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::ConstantOp op,
+                                PatternRewriter &rewriter) const override {
+    auto value = op.getValue();
+    auto loc = op.getLoc();
+    auto constOp = rewriter.create<mlir::arith::ConstantOp>(loc, value);
+    rewriter.replaceOp(op, constOp);
+    return success();
+  }
+};
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
@@ -407,7 +441,8 @@ void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
                WeightOpLoweringPattern, TanhLoweringPattern,
                ConcatLoweringPattern, ReciprocalLoweringPattern,
                CosLoweringPattern, SinLoweringPattern,
-               BatchMatmulLoweringPattern>(patterns.getContext());
+               BatchMatmulLoweringPattern,
+               ConstantLoweringPattern>(patterns.getContext());
 }
 
 namespace {
@@ -442,7 +477,7 @@ void LowerPrimaryToTosaPass::runOnOperation() {
   target.addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
                       mix::MatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp,
                       mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp,
-                      mix::WeightOp, mix::TanhOp>();
+                      mix::WeightOp, mix::TanhOp, mix::ConstantOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);

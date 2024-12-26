@@ -1,3 +1,7 @@
+# NOTICE: build target: mix-opt and genFusedRMSNorm first.
+
+.PHONY: clean
+
 MIX_OPT := ../../build/bin/mix-opt
 MLIR_OPT := ../../llvm/build/bin/mlir-opt
 MLIR_CPU_RUNNER := ../../llvm/build/bin/mlir-cpu-runner
@@ -8,6 +12,9 @@ OPT_FLAG := -O0
 MLIR_LIB := ../../llvm/build/lib
 MLIR_RUNNER_UTILS := ../../llvm/build/lib/libmlir_runner_utils.so
 MLIR_C_RUNNER_UTILS := ../../llvm/build/lib/libmlir_c_runner_utils.so
+
+rms.mlir:
+	../../build/bin/genFusedRMSNorm 2> $@
 
 rms_tosa.mlir: rms.mlir
 	${MIX_OPT} $^ \
@@ -22,9 +29,9 @@ rms.ll: rms_tosa.mlir
 		--pass-pipeline="builtin.module( \
 			lower-mix-primary-to-tosa, \
 			func.func( \
-				tosa-to-linalg-named, \
-				tosa-to-linalg, \
-				tosa-to-tensor \
+			tosa-to-linalg-named, \
+			tosa-to-linalg, \
+			tosa-to-tensor \
 			), \
 			empty-tensor-to-alloc-tensor, \
 			one-shot-bufferize{bufferize-function-boundaries}, \
@@ -41,13 +48,13 @@ rms.ll: rms_tosa.mlir
 		)" | \
 	${MLIR_TRANSLATE} --mlir-to-llvmir -o $@
 
-rms: rms.ll launch.cpp
+rms: rms.ll
 	${CLANGXX} -L${MLIR_LIB} -lmlir_runner_utils -lmlir_c_runner_utils $^ -o $@
 
 run_rms: rms
 	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./rms
 
-.PHONY: clean
+
 
 clean:
-	rm rms_* *.ll rms
+	rm -rf *.mlir *.ll rms

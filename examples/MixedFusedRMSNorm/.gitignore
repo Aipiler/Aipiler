@@ -1,4 +1,4 @@
 log*
-rms_*
+*.mlir
 *.ll
 rms

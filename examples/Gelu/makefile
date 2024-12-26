@@ -13,11 +13,8 @@ gelu_prim.mlir:
 	../../build/bin/genGelu 2> $@
 
 
-clean:
-	rm gelu_*
-
-gelu-mixtotosa-lower:
-	${MIX_OPT} gelu_prim.mlir \
+gelu-mixtotosa.mlir: gelu_prim.mlir
+	${MIX_OPT} $^ \
 	--pass-pipeline="builtin.module( \
 		lower-mix-primary-to-tosa, \
 		func.func( \
@@ -43,53 +40,56 @@ gelu-mixtotosa-lower:
 	)" \
 	-o log.mlir
 
-gelu-mixtotosa-translate:
-	${MIX_OPT} ./gelu_prim.mlir \
+gelu.ll: gelu_prim.mlir
+	${MIX_OPT} $^ \
     --pass-pipeline="builtin.module( \
-      lower-mix-primary-to-tosa, \
-      func.func( \
-			tosa-to-linalg, \
-      tosa-to-linalg-named, \
-      tosa-to-tensor \
-      ), \
-			empty-tensor-to-alloc-tensor, \
-			one-shot-bufferize{bufferize-function-boundaries}, \
-			convert-math-to-libm, \
-			convert-linalg-to-loops, \
-			buffer-deallocation-pipeline, \
-			expand-strided-metadata, \
-			lower-affine, \
-			finalize-memref-to-llvm, \
-			convert-scf-to-cf, \
-			convert-cf-to-llvm, \
-			convert-arith-to-llvm, \
-			convert-func-to-llvm, \
-			reconcile-unrealized-casts \
+		lower-mix-primary-to-tosa, \
+		func.func( \
+				tosa-to-linalg, \
+		tosa-to-linalg-named, \
+		tosa-to-tensor \
+		), \
+		empty-tensor-to-alloc-tensor, \
+		one-shot-bufferize{bufferize-function-boundaries}, \
+		convert-math-to-libm, \
+		convert-linalg-to-loops, \
+		buffer-deallocation-pipeline, \
+		expand-strided-metadata, \
+		lower-affine, \
+		finalize-memref-to-llvm, \
+		convert-scf-to-cf, \
+		convert-cf-to-llvm, \
+		convert-arith-to-llvm, \
+		convert-func-to-llvm, \
+		reconcile-unrealized-casts \
     )" | \
-  ${MLIR_TRANSLATE} --mlir-to-llvmir -o log.ll
+  ${MLIR_TRANSLATE} --mlir-to-llvmir -o $@
 
-gelu-mixtotosa-run:
-	${MIX_OPT} ./gelu_prim.mlir \
+gelu-mixtotosa-run: gelu_prim.mlir
+	${MIX_OPT} $^ \
     --pass-pipeline="builtin.module( \
-      lower-mix-primary-to-tosa, \
-      func.func( \
+		lower-mix-primary-to-tosa, \
+		func.func( \
 			tosa-to-linalg, \
-      tosa-to-linalg-named, \
-      tosa-to-tensor \
-      ), \
-			empty-tensor-to-alloc-tensor, \
-			one-shot-bufferize{bufferize-function-boundaries}, \
-			convert-math-to-libm, \
-			convert-linalg-to-loops, \
-			buffer-deallocation-pipeline, \
-			expand-strided-metadata, \
-			lower-affine, \
-			finalize-memref-to-llvm, \
-			convert-scf-to-cf, \
-			convert-cf-to-llvm, \
-			convert-arith-to-llvm, \
-			convert-func-to-llvm, \
-			reconcile-unrealized-casts \
+			tosa-to-linalg-named, \
+			tosa-to-tensor \
+		), \
+		empty-tensor-to-alloc-tensor, \
+		one-shot-bufferize{bufferize-function-boundaries}, \
+		convert-math-to-libm, \
+		convert-linalg-to-loops, \
+		buffer-deallocation-pipeline, \
+		expand-strided-metadata, \
+		lower-affine, \
+		finalize-memref-to-llvm, \
+		convert-scf-to-cf, \
+		convert-cf-to-llvm, \
+		convert-arith-to-llvm, \
+		convert-func-to-llvm, \
+		reconcile-unrealized-casts \
     )" | \
-		${MLIR_CPU_RUNNER} ${OPT_FLAG} -e main -entry-point-result=void \
-		-shared-libs=${MLIR_RUNNER_UTILS} -shared-libs=${MLIR_C_RUNNER_UTILS}
+	${MLIR_CPU_RUNNER} ${OPT_FLAG} -e main -entry-point-result=void \
+	-shared-libs=${MLIR_RUNNER_UTILS} -shared-libs=${MLIR_C_RUNNER_UTILS}
+
+clean:
+	rm *.ll *.mlir
