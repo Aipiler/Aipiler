@@ -1,11 +1,11 @@
-add_executable(GenMixCode
-    GenMixCode.cpp
+add_executable(genTelechat
+    genTelechat.cpp
 )
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 
-target_link_libraries(GenMixCode
+target_link_libraries(genTelechat
     PUBLIC
     MLIRAnalysis
     MLIRCallInterfaces

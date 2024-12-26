@@ -32,14 +32,30 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 #include <iostream>
+#include <tuple>
 
 using namespace mlir;
 
 std::unique_ptr<Pass> createLowerModulePass();
 
+// 模型参数定义
 const int seq_len = 40;
+int input_len = 5;
+const int hidden_size = 5120;
+const int ffn_hidden_size = 12288;
+const int n_head = 32;
+const int head_dim = hidden_size / n_head;
+const int key_value_projection_size = hidden_size * 2;
+const int key_value_projection_head_dim = key_value_projection_size / n_head;
+const int vocab_size = 120000;
+const int batch_size = 1;
+const int n_layer = 38;
 
-ArrayAttr createIntArrayAttr(MLIRContext &context,
+std::string getOpName(std::string_view prefix, int idx, std::string_view name) {
+  return std::string(prefix) + std::to_string(idx) + std::string(name);
+}
+
+ArrayAttr createIntArrayAttr(mlir::MLIRContext &context,
                              const std::vector<int64_t> &values) {
   SmallVector<Attribute> attrs;
   attrs.reserve(values.size());
@@ -51,54 +67,39 @@ ArrayAttr createIntArrayAttr(MLIRContext &context,
   return ArrayAttr::get(&context, attrs);
 }
 
-auto genFFN(mlir::MLIRContext &context, mlir::OpBuilder &builder, Location loc,
-            Value hidden_states, Value residual, const std::string) {
+auto genMLP(mlir::OpBuilder &builder, mlir::Location loc,
+            mlir::Value hidden_states, mlir::Value residual, int idx) {
+  printf("genMLP\n");
+  auto elementType = builder.getF16Type();
+  auto gate_proj = builder.create<mix::LinearOp>(
+      loc, hidden_states, getOpName("transformer.h.", idx, ".mlp.gate_proj"),
+      hidden_size, ffn_hidden_size, false, elementType);
 
-  auto elementType = builder.getF32Type();
+  auto silu0 = builder.create<mix::SiLUOp>(loc, gate_proj);
 
-  auto linear0 = builder.create<mix::LinearOp>(loc, hidden_states,
-                                               "model_parameters.mlp.linear0",
-                                               2, 2, false, elementType);
+  auto up_proj = builder.create<mix::LinearOp>(
+      loc, hidden_states, getOpName("transformer.h.", idx, ".mlp.up_proj"),
+      hidden_size, ffn_hidden_size, false, elementType);
+  auto mul0 = builder.create<mix::MulOp>(loc, silu0, up_proj);
 
-  auto silu0 = builder.create<mix::SiLUOp>(loc, linear0);
-
-  auto linear1 = builder.create<mix::LinearOp>(loc, hidden_states,
-                                               "model_parameters.mlp.linear1",
-                                               2, 2, false, elementType);
-  auto mul0 = builder.create<mix::MulOp>(loc, silu0, linear1);
-
-  auto linear2 = builder.create<mix::LinearOp>(
-      loc, mul0, "model_parameters.mlp.linear2", 2, 2, true, elementType);
-  auto output = builder.create<mix::AddOp>(loc, linear2, residual);
-
+  auto down_proj = builder.create<mix::LinearOp>(
+      loc, mul0, getOpName("transformer.h.", idx, ".mlp.down_proj"),
+      ffn_hidden_size, hidden_size, true, elementType);
+  auto output = builder.create<mix::AddOp>(loc, down_proj, residual);
   return output;
 }
 
 std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
                                            mlir::OpBuilder &builder,
                                            Location loc) {
-
-  // hidden_states dims
-  auto hidden_size = 5120;
-  auto n_head = 32;
-  auto head_dim = hidden_size / n_head;
-  auto key_value_projection_size = hidden_size * 2;
-  auto key_value_projection_head_dim = key_value_projection_size / n_head;
-
+  printf("genRotaryEmbedding\n");
   /* 定义一些可重用的信息 */
 
   // types:
+  auto type_i16 = builder.getI32Type();
   auto type_i32 = builder.getI32Type();
-  auto type_i64 = builder.getI64Type();
+  auto type_f16 = builder.getF16Type();
   auto type_f32 = builder.getF32Type();
-  auto type_f64 = builder.getF16Type();
-  auto type_query_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, type_f32);
-  auto type_key_value_weight =
-      RankedTensorType::get({key_value_projection_size, hidden_size}, type_f32);
-  auto type_dense_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, type_f32);
-  auto type_dense_bias = RankedTensorType::get({hidden_size}, type_f32);
 
   // attrs:
   auto attr_i32_n1 = IntegerAttr::get(IntegerType::get(&context, 32), -1);
@@ -112,26 +113,32 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   // 下面是RotaryEmbedding 的代码，应该在genRotaryEmbedding中实现
 
   // line 94: torch.aten.arange.start_step
-  SmallVector<int64_t> tmp94(80);
-  for (int i = 0, j = 0; i < 80; i++, j += 2) {
-    tmp94[i] = j;
+  //   SmallVector<int32_t> tmp94(80);
+  //   for (int i = 0, j = 0; i < 80; i++, j += 2) {
+  //     tmp94[i] = j;
+  //   }
+
+  llvm::SmallVector<mlir::Attribute> tmp94(80);
+  for (int i = 0; i < 80; ++i) {
+    tmp94[i] = mlir::IntegerAttr::get(type_i16, int16_t(i));
   }
-  auto dense94 = DenseElementsAttr::get(RankedTensorType::get({80}, type_i64),
-                                        ArrayRef<int64_t>(tmp94));
+
+  auto dense94 =
+      DenseElementsAttr::get(RankedTensorType::get({80}, type_i16), tmp94);
   auto constant94 = builder.create<mix::ConstantOp>(loc, dense94);
 
   // line 102: torch.aten._to_copy
-  auto convert102 = builder.create<mix::ConvertOp>(loc, constant94, type_f32);
+  auto convert102 = builder.create<mix::ConvertOp>(loc, constant94, type_f16);
 
   // line 104: torch.constant.int
-  auto scalar101 = IntegerAttr::get(type_i64, 160);
+  auto scalar101 = IntegerAttr::get(type_i16, 160);
   auto constant101 = builder.create<mix::ConstantOp>(loc, scalar101);
 
   // line 106: torch.aten.div.Tensor
   auto dev106 = builder.create<mix::DivOp>(loc, convert102, constant101);
 
   // line 108: torch.constant.float
-  auto scalar108 = FloatAttr::get(type_f64, 30420.108888514722);
+  auto scalar108 = FloatAttr::get(type_f16, 30420.108888514722);
   auto constant108 = builder.create<mix::ConstantOp>(loc, scalar108);
 
   // line 110: torch.aten.pow.Scalar
@@ -141,19 +148,25 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   auto reciprocal112 = builder.create<mix::ReciprocalOp>(loc, pow110);
 
   // line 114: torch.constant.float
-  auto scalar114 = FloatAttr::get(type_f64, 1.000000e+00);
+  auto scalar114 = FloatAttr::get(type_f16, 1.000000e+00);
   auto constant114 = builder.create<mix::ConstantOp>(loc, scalar114);
 
   // line 116: torch.aten.mul.Scalar
   auto mul116 = builder.create<mix::MulOp>(loc, constant114, reciprocal112);
 
   // line 123: torch.aten.arange
-  SmallVector<float> tmp123(seq_len);
-  for (int i = 0; i < seq_len; i++) {
-    tmp123[i] = i;
+  //   std::vector<float> tmp123(seq_len);
+  //   for (int i = 0; i < seq_len; i++) {
+  //     tmp123[i] = i;
+  //   }
+  llvm::SmallVector<mlir::Attribute> tmp123;
+  for (int i = 0; i < seq_len; ++i) {
+    tmp123.push_back(mlir::FloatAttr::get(type_f16, 1.0f));
   }
-  auto dense123 = DenseElementsAttr::get(
-      RankedTensorType::get({seq_len}, type_f32), ArrayRef<float>(tmp123));
+
+  auto tensorType = RankedTensorType::get({seq_len}, type_f16);
+
+  auto dense123 = DenseElementsAttr::get(tensorType, tmp123);
   auto constant123 = builder.create<mix::ConstantOp>(loc, dense123);
 
   // line 126: torch.aten.unsqueeze
@@ -194,7 +207,7 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
       builder.create<mix::SliceOp>(loc, unsqueeze156, 2, 0, INT32_MAX, 1);
 
   // line 164: torch.constant.float
-  auto scalar164 = FloatAttr::get(type_f64, 1.000000e+00);
+  auto scalar164 = FloatAttr::get(type_f16, 1.000000e+00);
   auto constant164 = builder.create<mix::ConstantOp>(loc, scalar164);
 
   // line 166: torch.aten.mul.Scalar
@@ -215,7 +228,7 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
       builder.create<mix::SliceOp>(loc, unsqueeze177, 2, 0, INT32_MAX, 1);
 
   // line 185: torch.constant.float
-  auto scalar185 = FloatAttr::get(type_f64, 1.000000e+00);
+  auto scalar185 = FloatAttr::get(type_f16, 1.000000e+00);
   auto constant185 = builder.create<mix::ConstantOp>(loc, scalar185);
 
   // line 187: torch.aten.mul.Scalar
@@ -226,9 +239,10 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
 
 auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                  Location loc, Value hidden_states, Value residual,
-                 Value attention_mask) {
-
-  auto hidden_states_type = hidden_states.getType();
+                 Value attention_mask, int idx) {
+  printf("genSelfAttn\n");
+  auto hidden_states_type =
+      mlir::dyn_cast<RankedTensorType>(hidden_states.getType());
 
   // hidden_states dims
   auto hidden_states_shape = hidden_states_type.getShape();
@@ -242,17 +256,19 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   /* 定义一些可重用的信息 */
 
   // types:
+  auto type_i16 = builder.getI16Type();
   auto type_i32 = builder.getI32Type();
   auto type_i64 = builder.getI64Type();
+  auto type_f16 = builder.getF16Type();
   auto type_f32 = builder.getF32Type();
-  auto type_f64 = builder.getF16Type();
+  auto type_f64 = builder.getF64Type();
   auto type_query_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, type_f32);
+      RankedTensorType::get({hidden_size, hidden_size}, type_f16);
   auto type_key_value_weight =
-      RankedTensorType::get({hidden_size * 2, hidden_size}, type_f32);
+      RankedTensorType::get({hidden_size * 2, hidden_size}, type_f16);
   auto type_dense_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, type_f32);
-  auto type_dense_bias = RankedTensorType::get({hidden_size}, type_f32);
+      RankedTensorType::get({hidden_size, hidden_size}, type_f16);
+  auto type_dense_bias = RankedTensorType::get({hidden_size}, type_f16);
 
   // attrs:
   auto attr_i32_n1 = builder.getSI32IntegerAttr(-1);
@@ -262,21 +278,27 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto attr_i32_3 = IntegerAttr::get(IntegerType::get(&context, 32), 3);
 
   /* 定义算子 */
+  const std::string common = "transformer.h.";
 
   // %arg0
-  auto query_weight = builder.create<mix::WeightOp>(loc, type_query_weight,
-                                                    "Self_attn.query.weight");
+  auto query_weight = builder.create<mix::WeightOp>(
+      loc, type_query_weight,
+      getOpName(common, idx, ".self_attention.query.weight"));
+
   // %arg1
   auto key_value_weight = builder.create<mix::WeightOp>(
-      loc, type_key_value_weight, "Self_attn.key_value.weight");
+      loc, type_key_value_weight,
+      getOpName(common, idx, ".self_attention.key_value.weight"));
 
   // %arg2
-  auto dense_weight = builder.create<mix::WeightOp>(loc, type_dense_weight,
-                                                    "Self_attn.dense.weight");
+  auto dense_weight = builder.create<mix::WeightOp>(
+      loc, type_dense_weight,
+      getOpName(common, idx, ".self_attention.dense.weight"));
 
   // %arg3
-  auto dense_bias = builder.create<mix::WeightOp>(loc, type_dense_bias,
-                                                  "Self_attn.dense.bias");
+  auto dense_bias = builder.create<mix::WeightOp>(
+      loc, type_dense_bias,
+      getOpName(common, idx, ".self_attention.dense.bias"));
 
   // line 14: torch.aten.transpose.int
   auto transpose14 = builder.create<mix::TransposeOp>(loc, hidden_states,
@@ -478,7 +500,7 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, permute360, createIntArrayAttr(context, {n_head, seq_len, seq_len}));
 
   // line 368: torch.constant.float
-  auto scalar368 = FloatAttr::get(type_f64, 0.079056941504209485);
+  auto scalar368 = FloatAttr::get(type_f16, 0.079056941504209485);
   auto constant368 = builder.create<mix::ConstantOp>(loc, scalar368);
 
   // line 370: torch.aten.mul.Scalar
@@ -491,7 +513,7 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   // line 380: torch.aten.masked_fill.Scalar
   auto masked_fill380 = builder.create<mix::MaskedFillOp>(
       loc, reshape377, attention_mask,
-      FloatAttr::get(Float64Type::get(&context), -3.4028234663852886E+38));
+      FloatAttr::get(Float16Type::get(&context), -3.4028234663852886E+38));
 
   // line 384: torch.aten._softmax
   auto softmax384 =
@@ -547,26 +569,25 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   return add451;
 }
 
-auto genRMSNorm(mlir::MLIRContext &context, mlir::OpBuilder &builder,
-                Location loc, Value hidden_states,
-                const std::string weight_loc) {
+auto genFusedRMSNorm(mlir::OpBuilder &builder, mlir::Location loc,
+                     mlir::Value hidden_states, const std::string &name) {
 
-  auto hidden_size = 5120;
-  auto eps = APFloat(1e-6);
-
+  printf("genFusedRMSNorm\n");
+  auto elementType = builder.getF16Type();
+  float eps = 1e-6;
   auto hidden_states_type =
-      mlir::dyn_cast<RankedTensorType>(hidden_states.getType());
+      llvm::dyn_cast<RankedTensorType>(hidden_states.getType());
   auto hidden_states_shape = hidden_states_type.getShape();
   auto hidden_states_rank = hidden_states_shape.size();
-  auto elementType = hidden_states_type.getElementType();
   llvm::ArrayRef<int64_t> weightShape{int64_t(hidden_size)};
-  auto weightTensorType = RankedTensorType::get(weightShape, elementType);
+  auto weightTensorType =
+      RankedTensorType::get(weightShape, hidden_states_type.getElementType());
 
-  auto _weight3 =
-      builder.create<mix::WeightOp>(loc, weightTensorType, weight_loc);
+  auto _weight3 = builder.create<mix::WeightOp>(loc, weightTensorType, name);
 
+  llvm::SmallVector<mlir::Attribute> tmp{mlir::FloatAttr::get(elementType, 1)};
   auto constantTensorType = RankedTensorType::get({1}, elementType);
-  auto constantTensor = DenseElementsAttr::get(constantTensorType, {2.0f});
+  auto constantTensor = DenseElementsAttr::get(constantTensorType, tmp);
   auto c2Tensor = builder.create<arith::ConstantOp>(loc, constantTensor);
   auto pow0 = builder.create<mix::PowOp>(loc, hidden_states, c2Tensor);
   auto mean0 = builder.create<mix::MeanOp>(
@@ -579,52 +600,57 @@ auto genRMSNorm(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto rsqrt0 = builder.create<mix::RsqrtOp>(loc, add0);
   auto mul0 = builder.create<mix::MulOp>(loc, hidden_states, rsqrt0);
   auto mul1 = builder.create<mix::MulOp>(loc, _weight3, mul0);
-
   return mul1;
 }
 
 auto genTransformerBlock(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                          Location loc, Value hidden_states,
-                         Value attention_mask) {
-
+                         Value attention_mask, int idx) {
+  printf("genTransformerBlock\n");
   // RMSNorm
-  auto input_RMSNorm = genRMSNorm(context, builder, loc, hidden_states);
-  auto input_RMSNorm_output = input_RMSNorm.getOutput();
+  auto input_RMSNorm = genFusedRMSNorm(
+      builder, loc, hidden_states,
+      getOpName("transformer.h.", idx, ".input_layernorm.weight"));
 
   // Self_attention
-  auto Self_attn =
-      genSelfAttn(context, builder, input_RMSNorm->getLoc(),
-                  input_RMSNorm_output, hidden_states, attention_mask);
-  auto Self_attn_output = Self_attn.getOutput();
+  auto self_attn =
+      genSelfAttn(context, builder, input_RMSNorm->getLoc(), input_RMSNorm,
+                  hidden_states, attention_mask, idx);
 
   // RMSNorm
-  auto post_RMSNorm =
-      genRMSNorm(context, builder, Self_attn->getLoc(), Self_attn_output);
-  auto post_RMSNorm_output = post_RMSNorm.getOutput();
+  auto post_RMSNorm = genFusedRMSNorm(
+      builder, self_attn->getLoc(), self_attn,
+      getOpName("transformer.h.", idx, ".post_attention_layernorm.weight"));
 
   // MLP
-  auto FFNoutput = genFFN(context, builder, post_RMSNorm->getLoc(),
-                          post_RMSNorm_output, Self_attn_output);
+  auto FFNoutput =
+      genMLP(builder, post_RMSNorm->getLoc(), post_RMSNorm, self_attn, idx);
   return FFNoutput;
 }
 
-auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
-                      Location loc, int64_t hidden_size, int64_t seq_length,
-                      int64_t vocab_size) {
+mlir::Value genEmbedding(mlir::OpBuilder &builder, mlir::Location loc,
+                         mlir::Value indices, std::string param_loc,
+                         int num_embeddings, int embedding_dim,
+                         mlir::Type dtype) {
+  printf("genEmbedding\n");
+  auto embed0 = builder.create<mix::EmbeddingOp>(
+      loc, indices, param_loc, num_embeddings, embedding_dim, dtype);
+  return embed0;
+}
 
+auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
+                      Location loc) {
+  printf("genTelechatModel\n");
   /* Types */
-  auto F32Type = builder.getF32Type();
-  auto input_ids_type =
-      RankedTensorType::get({1, seq_length}, builder.getI32Type());
-  auto output_type =
-      RankedTensorType::get({seq_length, vocab_size}, builder.getF32Type());
+  auto F16Type = builder.getF16Type();
+  auto BoolType = builder.getI1Type();
+  auto input_ids_type = RankedTensorType::get({1, seq_len}, F16Type);
+  auto output_type = RankedTensorType::get({seq_len, vocab_size}, F16Type);
   auto functionTy = builder.getFunctionType({input_ids_type}, {output_type});
 
-  // 创建ml_program::subgraph
-  auto graph = builder.create<func::FuncOp>(loc, "Telechat", functionTy,
-                                            ArrayAttr{}, ArrayAttr{},
-                                            builder.getStringAttr("private"));
-
+  // 创建func.func
+  auto graph = builder.create<func::FuncOp>(loc, "Telechat", functionTy);
+  graph.setPrivate();
   auto body = graph.addEntryBlock();
   builder.setInsertionPointToEnd(body);
 
@@ -632,26 +658,34 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto input_ids = mlir::dyn_cast<TypedValue<RankedTensorType>>(Argument0);
 
   /* 逻辑 */
-  auto input_embedding = builder.create<mix::LinearOp>(
-      loc, input_ids, "input_embedding.mlp.linear0", seq_length, hidden_size,
-      false, F32Type);
+  Value hidden_states = genEmbedding(builder, graph->getLoc(), input_ids,
+                                     "transformer.word_embeddings.weight",
+                                     vocab_size, hidden_size, F16Type);
 
-  Value hidden_states = input_embedding;
+  // TODO: 创建mask
+  auto attention_mask_tensorType = RankedTensorType::get(
+      {batch_size, batch_size, input_len, input_len}, BoolType);
+  auto attention_mask_tensor =
+      DenseElementsAttr::get(attention_mask_tensorType, {true});
+  auto attention_mask =
+      builder.create<mix::ConstantOp>(loc, attention_mask_tensor);
 
-  int n_layer = 38;
   // 循环创建N个Block
   for (int i = 0; i < n_layer; ++i) {
     // transformer block
     hidden_states = genTransformerBlock(context, builder, graph->getLoc(),
-                                        hidden_states, hidden_states);
+                                        hidden_states, attention_mask, i);
   }
 
-  // Linear:将hidden_states映射到vocab_size上
-  auto output_embedding = builder.create<mix::LinearOp>(
-      loc, hidden_states, "output_embedding.mlp.linear0", hidden_size,
-      vocab_size, false, F32Type);
+  // RMSNorm
+  hidden_states = genFusedRMSNorm(builder, graph->getLoc(), hidden_states,
+                                  "transformer.ln_f.weight");
 
-  builder.create<func::ReturnOp>(loc, ValueRange{output_embedding});
+  // Linear:将hidden_states映射到vocab_size上
+  auto lm_head = builder.create<mix::LinearOp>(graph->getLoc(), hidden_states,
+                                               "lm_head.weight", hidden_size,
+                                               vocab_size, false, F16Type);
+  builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{lm_head});
   return graph;
 }
 
@@ -670,15 +704,7 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   builder.setInsertionPointToEnd(theModule.getBody());
 
-  // hidden_size
-  int64_t hidden_size = 5120;
-  // 输入token序列长度，静态长度
-  int64_t seq_length = 40;
-  // 字典长度
-  int64_t vocab_size = 120000;
-
-  auto telechat_graph = genTelechatModel(context, builder, loc, hidden_size,
-                                         seq_length, vocab_size);
+  auto telechat_graph = genTelechatModel(context, builder, loc);
 
   theModule->dump();
 
