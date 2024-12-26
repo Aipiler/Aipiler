@@ -1,4 +1,4 @@
-// load_weight.cpp
+
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -40,16 +40,6 @@ void load_model(const std::string &model_path) {
     py::scoped_interpreter guard{};
 
     log(LogLevel::INFO, "Importing Python module: load_model");
-
-    try {
-      py::module sys = py::module::import("sys");
-      sys.attr("path").attr("append")(
-          "/home/gaoshihao/project/Aipiler/examples/LoadWeight");
-      py::module load_model_module = py::module::import("load_model");
-    } catch (py::error_already_set &e) {
-      log(LogLevel::ERROR, std::string("Import error: ") + e.what());
-      throw;
-    }
     py::module load_model_module = py::module::import("load_model");
 
     log(LogLevel::INFO, "Loading model weights from: " + model_path);

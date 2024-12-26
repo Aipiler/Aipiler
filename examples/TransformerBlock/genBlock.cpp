@@ -38,6 +38,7 @@ using namespace mlir;
 std::unique_ptr<Pass> createLowerModulePass();
 
 const int seq_len = 40;
+const int hidden_size = 5120;
 
 ArrayAttr createIntArrayAttr(MLIRContext &context,
                              const std::vector<int64_t> &values) {
@@ -608,53 +609,6 @@ auto genTransformerBlock(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   return FFNoutput;
 }
 
-auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
-                      Location loc, int64_t hidden_size, int64_t seq_length,
-                      int64_t vocab_size) {
-
-  /* Types */
-  auto F32Type = builder.getF32Type();
-  auto input_ids_type =
-      RankedTensorType::get({1, seq_length}, builder.getI32Type());
-  auto output_type =
-      RankedTensorType::get({seq_length, vocab_size}, builder.getF32Type());
-  auto functionTy = builder.getFunctionType({input_ids_type}, {output_type});
-
-  // 创建ml_program::subgraph
-  auto graph = builder.create<func::FuncOp>(loc, "Telechat", functionTy,
-                                            ArrayAttr{}, ArrayAttr{},
-                                            builder.getStringAttr("private"));
-
-  auto body = graph.addEntryBlock();
-  builder.setInsertionPointToEnd(body);
-
-  auto Argument0 = graph.getArgument(0);
-  auto input_ids = mlir::dyn_cast<TypedValue<RankedTensorType>>(Argument0);
-
-  /* 逻辑 */
-  auto input_embedding = builder.create<mix::LinearOp>(
-      loc, input_ids, "input_embedding.mlp.linear0", seq_length, hidden_size,
-      false, F32Type);
-
-  Value hidden_states = input_embedding;
-
-  int n_layer = 38;
-  // 循环创建N个Block
-  for (int i = 0; i < n_layer; ++i) {
-    // transformer block
-    hidden_states = genTransformerBlock(context, builder, graph->getLoc(),
-                                        hidden_states, hidden_states);
-  }
-
-  // Linear:将hidden_states映射到vocab_size上
-  auto output_embedding = builder.create<mix::LinearOp>(
-      loc, hidden_states, "output_embedding.mlp.linear0", hidden_size,
-      vocab_size, false, F32Type);
-
-  builder.create<func::ReturnOp>(loc, ValueRange{output_embedding});
-  return graph;
-}
-
 int main() {
   mlir::MLIRContext context;
   context.getOrLoadDialect<mix::MIXDialect>();
@@ -670,15 +624,29 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   builder.setInsertionPointToEnd(theModule.getBody());
 
-  // hidden_size
-  int64_t hidden_size = 5120;
-  // 输入token序列长度，静态长度
-  int64_t seq_length = 40;
-  // 字典长度
-  int64_t vocab_size = 120000;
+  auto elementType = builder.getF32Type();
 
-  auto telechat_graph = genTelechatModel(context, builder, loc, hidden_size,
-                                         seq_length, vocab_size);
+  auto functionTy = builder.getFunctionType({}, {});
+  auto graph0 = builder.create<func::FuncOp>(loc, "self_attention", functionTy);
+  graph0.setPrivate();
+  auto body = graph0.addEntryBlock();
+  builder.setInsertionPointToEnd(body);
+
+  auto hidden_states_type =
+      RankedTensorType::get({1, seq_len, hidden_size}, elementType);
+  auto attention_mask_type =
+      RankedTensorType::get({1, 1, seq_len, seq_len}, builder.getI1Type());
+
+  auto hidden_states = builder.create<mix::WeightOp>(
+      graph0->getLoc(), hidden_states_type, "hidden_states");
+
+  auto attention_mask = builder.create<mix::WeightOp>(
+      graph0->getLoc(), attention_mask_type, "attention_mask");
+
+  auto transformerBlock =
+      genTransformerBlock(context, builder, loc, hidden_states, attention_mask);
+
+  builder.create<func::ReturnOp>(loc, ValueRange{transformerBlock});
 
   theModule->dump();
 
