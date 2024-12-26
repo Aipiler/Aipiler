@@ -841,8 +841,14 @@ LogicalResult mix::SliceOp::verify() {
 
   // Get the size of the dimension being sliced.
   int64_t dimSize = inputType.getShape()[dim];
+
   if (dimSize == ShapedType::kDynamic) {
     return emitOpError("dimension size must be static for slicing");
+  }
+
+  // Adjust the end value if it exceeds the dimension size
+  if (end > dimSize) {
+    end = dimSize;
   }
 
   // Check if start and end are within bounds.

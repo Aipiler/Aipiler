@@ -12,8 +12,7 @@ $ git submodule update --init
 ```
 $ cd mix-mlir/llvm
 $ git apply ../patch/ml_program_globalop_bufferize.patch
-$ mkdir build && cd build
-$ cmake -G Ninja ../llvm \
+$ cmake -G Ninja -Sllvm -Bbuild \
     -DLLVM_ENABLE_PROJECTS="mlir;clang" \
     -DLLVM_ENABLE_ASSERTIONS=ON \
     -DCMAKE_BUILD_TYPE=RELEASE
@@ -24,12 +23,16 @@ $ ninja check-mlir check-clang
 
 ```
 $ cd mix-mlir
-$ mkdir build
-$ cd build
-$ cmake -G Ninja .. \
-    -DMLIR_DIR=$PWD/../llvm/build/lib/cmake/mlir \
-    -DLLVM_DIR=$PWD/../llvm/build/lib/cmake/llvm \
+$ cmake -G Ninja -S. -Bbuild \
+    -DMLIR_DIR=$PWD/llvm/build/lib/cmake/mlir \
+    -DLLVM_DIR=$PWD/llvm/build/lib/cmake/llvm \
     -DLLVM_ENABLE_ASSERTIONS=ON \
     -DCMAKE_BUILD_TYPE=RELEASE
-$ ninja
+$ cmake --build build
+```
+
+### Create your conda env
+```
+$ conda create -n aipiler python=3.12
+$ pip install -r requirements.txt
 ```
