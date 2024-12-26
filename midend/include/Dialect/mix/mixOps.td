@@ -469,7 +469,7 @@ def TanhOp : MIX_Op<"prim.tanh", [Pure, InferTypeOpAdaptor]> {
     );
 }
 
-def WeightOp : MIX_Op<"prim.weight", [Pure]> {
+def WeightOp : MIX_Op<"comp.weight", [Pure]> {
     let summary = "load param";
     let description = [{
         load param from model file.

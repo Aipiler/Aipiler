@@ -35,7 +35,6 @@
 #include <iostream>
 #include <memory>
 
-#include "Utils/readjson.h"
 #include "mix/mixDialect.h"
 #include "mix/mixOps.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -367,60 +366,6 @@ public:
   }
 };
 
-#define GET_DENSE(T)                                                           \
-  std::vector<T> castedResult;                                                 \
-  for (auto e : result) {                                                      \
-    castedResult.push_back(T(e));                                              \
-  }                                                                            \
-  dataAttr = DenseElementsAttr::get(returnType, ArrayRef<T>(castedResult));
-
-class WeightOpLoweringPattern : public OpRewritePattern<mix::WeightOp> {
-public:
-  using OpRewritePattern<mix::WeightOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::WeightOp op,
-                                PatternRewriter &rewriter) const override {
-
-    auto returnType = op.getType();
-    auto elementType = returnType.getElementType();
-    auto data_loc = op.getParamLoc();
-    auto loc = op->getLoc();
-    std::vector<double> result;
-    // read weight from json file.
-    if (!getElementFromJson(data_loc.str(), result)) {
-      return op->emitOpError()
-             << "error happended when reading data from: " << data_loc;
-    }
-    // generate dense attr
-    DenseElementsAttr dataAttr;
-    if (auto floatElemType = llvm::dyn_cast<FloatType>(elementType)) {
-      auto width = floatElemType.getWidth();
-      if (width == 32) {
-        GET_DENSE(float)
-      } else if (width == 64) {
-        GET_DENSE(double)
-      } else {
-        op.emitOpError() << "unsupported element type.";
-      }
-    } else if (auto intElemType = llvm::dyn_cast<IntegerType>(elementType)) {
-      auto width = intElemType.getWidth();
-      if (width == 32) {
-        GET_DENSE(int)
-      } else if (width == 64) {
-        GET_DENSE(long)
-      } else {
-        op.emitOpError() << "unsupported element type.";
-      }
-    } else {
-      return op.emitOpError() << "Unexpected type.";
-    }
-    // create consatant op
-    auto constantOp = rewriter.create<mix::ConstantOp>(loc, dataAttr);
-    rewriter.replaceOp(op, constantOp);
-    return success();
-  }
-};
-#undef GET_DENSE
-
 class ConstantLoweringPattern : public OpRewritePattern<mix::ConstantOp> {
 public:
   using OpRewritePattern<mix::ConstantOp>::OpRewritePattern;
@@ -448,16 +393,16 @@ public:
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
-  patterns.add<
-      AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
-      DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
-      ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
-      ReshapeLoweringPattern, RsqrtLoweringPattern, WeightOpLoweringPattern,
-      TanhLoweringPattern, ConcatLoweringPattern, ReciprocalLoweringPattern,
-      CosLoweringPattern, SinLoweringPattern, BatchMatmulLoweringPattern,
-      ConstantLoweringPattern, GatherLoweringPattern>(
+  patterns
+      .add<AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
+           DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
+           ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
+           ReshapeLoweringPattern, RsqrtLoweringPattern, TanhLoweringPattern,
+           ConcatLoweringPattern, ReciprocalLoweringPattern, CosLoweringPattern,
+           SinLoweringPattern, BatchMatmulLoweringPattern,
+           ConstantLoweringPattern, GatherLoweringPattern>(
 
-      patterns.getContext());
+          patterns.getContext());
 }
 
 namespace {
@@ -489,12 +434,11 @@ void LowerPrimaryToTosaPass::runOnOperation() {
                          mix::MIXDialect, tosa::TosaDialect,
                          tensor::TensorDialect, math::MathDialect,
                          bufferization::BufferizationDialect>();
-  target
-      .addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
-                    mix::MatMulOp, mix::BatchMatMulOp, mix::NegOp, mix::ExpOp,
-                    mix::PowOp, mix::ConcatOp, mix::ReduceSumOp, mix::ReshapeOp,
-                    mix::RsqrtOp, mix::WeightOp, mix::TanhOp, mix::ConstantOp,
-                    mix::ReciprocalOp, mix::CosOp, mix::SinOp, mix::GatherOp>();
+  target.addIllegalOp<
+      mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp, mix::MatMulOp,
+      mix::BatchMatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp, mix::ConcatOp,
+      mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp, mix::WeightOp,
+      mix::TanhOp, mix::ReciprocalOp, mix::CosOp, mix::SinOp, mix::GatherOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);
