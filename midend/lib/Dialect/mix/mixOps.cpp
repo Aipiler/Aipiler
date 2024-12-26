@@ -767,6 +767,7 @@ LogicalResult mix::ConcatOp::verify() {
       }
     }
   }
+  return success();
 }
 
 LogicalResult mix::ConcatOp::inferReturnTypes(
@@ -849,6 +850,11 @@ LogicalResult mix::SliceOp::verify() {
     return emitOpError("start index must be in range [0, ")
            << dimSize - 1 << "]";
   }
+
+  if (end > dimSize) {
+    end = dimSize;
+  }
+
   if (end < 0 || end > dimSize) {
     return emitOpError("end index must be in range [0, ") << dimSize << "]";
   }
@@ -949,20 +955,11 @@ LogicalResult mix::MaskedFillOp::verify() {
   }
 
   // 验证每个维度的大小是否匹配
-  auto inputShape = inputType.getShape();
-  auto maskShape = maskType.getShape();
-  for (size_t i = 0; i < inputShape.size(); ++i) {
-    // 跳过动态维度的检查
-    if (inputShape[i] != ShapedType::kDynamic &&
-        maskShape[i] != ShapedType::kDynamic) {
-      if (inputShape[i] != maskShape[i]) {
-        return emitOpError("input and mask dimensions must match at index ")
-               << i << ", but got: " << inputShape[i] << " vs " << maskShape[i];
-      }
-    }
+  if (verifyBroadcastCompatibility(inputType, maskType)) {
+    return success();
+  } else {
+    return this->emitOpError("Failed broadcast shapes.");
   }
-
-  return success();
 }
 
 LogicalResult mix::MaskedFillOp::inferReturnTypes(
