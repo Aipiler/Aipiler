@@ -35,44 +35,33 @@ void log(LogLevel level, const std::string &message) {
 }
 
 void load_model(const std::string &model_path) {
-  try {
-    log(LogLevel::INFO, "Initializing Python interpreter");
-    py::scoped_interpreter guard{};
 
-    log(LogLevel::INFO, "Importing Python module: load_model");
-    py::module load_model_module = py::module::import("load_model");
+  log(LogLevel::INFO, "Initializing Python interpreter");
+  py::scoped_interpreter guard{};
 
-    log(LogLevel::INFO, "Loading model weights from: " + model_path);
-    py::dict model_weights =
-        load_model_module.attr("load_model_weights")(model_path);
-    log(LogLevel::INFO, "Successfully loaded model weights");
+  log(LogLevel::INFO, "Importing Python module: load_model");
+  py::module load_model_module = py::module::import("load_model");
 
-    // 打印权重统计信息
-    size_t total_params = 0;
-    log(LogLevel::INFO, "Model weights summary:");
-    for (const auto &item : model_weights) {
-      std::string key = item.first.cast<std::string>();
-      py::list value = item.second.cast<py::list>();
-      size_t param_count = value.size();
-      total_params += param_count;
+  log(LogLevel::INFO, "Loading model weights from: " + model_path);
+  py::dict model_weights =
+      load_model_module.attr("load_model_weights")(model_path);
+  log(LogLevel::INFO, "Successfully loaded model weights");
 
-      std::stringstream ss;
-      ss << "Layer: " << key << ", Parameters: " << param_count;
-      log(LogLevel::INFO, ss.str());
-    }
+  // 打印权重统计信息
+  size_t total_params = 0;
+  log(LogLevel::INFO, "Model weights summary:");
+  for (const auto &item : model_weights) {
+    std::string key = item.first.cast<std::string>();
+    py::list value = item.second.cast<py::list>();
+    size_t param_count = value.size();
+    total_params += param_count;
 
-    log(LogLevel::INFO, "Total parameters: " + std::to_string(total_params));
-
-  } catch (const py::error_already_set &e) {
-    log(LogLevel::ERROR, "Python exception: " + std::string(e.what()));
-    throw;
-  } catch (const std::exception &e) {
-    log(LogLevel::ERROR, "Standard exception: " + std::string(e.what()));
-    throw;
-  } catch (...) {
-    log(LogLevel::ERROR, "Unknown exception occurred");
-    throw;
+    std::stringstream ss;
+    ss << "Layer: " << key << ", Parameters: " << param_count;
+    log(LogLevel::INFO, ss.str());
   }
+
+  log(LogLevel::INFO, "Total parameters: " + std::to_string(total_params));
 }
 
 int main() {
