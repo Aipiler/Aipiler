@@ -6,14 +6,14 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
-#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/X86Vector/X86VectorDialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -49,7 +49,8 @@ namespace {
 template <typename SourceOp, typename TargetOp>
 class UnaryLoweringPattern : public OpRewritePattern<SourceOp> {
   using OpRewritePattern<SourceOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(SourceOp op, PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(SourceOp op,
+                                PatternRewriter &rewriter) const override {
     auto loc = op->getLoc();
     auto input = op.getInput();
     Type resultType = op.getType();
@@ -68,7 +69,8 @@ class UnaryLoweringPattern : public OpRewritePattern<SourceOp> {
 template <typename SourceOp, typename Target1Op, typename Target2Op>
 class Unary2LoweringPattern : public OpRewritePattern<SourceOp> {
   using OpRewritePattern<SourceOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(SourceOp op, PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(SourceOp op,
+                                PatternRewriter &rewriter) const override {
     auto loc = op->getLoc();
     auto input = op.getInput();
     Type resultType = op.getType();
@@ -88,11 +90,15 @@ using NegLoweringPattern = UnaryLoweringPattern<mix::NegOp, tosa::NegateOp>;
 using ExpLoweringPattern = UnaryLoweringPattern<mix::ExpOp, tosa::ExpOp>;
 using RsqrtLoweringPattern = UnaryLoweringPattern<mix::RsqrtOp, tosa::RsqrtOp>;
 using TanhLoweringPattern = UnaryLoweringPattern<mix::TanhOp, tosa::TanhOp>;
-using ReciprocalLoweringPattern = UnaryLoweringPattern<mix::ReciprocalOp, tosa::ReciprocalOp>;
-using CosLoweringPattern = Unary2LoweringPattern<mix::CosOp, tosa::CosOp, math::CosOp>;
-using SinLoweringPattern = Unary2LoweringPattern<mix::SinOp, tosa::SinOp, math::SinOp>;
+using ReciprocalLoweringPattern =
+    UnaryLoweringPattern<mix::ReciprocalOp, tosa::ReciprocalOp>;
+using CosLoweringPattern =
+    Unary2LoweringPattern<mix::CosOp, tosa::CosOp, math::CosOp>;
+using SinLoweringPattern =
+    Unary2LoweringPattern<mix::SinOp, tosa::SinOp, math::SinOp>;
 
-template <typename SourceOp, typename Target0Op, typename Target1OpI, typename Target1OpF>
+template <typename SourceOp, typename Target0Op, typename Target1OpI,
+          typename Target1OpF>
 class BinaryLoweringPattern : public OpRewritePattern<SourceOp> {
 public:
   using OpRewritePattern<SourceOp>::OpRewritePattern;
@@ -131,9 +137,12 @@ public:
   }
 };
 
-using AddLoweringPattern = BinaryLoweringPattern<mix::AddOp, tosa::AddOp, arith::AddIOp, arith::AddFOp>;
-using SubLoweringPattern = BinaryLoweringPattern<mix::SubOp, tosa::SubOp, arith::SubIOp, arith::SubFOp>;
-// using MulLoweringPattern = BinaryLoweringPattern<mix::MulOp, tosa::MulOp, arith::MulIOp, arith::MulFOp>;
+using AddLoweringPattern = BinaryLoweringPattern<mix::AddOp, tosa::AddOp,
+                                                 arith::AddIOp, arith::AddFOp>;
+using SubLoweringPattern = BinaryLoweringPattern<mix::SubOp, tosa::SubOp,
+                                                 arith::SubIOp, arith::SubFOp>;
+// using MulLoweringPattern = BinaryLoweringPattern<mix::MulOp, tosa::MulOp,
+// arith::MulIOp, arith::MulFOp>;
 class MulLoweringPattern : public OpRewritePattern<mix::MulOp> {
 public:
   using OpRewritePattern<mix::MulOp>::OpRewritePattern;
@@ -256,40 +265,39 @@ public:
     auto loc = op.getLoc();
     auto lhsType = lhs.getType();
     auto rhsType = rhs.getType();
-    auto lhsShape = lhsType.getShape();\
+    auto lhsShape = lhsType.getShape();
 
     Value newop;
-    if(lhsShape.size() != 3) {
+    if (lhsShape.size() != 3) {
       auto rhsShape = rhsType.getShape();
       auto resShape = resType.getShape();
       SmallVector<int64_t> newLhsShape;
       SmallVector<int64_t> newRhsShape;
       SmallVector<int64_t> newResShape;
-      switch(lhsShape.size()) {
-        case 1:
-          newLhsShape = {1, 1, lhsShape[1]};
-          newRhsShape = {1, 1, rhsShape[1]};
-          newResShape = {1, 1, resShape[1]};
-          break;
-        case 2:
-          newLhsShape = {1, lhsShape[0], lhsShape[1]};
-          newRhsShape = {1, rhsShape[0], rhsShape[1]};
-          newResShape = {1, resShape[0], resShape[1]};
-          break;
-        default:
-          llvm_unreachable("unsupported shape");
-      auto newResType =
-        RankedTensorType::get(newResShape, resType.getElementType());
-      auto newLhs = rewriter.create<tosa::ReshapeOp>(
-          loc, lhs, rewriter.getDenseI64ArrayAttr(newLhsShape));
-      auto newRhs = rewriter.create<tosa::ReshapeOp>(
-          loc, rhs, rewriter.getDenseI64ArrayAttr(newRhsShape));
-      newop =
-        rewriter.create<tosa::MatMulOp>(loc, newResType, newLhs, newRhs);
+      switch (lhsShape.size()) {
+      case 1:
+        newLhsShape = {1, 1, lhsShape[1]};
+        newRhsShape = {1, 1, rhsShape[1]};
+        newResShape = {1, 1, resShape[1]};
+        break;
+      case 2:
+        newLhsShape = {1, lhsShape[0], lhsShape[1]};
+        newRhsShape = {1, rhsShape[0], rhsShape[1]};
+        newResShape = {1, resShape[0], resShape[1]};
+        break;
+      default:
+        llvm_unreachable("unsupported shape");
+        auto newResType =
+            RankedTensorType::get(newResShape, resType.getElementType());
+        auto newLhs = rewriter.create<tosa::ReshapeOp>(
+            loc, lhs, rewriter.getDenseI64ArrayAttr(newLhsShape));
+        auto newRhs = rewriter.create<tosa::ReshapeOp>(
+            loc, rhs, rewriter.getDenseI64ArrayAttr(newRhsShape));
+        newop =
+            rewriter.create<tosa::MatMulOp>(loc, newResType, newLhs, newRhs);
       }
     }
-    newop =
-        rewriter.create<tosa::MatMulOp>(loc, resType, lhs, rhs);
+    newop = rewriter.create<tosa::MatMulOp>(loc, resType, lhs, rhs);
     rewriter.replaceOp(op, newop);
     return success();
   }
@@ -337,8 +345,9 @@ public:
     auto loc = op.getLoc();
     auto input = op.getInput();
     auto axis = op.getAxis();
-    
-    auto newop = rewriter.create<tosa::ReduceSumOp>(loc, input, rewriter.getI32IntegerAttr(axis));
+
+    auto newop = rewriter.create<tosa::ReduceSumOp>(
+        loc, input, rewriter.getI32IntegerAttr(axis));
     rewriter.replaceOp(op, newop);
     return success();
   }
@@ -347,8 +356,9 @@ public:
 class ConcatLoweringPattern : public OpConversionPattern<mix::ConcatOp> {
 public:
   using OpConversionPattern<mix::ConcatOp>::OpConversionPattern;
-  LogicalResult matchAndRewrite(mix::ConcatOp op, OpAdaptor adaptor,
-                                ConversionPatternRewriter &rewriter) const override {
+  LogicalResult
+  matchAndRewrite(mix::ConcatOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
     auto loc = op->getLoc();
     auto inputs = op.getODSOperands(0);
     auto axis = op.getAxis();
@@ -469,11 +479,12 @@ public:
     size[dim] = end - begin;
     stride[dim] = step;
 
-    auto newop = rewriter.create<tensor::ExtractSliceOp>(loc, op.getType(), input, 
-        ValueRange({}), ValueRange({}), ValueRange({}), 
-        rewriter.getDenseI64ArrayAttr(offset), 
-        rewriter.getDenseI64ArrayAttr(size), rewriter.getDenseI64ArrayAttr(stride));
-    
+    auto newop = rewriter.create<tensor::ExtractSliceOp>(
+        loc, op.getType(), input, ValueRange({}), ValueRange({}),
+        ValueRange({}), rewriter.getDenseI64ArrayAttr(offset),
+        rewriter.getDenseI64ArrayAttr(size),
+        rewriter.getDenseI64ArrayAttr(stride));
+
     rewriter.replaceOp(op, newop);
     return success();
   }
@@ -486,8 +497,8 @@ public:
                                 PatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     auto input = op.getInput();
-    auto dim1= op.getDim1();
-    auto dim2= op.getDim2();
+    auto dim1 = op.getDim1();
+    auto dim2 = op.getDim2();
     auto resultType = dyn_cast<ShapedType>(op.getType());
     if (llvm::isa<UnrankedTensorType>(resultType))
       return failure();
@@ -502,11 +513,11 @@ public:
     for (auto dim : dimsVector) {
       dimsValues.push_back(rewriter.create<arith::ConstantIndexOp>(loc, dim));
     }
-    
+
     Value perm = rewriter.create<tensor::FromElementsOp>(loc, dimsValues);
-    auto newop = rewriter.create<tosa::TransposeOp>(loc, op.getType()
-        , input, perm);
-      
+    auto newop =
+        rewriter.create<tosa::TransposeOp>(loc, op.getType(), input, perm);
+
     rewriter.replaceOp(op, newop);
     return success();
   }
@@ -525,7 +536,7 @@ public:
       return failure();
 
     SmallVector<int64_t> dimsVector;
-    for (auto dim : dims){
+    for (auto dim : dims) {
       dimsVector.push_back(dim.cast<IntegerAttr>().getInt());
     }
 
@@ -534,9 +545,9 @@ public:
       dimsValues.push_back(rewriter.create<arith::ConstantIndexOp>(loc, dim));
     }
     Value perm = rewriter.create<tensor::FromElementsOp>(loc, dimsValues);
-    auto newop = rewriter.create<tosa::TransposeOp>(loc, op.getType()
-        , input, perm);
-      
+    auto newop =
+        rewriter.create<tosa::TransposeOp>(loc, op.getType(), input, perm);
+
     rewriter.replaceOp(op, newop);
     return success();
   }
@@ -553,11 +564,11 @@ public:
     auto resultType = op.getType();
 
     Value newop;
-    if(auto resTensorType = llvm::dyn_cast<RankedTensorType>(resultType)){
+    if (auto resTensorType = llvm::dyn_cast<RankedTensorType>(resultType)) {
       newop = rewriter.create<tosa::CastOp>(loc, resultType, input);
     }
     newop = rewriter.create<arith::BitcastOp>(loc, resultType, input);
-      
+
     rewriter.replaceOp(op, newop);
     return success();
   }
@@ -570,7 +581,7 @@ public:
                                 PatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     auto input = op.getInput();
-    auto axis= op.getAxis();
+    auto axis = op.getAxis();
     auto inputType = dyn_cast<RankedTensorType>(input.getType());
     if (!inputType)
       return failure();
@@ -582,19 +593,19 @@ public:
           op, "Only floating-point or integer datatype legalization supported");
     }
 
-    if(axis > rank)
-       return rewriter.notifyMatchFailure(op, "axis is invalid");
+    if (axis > rank)
+      return rewriter.notifyMatchFailure(op, "axis is invalid");
 
     llvm::SmallVector<int64_t> shapeNum;
-    for (auto dim : inputType.getShape()) { 
+    for (auto dim : inputType.getShape()) {
       if (dim == axis)
         shapeNum.push_back(1);
       else {
         shapeNum.push_back(dim);
       }
-    } 
+    }
     if (axis == rank)
-    shapeNum.push_back(1);
+      shapeNum.push_back(1);
 
     rewriter.replaceOpWithNewOp<tosa::ReshapeOp>(
         op, op.getType().dyn_cast<RankedTensorType>(), input,
@@ -605,17 +616,16 @@ public:
 } // namespace
 
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
-  patterns.add<AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
-               DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
-               ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
-               ReshapeLoweringPattern, RsqrtLoweringPattern,
-               WeightOpLoweringPattern, TanhLoweringPattern,
-               ConcatLoweringPattern, ReciprocalLoweringPattern,
-               CosLoweringPattern, SinLoweringPattern,
-               BatchMatmulLoweringPattern, ConvertLoweringPattern,
-               PermuteLoweringPattern, SliceLoweringPattern,
-               UnsqueezeLoweringPattern, TransposeLoweringPattern,
-               ConstantLoweringPattern>(patterns.getContext());
+  patterns.add<
+      AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
+      DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
+      ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
+      ReshapeLoweringPattern, RsqrtLoweringPattern, WeightOpLoweringPattern,
+      TanhLoweringPattern, ConcatLoweringPattern, ReciprocalLoweringPattern,
+      CosLoweringPattern, SinLoweringPattern, BatchMatmulLoweringPattern,
+      ConvertLoweringPattern, PermuteLoweringPattern, SliceLoweringPattern,
+      UnsqueezeLoweringPattern, TransposeLoweringPattern,
+      ConstantLoweringPattern>(patterns.getContext());
 }
 
 namespace {
