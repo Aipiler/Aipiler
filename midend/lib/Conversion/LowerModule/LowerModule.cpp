@@ -48,6 +48,8 @@ public:
   LogicalResult matchAndRewrite(mix::LinearOp op,
                                 PatternRewriter &rewriter) const override {
     auto input = op.getInput();
+    auto inputType = input.getType();
+    auto inputShape = inputType.cast<RankedTensorType>().getShape();
     auto loc = op.getLoc();
     auto in_feature = op.getInFeature();
     auto out_feature = op.getOutFeature();
@@ -58,10 +60,20 @@ public:
     std::string params_loc(op.getParamsLoc());
     auto weight_loc = params_loc + ".weight";
 
-    SmallVector<int64_t> weightShape{out_feature, in_feature};
+    SmallVector<int64_t> weightShape{in_feature, out_feature};
     auto weightType = RankedTensorType::get(weightShape, dtype);
     auto weight = rewriter.create<mix::WeightOp>(loc, weightType, weight_loc);
-    auto matmul0 = rewriter.create<mix::MatMulOp>(loc, input, weight);
+    Value matmul0;
+    if (inputShape.size() == 2) {
+      matmul0 = rewriter.create<mix::MatMulOp>(loc, input, weight);
+    } else if (inputShape.size() == 3) {
+      auto weight_reshape = rewriter.create<mix::ReshapeOp>(
+          loc, weight, rewriter.getI64ArrayAttr({1, in_feature, out_feature}));
+      matmul0 = rewriter.create<mix::BatchMatMulOp>(loc, input, weight_reshape);
+    } else {
+      return op.emitOpError("Unexpect input shape");
+    }
+
     Value output = matmul0;
     if (has_bias) {
       auto bias_loc = params_loc + ".bias";

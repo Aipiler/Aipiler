@@ -40,7 +40,7 @@ std::unique_ptr<Pass> createLowerModulePass();
 
 // 模型参数定义
 const int seq_len = 40;
-int input_len = 5;
+int input_len = 40;
 const int hidden_size = 5120;
 const int ffn_hidden_size = 12288;
 const int n_head = 32;
@@ -511,9 +511,10 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, mul370, createIntArrayAttr(context, {1, n_head, seq_len, seq_len}));
 
   // line 380: torch.aten.masked_fill.Scalar
+  auto constant380 = builder.create<mix::ConstantOp>(
+      loc, builder.getFloatAttr(type_f16, -3.4028234663852886E+38));
   auto masked_fill380 = builder.create<mix::MaskedFillOp>(
-      loc, reshape377, attention_mask,
-      FloatAttr::get(Float16Type::get(&context), -3.4028234663852886E+38));
+      loc, reshape377, attention_mask, constant380);
 
   // line 384: torch.aten._softmax
   auto softmax384 =
@@ -588,14 +589,14 @@ auto genFusedRMSNorm(mlir::OpBuilder &builder, mlir::Location loc,
   llvm::SmallVector<mlir::Attribute> tmp{mlir::FloatAttr::get(elementType, 1)};
   auto constantTensorType = RankedTensorType::get({1}, elementType);
   auto constantTensor = DenseElementsAttr::get(constantTensorType, tmp);
-  auto c2Tensor = builder.create<arith::ConstantOp>(loc, constantTensor);
+  auto c2Tensor = builder.create<mix::ConstantOp>(loc, constantTensor);
   auto pow0 = builder.create<mix::PowOp>(loc, hidden_states, c2Tensor);
   auto mean0 = builder.create<mix::MeanOp>(
       loc, pow0, builder.getI32ArrayAttr({int32_t(hidden_states_rank - 1)}),
       builder.getBoolAttr(true));
 
   auto epsAttr = builder.getFloatAttr(elementType, eps);
-  auto const_eps = builder.create<arith::ConstantOp>(loc, epsAttr);
+  auto const_eps = builder.create<mix::ConstantOp>(loc, epsAttr);
   auto add0 = builder.create<mix::AddOp>(loc, mean0, const_eps);
   auto rsqrt0 = builder.create<mix::RsqrtOp>(loc, add0);
   auto mul0 = builder.create<mix::MulOp>(loc, hidden_states, rsqrt0);
@@ -663,30 +664,30 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                                      "transformer.word_embeddings.weight",
                                      vocab_size, hidden_size, F16Type);
 
-  //   // TODO: 创建mask
-  //   auto attention_mask_tensorType = RankedTensorType::get(
-  //       {batch_size, batch_size, input_len, input_len}, BoolType);
-  //   auto attention_mask_tensor =
-  //       DenseElementsAttr::get(attention_mask_tensorType, {true});
-  //   auto attention_mask =
-  //       builder.create<mix::ConstantOp>(loc, attention_mask_tensor);
+  // TODO: 创建mask
+  auto attention_mask_tensorType = RankedTensorType::get(
+      {batch_size, batch_size, input_len, input_len}, BoolType);
+  auto attention_mask_tensor =
+      DenseElementsAttr::get(attention_mask_tensorType, {true});
+  auto attention_mask =
+      builder.create<mix::ConstantOp>(loc, attention_mask_tensor);
 
-  //   // 循环创建N个Block
-  //   for (int i = 0; i < n_layer; ++i) {
-  //     // transformer block
-  //     hidden_states = genTransformerBlock(context, builder, graph->getLoc(),
-  //                                         hidden_states, attention_mask, i);
-  //   }
+  // 循环创建N个Block
+  for (int i = 0; i < n_layer; ++i) {
+    // transformer block
+    hidden_states = genTransformerBlock(context, builder, graph->getLoc(),
+                                        hidden_states, attention_mask, i);
+  }
 
-  //   // RMSNorm
-  //   hidden_states = genFusedRMSNorm(builder, graph->getLoc(), hidden_states,
-  //                                   "transformer.ln_f.weight");
+  // RMSNorm
+  hidden_states = genFusedRMSNorm(builder, graph->getLoc(), hidden_states,
+                                  "transformer.ln_f.weight");
 
   // Linear:将hidden_states映射到vocab_size上
   auto lm_head = builder.create<mix::LinearOp>(graph->getLoc(), hidden_states,
                                                "lm_head.weight", hidden_size,
                                                vocab_size, false, F16Type);
-  builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{});
+  builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{lm_head});
   // builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{hidden_states});
   return graph;
 }
