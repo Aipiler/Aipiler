@@ -9,14 +9,12 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
-#include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/ExtensibleDialect.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
@@ -34,14 +32,22 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 #include <iostream>
+#include <tuple>
 
 using namespace mlir;
-std::unique_ptr<Pass> createLowerModulePass();
-std::unique_ptr<Pass> createLowerCompositePass();
-std::unique_ptr<Pass> createLowerPrimaryToTosa();
-const int seq_len = 40;
 
-ArrayAttr createIntArrayAttr(MLIRContext &context,
+std::unique_ptr<Pass> createLowerModulePass();
+
+// 模型参数定义
+const int seq_len = 40;
+const int hidden_size = 5120;
+const int ffn_hidden_size = 12288;
+const int n_head = 32;
+const int head_dim = hidden_size / n_head;
+const int key_value_projection_size = hidden_size * 2;
+const int key_value_projection_head_dim = key_value_projection_size / n_head;
+
+ArrayAttr createIntArrayAttr(mlir::MLIRContext &context,
                              const std::vector<int64_t> &values) {
   SmallVector<Attribute> attrs;
   attrs.reserve(values.size());
@@ -53,16 +59,30 @@ ArrayAttr createIntArrayAttr(MLIRContext &context,
   return ArrayAttr::get(&context, attrs);
 }
 
+auto genMLP(mlir::OpBuilder &builder, mlir::Location loc,
+            mlir::Value hidden_states, mlir::Value residual) {
+  auto elementType = builder.getF32Type();
+  auto linear0 = builder.create<mix::LinearOp>(
+      loc, hidden_states, "model_parameters.mlp.linear0", hidden_size,
+      ffn_hidden_size, false, elementType);
+
+  auto silu0 = builder.create<mix::SiLUOp>(loc, linear0);
+
+  auto linear1 = builder.create<mix::LinearOp>(
+      loc, hidden_states, "model_parameters.mlp.linear1", hidden_size,
+      ffn_hidden_size, false, elementType);
+  auto mul0 = builder.create<mix::MulOp>(loc, silu0, linear1);
+
+  auto linear2 = builder.create<mix::LinearOp>(
+      loc, mul0, "model_parameters.mlp.linear2", ffn_hidden_size, hidden_size,
+      true, elementType);
+  auto output = builder.create<mix::AddOp>(loc, linear2, residual);
+  return output;
+}
+
 std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
                                            mlir::OpBuilder &builder,
                                            Location loc) {
-
-  // hidden_states dims
-  auto hidden_size = 5120;
-  auto n_head = 32;
-  auto head_dim = hidden_size / n_head;
-  auto key_value_projection_size = hidden_size * 2;
-  auto key_value_projection_head_dim = key_value_projection_size / n_head;
 
   /* 定义一些可重用的信息 */
 
@@ -204,11 +224,11 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
 }
 
 auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
-                 Location loc, TypedValue<RankedTensorType> &hidden_states,
-                 TypedValue<RankedTensorType> &residual,
-                 TypedValue<RankedTensorType> &attention_mask) {
+                 Location loc, Value hidden_states, Value residual,
+                 Value attention_mask) {
 
-  auto hidden_states_type = hidden_states.getType();
+  auto hidden_states_type =
+      mlir::dyn_cast<RankedTensorType>(hidden_states.getType());
 
   // hidden_states dims
   auto hidden_states_shape = hidden_states_type.getShape();
@@ -527,8 +547,64 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   return add451;
 }
 
+auto genFusedRMSNorm(mlir::OpBuilder &builder, mlir::Location loc,
+                     mlir::Value hidden_states) {
+  auto elementType = builder.getF32Type();
+  float eps = 1e-6;
+  auto hidden_states_type =
+      llvm::dyn_cast<RankedTensorType>(hidden_states.getType());
+  auto hidden_states_shape = hidden_states_type.getShape();
+  auto hidden_states_rank = hidden_states_shape.size();
+  llvm::ArrayRef<int64_t> weightShape{int64_t(hidden_size)};
+  auto weightTensorType =
+      RankedTensorType::get(weightShape, hidden_states_type.getElementType());
+
+  auto _weight3 = builder.create<mix::WeightOp>(loc, weightTensorType,
+                                                "model_parameters.rms.weight");
+  auto constantTensorType = RankedTensorType::get({1}, elementType);
+  auto constantTensor = DenseElementsAttr::get(constantTensorType, {2.0f});
+  auto c2Tensor = builder.create<arith::ConstantOp>(loc, constantTensor);
+  auto pow0 = builder.create<mix::PowOp>(loc, hidden_states, c2Tensor);
+  auto mean0 = builder.create<mix::MeanOp>(
+      loc, pow0, builder.getI32ArrayAttr({int32_t(hidden_states_rank - 1)}),
+      builder.getBoolAttr(true));
+
+  auto epsAttr = builder.getFloatAttr(elementType, eps);
+  auto const_eps = builder.create<arith::ConstantOp>(loc, epsAttr);
+  auto add0 = builder.create<mix::AddOp>(loc, mean0, const_eps);
+  auto rsqrt0 = builder.create<mix::RsqrtOp>(loc, add0);
+  auto mul0 = builder.create<mix::MulOp>(loc, hidden_states, rsqrt0);
+  auto mul1 = builder.create<mix::MulOp>(loc, _weight3, mul0);
+  return mul1;
+}
+
+auto genTransformerBlock(mlir::MLIRContext &context, mlir::OpBuilder &builder,
+                         Location loc, Value hidden_states,
+                         Value attention_mask) {
+
+  // RMSNorm
+  auto input_RMSNorm = genFusedRMSNorm(builder, loc, hidden_states);
+  auto input_RMSNorm_output = input_RMSNorm.getOutput();
+
+  // Self_attention
+  auto self_attn =
+      genSelfAttn(context, builder, input_RMSNorm->getLoc(),
+                  input_RMSNorm_output, hidden_states, attention_mask);
+
+  // RMSNorm
+  auto post_RMSNorm = genFusedRMSNorm(builder, self_attn->getLoc(), self_attn);
+
+  // MLP
+  auto FFNoutput =
+      genMLP(builder, post_RMSNorm->getLoc(), post_RMSNorm, self_attn);
+  return FFNoutput;
+}
+
 int main() {
   mlir::MLIRContext context;
+  context.getOrLoadDialect<mix::MIXDialect>();
+  context.getOrLoadDialect<mlir::arith::ArithDialect>();
+  context.getOrLoadDialect<mlir::ml_program::MLProgramDialect>();
   context.getOrLoadDialect<mix::MIXDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::func::FuncDialect>();
@@ -540,70 +616,41 @@ int main() {
   builder.setInsertionPointToEnd(theModule.getBody());
 
   auto elementType = builder.getF32Type();
-  auto printInputType = UnrankedTensorType::get(elementType);
-  auto printFunTy =
-      builder.getFunctionType(TypeRange{printInputType}, TypeRange{});
-  auto printfunc =
-      builder.create<func::FuncOp>(loc, "printMemrefF32", printFunTy);
-  printfunc.setPrivate();
 
   auto functionTy = builder.getFunctionType({}, {});
-  auto graph0 = builder.create<func::FuncOp>(loc, "self_attention", functionTy);
+  auto graph0 =
+      builder.create<func::FuncOp>(loc, "TransformerBlock", functionTy);
   graph0.setPrivate();
   auto body = graph0.addEntryBlock();
   builder.setInsertionPointToEnd(body);
 
   auto hidden_states_type =
-      RankedTensorType::get({1, seq_len, 5120}, elementType);
+      RankedTensorType::get({1, seq_len, hidden_size}, elementType);
   auto attention_mask_type =
       RankedTensorType::get({1, 1, seq_len, seq_len}, builder.getI1Type());
 
   auto hidden_states = builder.create<mix::WeightOp>(
       graph0->getLoc(), hidden_states_type, "hidden_states");
-  auto residual = builder.create<mix::WeightOp>(hidden_states->getLoc(),
-                                                hidden_states_type, "residual");
+
   auto attention_mask = builder.create<mix::WeightOp>(
-      residual->getLoc(), attention_mask_type, "attention_mask");
+      graph0->getLoc(), attention_mask_type, "attention_mask");
 
-  auto hidden_states_output = hidden_states.getOutput();
-  auto residual_output = residual.getOutput();
-  auto attention_mask_output = attention_mask.getOutput();
-
-  auto self_attn =
-      genSelfAttn(context, builder, attention_mask->getLoc(),
-                  hidden_states_output, residual_output, attention_mask_output);
+  auto transformerBlock =
+      genTransformerBlock(context, builder, loc, hidden_states, attention_mask);
 
   builder.create<func::ReturnOp>(loc, ValueRange{});
 
-  //   builder.setInsertionPointToEnd(theModule.getBody());
-  //   auto mainfunc = builder.create<func::FuncOp>(loc, "main",
-  //                                                builder.getFunctionType({},
-  //                                                {}));
-  //   mainfunc.setPrivate();
-  //   auto mainbody = mainfunc.addEntryBlock();
-  //   builder.setInsertionPointToEnd(mainbody);
-
-  //   auto argAttr =
-  //       DenseElementsAttr::get(tensorType, llvm::ArrayRef<float>{1, 2, 3,
-  //       4});
-
-  //   auto arg0 = builder.create<arith::ConstantOp>(loc, argAttr);
-  //   auto arg1 = builder.create<arith::ConstantOp>(loc, argAttr);
-  //   builder.create<func::CallOp>(loc, graph0, ValueRange{arg0, arg1});
-  //   builder.create<func::ReturnOp>(loc);
-  mlir::PassManager pm(&context);
-  pm.addPass(createLowerModulePass());
-  pm.addPass(createLowerCompositePass());
-  //   pm.addPass(createLowerPrimaryToTosa());
-
   theModule->dump();
 
-  std::cout << "-------------------------------------------------" << std::endl;
+  // std::cout << ShapedType::kDynamic << std::endl;
 
-  if (mlir::failed(pm.run(theModule))) {
-    return -1;
-  }
-  theModule->dump();
+  // mlir::PassManager pm(&context);
+  // pm.addPass(createLowerModulePass());
+  // if (mlir::failed(pm.run(theModule))) {
+  //   return 4;
+  // }
+  // std::cout << "==== After Lower pass GRAPH-LOWER =====" << std::endl;
+  // theModule->dump();
 
   return 0;
 }

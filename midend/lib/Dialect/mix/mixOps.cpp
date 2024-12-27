@@ -5,7 +5,9 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/IntegerSet.h"
+#include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/SmallVector.h"
@@ -93,7 +95,7 @@ LogicalResult mix::ConvertOp::inferReturnTypes(
   auto inputType = adaptor.getValue().getType();
 
   // 获取目标元素类型
-  auto elementType = adaptor.getElementTy();
+  auto elementType = adaptor.getElementTyAttr().getValue();
   if (!mlir::isa<Type>(elementType)) {
     return emitOptionalError(location,
                              "element_ty attribute must be a valid type");
@@ -358,11 +360,7 @@ LogicalResult mix::MatMulOp::verify() {
     this->emitOpError() << "Types mismatch.";
     return failure();
   }
-  if (lhsRank != rhsRank || lhsRank != 2 || rhsRank != 2) {
-    this->emitOpError() << "Unexpected ranks.";
-    return failure();
-  }
-  if (lhsShape[1] != rhsShape[0]) {
+  if (lhsShape[1] != rhsShape[0] || lhsRank != 2 || rhsRank != 2) {
     this->emitError() << "Unexpect shapes.";
     return failure();
   }
@@ -765,6 +763,7 @@ LogicalResult mix::ConcatOp::verify() {
       }
     }
   }
+  return success();
 }
 
 LogicalResult mix::ConcatOp::inferReturnTypes(
@@ -838,8 +837,14 @@ LogicalResult mix::SliceOp::verify() {
 
   // Get the size of the dimension being sliced.
   int64_t dimSize = inputType.getShape()[dim];
+
   if (dimSize == ShapedType::kDynamic) {
     return emitOpError("dimension size must be static for slicing");
+  }
+
+  // Adjust the end value if it exceeds the dimension size
+  if (end > dimSize) {
+    end = dimSize;
   }
 
   // Check if start and end are within bounds.
@@ -847,6 +852,11 @@ LogicalResult mix::SliceOp::verify() {
     return emitOpError("start index must be in range [0, ")
            << dimSize - 1 << "]";
   }
+
+  if (end > dimSize) {
+    end = dimSize;
+  }
+
   if (end < 0 || end > dimSize) {
     return emitOpError("end index must be in range [0, ") << dimSize << "]";
   }
@@ -917,6 +927,9 @@ LogicalResult mix::SliceOp::inferReturnTypes(
 LogicalResult mix::MaskedFillOp::verify() {
   // 获取输入tensor
   auto input = getInput();
+  // 获取掩码tensor
+  auto mask = getMask();
+  auto valueType = getNumber().getType();
   if (!input) {
     return emitOpError("requires an input tensor");
   }
@@ -925,8 +938,6 @@ LogicalResult mix::MaskedFillOp::verify() {
     return emitOpError("input must be a ranked tensor");
   }
 
-  // 获取掩码tensor
-  auto mask = getMask();
   if (!mask) {
     return emitOpError("requires a mask tensor");
   }
@@ -947,20 +958,16 @@ LogicalResult mix::MaskedFillOp::verify() {
   }
 
   // 验证每个维度的大小是否匹配
-  auto inputShape = inputType.getShape();
-  auto maskShape = maskType.getShape();
-  for (size_t i = 0; i < inputShape.size(); ++i) {
-    // 跳过动态维度的检查
-    if (inputShape[i] != ShapedType::kDynamic &&
-        maskShape[i] != ShapedType::kDynamic) {
-      if (inputShape[i] != maskShape[i]) {
-        return emitOpError("input and mask dimensions must match at index ")
-               << i << ", but got: " << inputShape[i] << " vs " << maskShape[i];
-      }
-    }
+  if (verifyBroadcastCompatibility(inputType, maskType)) {
+    return success();
+  } else {
+    return this->emitOpError("Failed broadcast shapes.");
   }
 
-  return success();
+  // 验证输入的数据类型是否与value的数据类型匹配
+  if (inputType.getElementType() != valueType) {
+    return emitOpError("input and value must have the same element type");
+  }
 }
 
 LogicalResult mix::MaskedFillOp::inferReturnTypes(
@@ -1222,14 +1229,6 @@ LogicalResult mix::ReduceSumOp::inferReturnTypes(
   return success();
 }
 
-LogicalResult mix::GeluOp::inferReturnTypes(
-    MLIRContext *context, std::optional<Location> location,
-    GeluOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
-  auto inputType = adaptor.getInput().getType();
-  inferredReturnTypes.push_back(inputType);
-  return success();
-}
-
 LogicalResult mix::TanhOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> location,
     TanhOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
@@ -1281,14 +1280,55 @@ LogicalResult mix::EmbeddingOp::inferReturnTypes(
     EmbeddingOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
 
   auto input = adaptor.getInput();
+  auto opt_dtype = adaptor.getDtype();
+  auto dtype = opt_dtype.has_value() ? opt_dtype.value()
+                                     : mlir::FloatType::getF32(context);
   auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
   auto shape = inputType.getShape();
   auto embeddingdim = adaptor.getEmbeddingDim();
   SmallVector<int64_t> outputShape(shape);
   outputShape.push_back(embeddingdim);
-  auto returnType =
-      RankedTensorType::get(outputShape, inputType.getElementType());
+  auto returnType = RankedTensorType::get(outputShape, dtype);
   inferredReturnTypes.push_back(returnType);
+  return success();
+}
+
+LogicalResult mix::GetItemOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    GetItemOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto value = adaptor.getValue();
+  auto valueType = mlir::dyn_cast<RankedTensorType>(value.getType());
+  auto valueElementType = valueType.getElementType();
+  auto valueShape = valueType.getShape();
+  auto embeddingDim = valueShape.back();
+  auto indices = adaptor.getIndice();
+  auto indiceType = indices.getType();
+  Type returnType;
+  if (auto integerType = dyn_cast<IntegerType>(indiceType)) {
+    SmallVector<int64_t> outputShape;
+    outputShape.push_back(embeddingDim);
+    returnType = RankedTensorType::get(outputShape, valueElementType);
+  } else if (auto tensorType = dyn_cast<RankedTensorType>(indiceType)) {
+    SmallVector<int64_t> outputShape(valueShape);
+    returnType = RankedTensorType::get(outputShape, valueElementType);
+  }
+  inferredReturnTypes.push_back(returnType);
+  return success();
+}
+
+LogicalResult mix::GatherOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    GatherOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto indices = adaptor.getIndices();
+  auto indicesType = mlir::dyn_cast<RankedTensorType>(indices.getType());
+  SmallVector<int64_t> indicesShape(indicesType.getShape());
+  auto value = adaptor.getValues();
+  auto valueType = mlir::dyn_cast<RankedTensorType>(value.getType());
+  auto embeddingDim = valueType.getShape().back();
+  indicesShape.push_back(embeddingDim);
+  auto retType =
+      RankedTensorType::get(indicesShape, valueType.getElementType());
+  inferredReturnTypes.push_back(retType);
   return success();
 }
 

@@ -35,7 +35,6 @@
 #include <iostream>
 #include <memory>
 
-#include "Utils/readjson.h"
 #include "mix/mixDialect.h"
 #include "mix/mixOps.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -65,6 +64,15 @@ class UnaryLoweringPattern : public OpRewritePattern<SourceOp> {
     return success();
   }
 };
+using NegLoweringPattern = UnaryLoweringPattern<mix::NegOp, tosa::NegateOp>;
+using ExpLoweringPattern = UnaryLoweringPattern<mix::ExpOp, tosa::ExpOp>;
+using RsqrtLoweringPattern = UnaryLoweringPattern<mix::RsqrtOp, tosa::RsqrtOp>;
+using TanhLoweringPattern = UnaryLoweringPattern<mix::TanhOp, tosa::TanhOp>;
+using ReciprocalLoweringPattern =
+    UnaryLoweringPattern<mix::ReciprocalOp, tosa::ReciprocalOp>;
+using CosLoweringPattern = UnaryLoweringPattern<mix::CosOp, tosa::CosOp>;
+using SinLoweringPattern = UnaryLoweringPattern<mix::SinOp, tosa::SinOp>;
+
 
 template <typename SourceOp, typename Target1Op, typename Target2Op>
 class Unary2LoweringPattern : public OpRewritePattern<SourceOp> {
@@ -364,6 +372,7 @@ public:
     auto axis = op.getAxis();
     mlir::ValueRange valueRange(inputs);
     auto newop = rewriter.create<tosa::ConcatOp>(loc, valueRange, axis);
+    rewriter.replaceOp(op, newop);
     return success();
   }
 };
@@ -626,6 +635,31 @@ void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
       ConvertLoweringPattern, PermuteLoweringPattern, SliceLoweringPattern,
       UnsqueezeLoweringPattern, TransposeLoweringPattern,
       ConstantLoweringPattern>(patterns.getContext());
+=======
+class GatherLoweringPattern : public OpRewritePattern<mix::GatherOp> {
+public:
+  using OpRewritePattern<mix::GatherOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::GatherOp op,
+                                PatternRewriter &rewriter) const override {
+    auto gather0 = rewriter.create<tosa::GatherOp>(
+        op->getLoc(), op.getType(), op.getValues(), op.getIndices());
+    rewriter.replaceOp(op, gather0);
+    return success();
+  }
+};
+} // namespace
+
+void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
+  patterns
+      .add<AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
+           DivLoweringPattern, MatmulLoweringPattern, NegLoweringPattern,
+           ExpLoweringPattern, PowLoweringPattern, ReduceSumLoweringPattern,
+           ReshapeLoweringPattern, RsqrtLoweringPattern, TanhLoweringPattern,
+           ConcatLoweringPattern, ReciprocalLoweringPattern, CosLoweringPattern,
+           SinLoweringPattern, BatchMatmulLoweringPattern,
+           ConstantLoweringPattern, GatherLoweringPattern>(
+
+          patterns.getContext());
 }
 
 namespace {
@@ -657,10 +691,12 @@ void LowerPrimaryToTosaPass::runOnOperation() {
                          mix::MIXDialect, tosa::TosaDialect,
                          tensor::TensorDialect, math::MathDialect,
                          bufferization::BufferizationDialect>();
-  target.addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
-                      mix::MatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp,
-                      mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp,
-                      mix::WeightOp, mix::TanhOp, mix::ConstantOp>();
+  target
+      .addIllegalOp<mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp,
+                    mix::MatMulOp, mix::BatchMatMulOp, mix::NegOp, mix::ExpOp,
+                    mix::PowOp, mix::ConcatOp, mix::ReduceSumOp, mix::ReshapeOp,
+                    mix::RsqrtOp, mix::TanhOp, mix::ReciprocalOp, mix::CosOp,
+                    mix::SinOp, mix::GatherOp, mix::ConstantOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);

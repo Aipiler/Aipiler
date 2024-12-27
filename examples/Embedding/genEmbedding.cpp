@@ -15,6 +15,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
@@ -37,24 +38,13 @@ std::unique_ptr<Pass> createLowerModulePass();
 std::unique_ptr<Pass> createLowerCompositePass();
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
 
-mlir::Value MLP(mlir::OpBuilder &builder, mlir::Location loc,
-                mlir::Value hidden_states, mlir::Value residual) {
-  auto elementType = builder.getF32Type();
-  auto linear0 = builder.create<mix::LinearOp>(loc, hidden_states,
-                                               "model_parameters.mlp.linear0",
-                                               2, 2, false, elementType);
-
-  auto silu0 = builder.create<mix::SiLUOp>(loc, linear0);
-
-  auto linear1 = builder.create<mix::LinearOp>(loc, hidden_states,
-                                               "model_parameters.mlp.linear1",
-                                               2, 2, false, elementType);
-  auto mul0 = builder.create<mix::MulOp>(loc, silu0, linear1);
-
-  auto linear2 = builder.create<mix::LinearOp>(
-      loc, mul0, "model_parameters.mlp.linear2", 2, 2, true, elementType);
-  auto output = builder.create<mix::AddOp>(loc, linear2, residual);
-  return output;
+mlir::Value embedding(mlir::OpBuilder &builder, mlir::Location loc,
+                      mlir::Value indices, std::string param_loc,
+                      int num_embeddings, int embedding_dim, mlir::Type dtype) {
+  auto embed0 =
+      builder.create<mix::EmbeddingOp>(loc, indices, "model_parameters.embed",
+                                       num_embeddings, embedding_dim, dtype);
+  return embed0;
 }
 
 int main() {
@@ -69,6 +59,7 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   builder.setInsertionPointToEnd(theModule.getBody());
 
+  // printMemrefF32
   auto elementType = builder.getF32Type();
   auto printInputType = UnrankedTensorType::get(elementType);
   auto printFunTy =
@@ -76,23 +67,27 @@ int main() {
   auto printfunc =
       builder.create<func::FuncOp>(loc, "printMemrefF32", printFunTy);
   printfunc.setPrivate();
-  auto tensorType = RankedTensorType::get({2, 2}, elementType);
 
-  auto functionTy = builder.getFunctionType({tensorType, tensorType}, {});
+  // Graph0
+  llvm::SmallVector<int64_t> weightShape{4, 3};
+  auto indicesType = RankedTensorType::get({2, 6}, builder.getI32Type());
+  //   auto resultType
+  auto functionTy = builder.getFunctionType({indicesType}, {});
   auto graph0 = builder.create<func::FuncOp>(loc, "graph0", functionTy);
   graph0.setPrivate();
   auto body = graph0.addEntryBlock();
   builder.setInsertionPointToEnd(body);
 
-  auto hidden_states = graph0.getArgument(0);
-  auto residual = graph0.getArgument(1);
-  auto output = MLP(builder, loc, hidden_states, residual);
+  auto indices = graph0.getArgument(0);
+  auto embed0 = embedding(builder, loc, indices, "model_parameters.embed", 10,
+                          4, builder.getF32Type());
+  //   auto embed0 = builder.create<mix::EmbeddingOp>(
+  //       loc, indices, "model_parameters.embed", 10, 4, builder.getF32Type());
+  auto returnType = embed0.getType();
+  graph0.setFunctionType(builder.getFunctionType(indicesType, returnType));
+  builder.create<func::ReturnOp>(loc, ValueRange{embed0});
 
-  auto cast = builder.create<tensor::CastOp>(loc, printInputType, output);
-  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
-
-  builder.create<func::ReturnOp>(loc, ValueRange{});
-
+  // Main
   builder.setInsertionPointToEnd(theModule.getBody());
   auto mainfunc = builder.create<func::FuncOp>(loc, "main",
                                                builder.getFunctionType({}, {}));
@@ -100,21 +95,15 @@ int main() {
   auto mainbody = mainfunc.addEntryBlock();
   builder.setInsertionPointToEnd(mainbody);
 
-  auto argAttr =
-      DenseElementsAttr::get(tensorType, llvm::ArrayRef<float>{1, 2, 3, 4});
+  auto argAttr = DenseElementsAttr::get(
+      indicesType, llvm::ArrayRef<int>{1, 2, 3, 2, 3, 4, 3, 4, 5, 4, 5, 6});
 
   auto arg0 = builder.create<arith::ConstantOp>(loc, argAttr);
-  auto arg1 = builder.create<arith::ConstantOp>(loc, argAttr);
-  builder.create<func::CallOp>(loc, graph0, ValueRange{arg0, arg1});
+  auto call0 = builder.create<func::CallOp>(loc, graph0, ValueRange{arg0});
+  auto cast =
+      builder.create<tensor::CastOp>(loc, printInputType, call0->getResult(0));
+  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
   builder.create<func::ReturnOp>(loc);
-  mlir::PassManager pm(&context);
-  pm.addPass(createLowerModulePass());
-  // pm.addPass(createLowerCompositePass());
-  // pm.addPass(createLowerPrimaryToTosa());
-
-  if (mlir::failed(pm.run(theModule))) {
-    return 4;
-  }
   theModule->dump();
 
   return 0;

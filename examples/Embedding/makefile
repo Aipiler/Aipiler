@@ -13,19 +13,19 @@ MLIR_LIB := ../../llvm/build/lib
 MLIR_RUNNER_UTILS := ../../llvm/build/lib/libmlir_runner_utils.so
 MLIR_C_RUNNER_UTILS := ../../llvm/build/lib/libmlir_c_runner_utils.so
 
-mlp.mlir:
-	../../build/bin/genMLP 2> $@
+embedding.mlir:
+	../../build/bin/genEmbedding 2> $@
 
-mlp_tosa.mlir: mlp.mlir
+embedding_tosa.mlir: embedding.mlir
 	${MIX_OPT} $^ \
 		--pass-pipeline="builtin.module( \
 			lower-mix-module, \
 			lower-mix-composite, \
 			lower-mix-primary-to-tosa, \
 			view-op-graph \
-		)" --mlir-print-ir-after-all -o $@
+		)" -o $@
 
-mlp_memref.mlir: mlp_tosa.mlir
+embedding_memref.mlir: embedding_tosa.mlir
 	${MIX_OPT} $^ \
 		--pass-pipeline="builtin.module( \
 			func.func( \
@@ -37,7 +37,9 @@ mlp_memref.mlir: mlp_tosa.mlir
 			one-shot-bufferize{bufferize-function-boundaries} \
 			)" -o $@
 
-mlp.ll: mlp_memref.mlir
+
+
+embedding.ll: embedding_memref.mlir
 	${MIX_OPT} $^ \
 		--pass-pipeline="builtin.module( \
  			convert-linalg-to-loops, \
@@ -54,13 +56,13 @@ mlp.ll: mlp_memref.mlir
 		)" | \
 	${MLIR_TRANSLATE} --mlir-to-llvmir -o $@
 
-mlp: mlp.ll
+embedding: embedding.ll
 	${CLANGXX} -L${MLIR_LIB} -lmlir_runner_utils -lmlir_c_runner_utils $^ -o $@
 
-run_mlp: mlp
-	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./mlp
+run_embed: embedding
+	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./embedding
 
 
 
 clean:
-	rm -rf *.mlir *.ll mlp
+	rm -rf *.mlir *.ll embedding

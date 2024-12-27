@@ -32,6 +32,7 @@
 #include <iostream>
 #include <memory>
 
+#include "Utils/readjson.h"
 #include "mix/mixDialect.h"
 #include "mix/mixOps.h"
 #include "llvm/ADT/SmallVector.h"
@@ -118,12 +119,65 @@ public:
   }
 };
 
+#define GET_DENSE(T)                                                           \
+  std::vector<T> castedResult;                                                 \
+  for (auto e : result) {                                                      \
+    castedResult.push_back(T(e));                                              \
+  }                                                                            \
+  dataAttr = DenseElementsAttr::get(returnType, ArrayRef<T>(castedResult));
+
+class WeightOpLoweringPattern : public OpRewritePattern<mix::WeightOp> {
+public:
+  using OpRewritePattern<mix::WeightOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::WeightOp op,
+                                PatternRewriter &rewriter) const override {
+
+    auto returnType = op.getType();
+    auto elementType = returnType.getElementType();
+    auto data_loc = op.getParamLoc();
+    auto loc = op->getLoc();
+    std::vector<double> result;
+    // read weight from json file.
+    if (!getElementFromJson(data_loc.str(), result)) {
+      return op->emitOpError()
+             << "error happended when reading data from: " << data_loc;
+    }
+    // generate dense attr
+    DenseElementsAttr dataAttr;
+    if (auto floatElemType = llvm::dyn_cast<FloatType>(elementType)) {
+      auto width = floatElemType.getWidth();
+      if (width == 32) {
+        GET_DENSE(float)
+      } else if (width == 64) {
+        GET_DENSE(double)
+      } else {
+        op.emitOpError() << "unsupported element type.";
+      }
+    } else if (auto intElemType = llvm::dyn_cast<IntegerType>(elementType)) {
+      auto width = intElemType.getWidth();
+      if (width == 32) {
+        GET_DENSE(int)
+      } else if (width == 64) {
+        GET_DENSE(long)
+      } else {
+        op.emitOpError() << "unsupported element type.";
+      }
+    } else {
+      return op.emitOpError() << "Unexpected type.";
+    }
+    // create consatant op
+    auto constantOp = rewriter.create<mix::ConstantOp>(loc, dataAttr);
+    rewriter.replaceOp(op, constantOp);
+    return success();
+  }
+};
+#undef GET_DENSE
+
 } // namespace
 
 void populateLowerCompositeOpPatterns(RewritePatternSet &patterns) {
-  patterns
-      .add<SiLULoweringPattern, SigmoidLoweringPattern, MeanLoweringPattern>(
-          patterns.getContext());
+  patterns.add<SiLULoweringPattern, SigmoidLoweringPattern, MeanLoweringPattern,
+               WeightOpLoweringPattern>(patterns.getContext());
 }
 
 namespace {
@@ -153,7 +207,8 @@ void LowerCompositePass::runOnOperation() {
   ConversionTarget target(context);
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect>();
-  target.addIllegalOp<mix::SiLUOp, mix::SigmoidOp, mix::MeanOp>();
+  target
+      .addIllegalOp<mix::SiLUOp, mix::SigmoidOp, mix::MeanOp, mix::WeightOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerCompositeOpPatterns(patterns);

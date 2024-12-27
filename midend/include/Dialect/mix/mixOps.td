@@ -17,48 +17,6 @@ include "mixTypes.td"
 
 // 组合算子
 
-def MLPOp : MIX_Op<"module.mlp"> {
-    let summary = "MultiLayerPerceptron";
-    let description = [{
-        Multi Layer Perceptron.
-    }];
-    let arguments = (ins 
-        mixTensor: $hidden_states,
-        mixTensor: $residual
-    );
-    let results = (outs
-        mixTensor: $output
-    );
-}
-
-def RMSNormOp : MIX_Op<"module.rmsnorm"> {
-    let summary = "MixedFusedRMSNorm";
-    let description = [{
-        Mixed Fused RMSNorm.
-    }];
-    let arguments = (ins 
-        mixTensor: $hidden_states,
-        I64Attr: $hidden_size,
-        F64Attr: $eps
-    );
-    let results = (outs
-        mixTensor: $output
-    );
-}
-
-def GeluOp : MIX_Op<"module.gelu", [Pure, InferTypeOpAdaptor]> {
-    let summary = "Gelu Op";
-    let description = [{
-        Gelu Op
-    }];
-    let arguments = (ins
-        mixTensor: $input
-    );
-    let results = (outs
-        mixTensor: $output
-    );
-}
-
 def LinearOp : MIX_Op<"module.linear", [Pure, InferTypeOpAdaptor]> {
     let summary = "Linear";
     let description = [{
@@ -313,7 +271,7 @@ def MaskedFillOp : MIX_Op<"comp.masked_fill", [Pure, InferTypeOpAdaptor]> {
   let arguments = (ins 
     mixTensor:$input,       // 输入张量
     mixTensor:$mask,        // 掩码张量 (布尔类型)
-    F64Attr:$value        // 用于填充的标量值
+    mixNumber:$number       // 用于填充的标量值    
   );
 
   let results = (outs mixTensor:$output);  // 输出张量
@@ -511,7 +469,7 @@ def TanhOp : MIX_Op<"prim.tanh", [Pure, InferTypeOpAdaptor]> {
     );
 }
 
-def WeightOp : MIX_Op<"prim.weight", [Pure]> {
+def WeightOp : MIX_Op<"comp.weight", [Pure]> {
     let summary = "load param";
     let description = [{
         load param from model file.
@@ -524,7 +482,7 @@ def WeightOp : MIX_Op<"prim.weight", [Pure]> {
     );
 }
 
-def ConstantOp : MIX_Op<"prim.constant", [Pure, ConstantLike, AllTypesMatch<["value", "output"]>]> {
+def ConstantOp : MIX_Op<"prim.constant", [Pure, AllTypesMatch<["value", "output"]>]> {
     let summary = "constant op";
     let description = [{
         constant op
@@ -556,8 +514,39 @@ def ConvertOp : MIX_Op<"prim.convert",
   let results = (outs
       mixData: $output
   );
+//   let builders = [
+//     OpBuilder<(ins "mlir::Value": $value, "mlir::Type": $element_ty), [{
+//         return build($_builder, $_state, value, mlir::TypeAttr::get(element_ty));
+//     }]>
+//   ];
+}
+def GetItemOp : MIX_Op<"comp.getitem", [Pure, InferTypeOpAdaptor]> {
+    let summary = "GetItem";
+    let description = [{
+        Get item from tensor
+    }];
+    let arguments = (ins
+        mixTensor: $value,
+        AnyTypeOf<[mixTensor, mixInt]>: $indice
+    );
+    let results = (outs
+        mixTensor: $output
+    );
 }
 
+def GatherOp : MIX_Op<"prim.gather", [Pure, InferTypeOpAdaptor]> {
+    let summary = "Gather";
+    let description = [{
+        gather op.
+    }];
+    let arguments = (ins
+        mixTensor: $values,
+        RankedTensorOf<[I32]>: $indices
+    );
+    let results = (outs
+        mixTensor: $output
+    );
+}
 
 
 #endif // MIX_OPS_TD

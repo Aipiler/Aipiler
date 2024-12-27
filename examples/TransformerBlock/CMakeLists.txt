@@ -1,11 +1,11 @@
-add_executable(genTelechat
-    genTelechat.cpp
+add_executable(genBlock
+    genBlock.cpp
 )
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 
-target_link_libraries(genTelechat
+target_link_libraries(genBlock
     PUBLIC
     MLIRAnalysis
     MLIRCallInterfaces
@@ -35,4 +35,6 @@ target_link_libraries(genTelechat
     ${conversion_libs}
     MLIRMIX
     LowerModule
+    LowerComposite
+    LowerPrimaryToTosa
 )
