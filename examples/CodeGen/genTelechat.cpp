@@ -40,7 +40,7 @@ std::unique_ptr<Pass> createLowerModulePass();
 
 // 模型参数定义
 const int seq_len = 40;
-int input_len = 5;
+int input_len = 40;
 const int hidden_size = 5120;
 const int ffn_hidden_size = 12288;
 const int n_head = 32;
@@ -511,9 +511,10 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, mul370, createIntArrayAttr(context, {1, n_head, seq_len, seq_len}));
 
   // line 380: torch.aten.masked_fill.Scalar
+  auto constant380 = builder.create<mix::ConstantOp>(
+      loc, builder.getFloatAttr(type_f16, -3.4028234663852886E+38));
   auto masked_fill380 = builder.create<mix::MaskedFillOp>(
-      loc, reshape377, attention_mask,
-      FloatAttr::get(Float16Type::get(&context), -3.4028234663852886E+38));
+      loc, reshape377, attention_mask, constant380);
 
   // line 384: torch.aten._softmax
   auto softmax384 =
@@ -588,14 +589,14 @@ auto genFusedRMSNorm(mlir::OpBuilder &builder, mlir::Location loc,
   llvm::SmallVector<mlir::Attribute> tmp{mlir::FloatAttr::get(elementType, 1)};
   auto constantTensorType = RankedTensorType::get({1}, elementType);
   auto constantTensor = DenseElementsAttr::get(constantTensorType, tmp);
-  auto c2Tensor = builder.create<arith::ConstantOp>(loc, constantTensor);
+  auto c2Tensor = builder.create<mix::ConstantOp>(loc, constantTensor);
   auto pow0 = builder.create<mix::PowOp>(loc, hidden_states, c2Tensor);
   auto mean0 = builder.create<mix::MeanOp>(
       loc, pow0, builder.getI32ArrayAttr({int32_t(hidden_states_rank - 1)}),
       builder.getBoolAttr(true));
 
   auto epsAttr = builder.getFloatAttr(elementType, eps);
-  auto const_eps = builder.create<arith::ConstantOp>(loc, epsAttr);
+  auto const_eps = builder.create<mix::ConstantOp>(loc, epsAttr);
   auto add0 = builder.create<mix::AddOp>(loc, mean0, const_eps);
   auto rsqrt0 = builder.create<mix::RsqrtOp>(loc, add0);
   auto mul0 = builder.create<mix::MulOp>(loc, hidden_states, rsqrt0);
@@ -643,8 +644,9 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   printf("genTelechatModel\n");
   /* Types */
   auto F16Type = builder.getF16Type();
+  auto I32Type = builder.getI32Type();
   auto BoolType = builder.getI1Type();
-  auto input_ids_type = RankedTensorType::get({1, seq_len}, F16Type);
+  auto input_ids_type = RankedTensorType::get({1, seq_len}, I32Type);
   auto output_type = RankedTensorType::get({1, seq_len, vocab_size}, F16Type);
   auto functionTy = builder.getFunctionType({input_ids_type}, {output_type});
 
@@ -686,6 +688,7 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                                                "lm_head.weight", hidden_size,
                                                vocab_size, false, F16Type);
   builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{lm_head});
+  // builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{hidden_states});
   return graph;
 }
 
@@ -703,20 +706,18 @@ int main() {
   auto loc = builder.getUnknownLoc();
   auto theModule = mlir::ModuleOp::create(loc);
   builder.setInsertionPointToEnd(theModule.getBody());
-
+  loc = theModule->getLoc();
   auto telechat_graph = genTelechatModel(context, builder, loc);
 
+  //   theModule->dump();
+
+  mlir::PassManager pm(&context);
+  pm.addPass(createLowerModulePass());
+  if (mlir::failed(pm.run(theModule))) {
+    return -1;
+  }
+  std::cout << "==== After Lower pass GRAPH-LOWER =====" << std::endl;
   theModule->dump();
-
-  // std::cout << ShapedType::kDynamic << std::endl;
-
-  // mlir::PassManager pm(&context);
-  // pm.addPass(createLowerModulePass());
-  // if (mlir::failed(pm.run(theModule))) {
-  //   return 4;
-  // }
-  // std::cout << "==== After Lower pass GRAPH-LOWER =====" << std::endl;
-  // theModule->dump();
 
   return 0;
 }

@@ -95,7 +95,7 @@ LogicalResult mix::ConvertOp::inferReturnTypes(
   auto inputType = adaptor.getValue().getType();
 
   // 获取目标元素类型
-  auto elementType = adaptor.getElementTy();
+  auto elementType = adaptor.getElementTyAttr().getValue();
   if (!mlir::isa<Type>(elementType)) {
     return emitOptionalError(location,
                              "element_ty attribute must be a valid type");
@@ -360,11 +360,7 @@ LogicalResult mix::MatMulOp::verify() {
     this->emitOpError() << "Types mismatch.";
     return failure();
   }
-  if (lhsRank != rhsRank || lhsRank != 2 || rhsRank != 2) {
-    this->emitOpError() << "Unexpected ranks.";
-    return failure();
-  }
-  if (lhsShape[1] != rhsShape[0]) {
+  if (lhsShape[1] != rhsShape[0] || lhsRank != 2 || rhsRank != 2) {
     this->emitError() << "Unexpect shapes.";
     return failure();
   }
@@ -931,6 +927,9 @@ LogicalResult mix::SliceOp::inferReturnTypes(
 LogicalResult mix::MaskedFillOp::verify() {
   // 获取输入tensor
   auto input = getInput();
+  // 获取掩码tensor
+  auto mask = getMask();
+  auto valueType = getNumber().getType();
   if (!input) {
     return emitOpError("requires an input tensor");
   }
@@ -939,8 +938,6 @@ LogicalResult mix::MaskedFillOp::verify() {
     return emitOpError("input must be a ranked tensor");
   }
 
-  // 获取掩码tensor
-  auto mask = getMask();
   if (!mask) {
     return emitOpError("requires a mask tensor");
   }
@@ -965,6 +962,11 @@ LogicalResult mix::MaskedFillOp::verify() {
     return success();
   } else {
     return this->emitOpError("Failed broadcast shapes.");
+  }
+
+  // 验证输入的数据类型是否与value的数据类型匹配
+  if (inputType.getElementType() != valueType) {
+    return emitOpError("input and value must have the same element type");
   }
 }
 

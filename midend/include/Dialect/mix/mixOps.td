@@ -271,7 +271,7 @@ def MaskedFillOp : MIX_Op<"comp.masked_fill", [Pure, InferTypeOpAdaptor]> {
   let arguments = (ins 
     mixTensor:$input,       // 输入张量
     mixTensor:$mask,        // 掩码张量 (布尔类型)
-    F64Attr:$value        // 用于填充的标量值
+    mixNumber:$number       // 用于填充的标量值    
   );
 
   let results = (outs mixTensor:$output);  // 输出张量
