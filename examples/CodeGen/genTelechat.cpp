@@ -643,8 +643,9 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   printf("genTelechatModel\n");
   /* Types */
   auto F16Type = builder.getF16Type();
+  auto I32Type = builder.getI32Type();
   auto BoolType = builder.getI1Type();
-  auto input_ids_type = RankedTensorType::get({1, seq_len}, F16Type);
+  auto input_ids_type = RankedTensorType::get({1, seq_len}, I32Type);
   auto output_type = RankedTensorType::get({1, seq_len, vocab_size}, F16Type);
   auto functionTy = builder.getFunctionType({input_ids_type}, {output_type});
 
@@ -662,30 +663,31 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                                      "transformer.word_embeddings.weight",
                                      vocab_size, hidden_size, F16Type);
 
-  // TODO: 创建mask
-  auto attention_mask_tensorType = RankedTensorType::get(
-      {batch_size, batch_size, input_len, input_len}, BoolType);
-  auto attention_mask_tensor =
-      DenseElementsAttr::get(attention_mask_tensorType, {true});
-  auto attention_mask =
-      builder.create<mix::ConstantOp>(loc, attention_mask_tensor);
+  //   // TODO: 创建mask
+  //   auto attention_mask_tensorType = RankedTensorType::get(
+  //       {batch_size, batch_size, input_len, input_len}, BoolType);
+  //   auto attention_mask_tensor =
+  //       DenseElementsAttr::get(attention_mask_tensorType, {true});
+  //   auto attention_mask =
+  //       builder.create<mix::ConstantOp>(loc, attention_mask_tensor);
 
-  // 循环创建N个Block
-  for (int i = 0; i < n_layer; ++i) {
-    // transformer block
-    hidden_states = genTransformerBlock(context, builder, graph->getLoc(),
-                                        hidden_states, attention_mask, i);
-  }
+  //   // 循环创建N个Block
+  //   for (int i = 0; i < n_layer; ++i) {
+  //     // transformer block
+  //     hidden_states = genTransformerBlock(context, builder, graph->getLoc(),
+  //                                         hidden_states, attention_mask, i);
+  //   }
 
-  // RMSNorm
-  hidden_states = genFusedRMSNorm(builder, graph->getLoc(), hidden_states,
-                                  "transformer.ln_f.weight");
+  //   // RMSNorm
+  //   hidden_states = genFusedRMSNorm(builder, graph->getLoc(), hidden_states,
+  //                                   "transformer.ln_f.weight");
 
   // Linear:将hidden_states映射到vocab_size上
   auto lm_head = builder.create<mix::LinearOp>(graph->getLoc(), hidden_states,
                                                "lm_head.weight", hidden_size,
                                                vocab_size, false, F16Type);
-  builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{lm_head});
+  builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{});
+  // builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{hidden_states});
   return graph;
 }
 
@@ -703,20 +705,18 @@ int main() {
   auto loc = builder.getUnknownLoc();
   auto theModule = mlir::ModuleOp::create(loc);
   builder.setInsertionPointToEnd(theModule.getBody());
-
+  loc = theModule->getLoc();
   auto telechat_graph = genTelechatModel(context, builder, loc);
 
+  //   theModule->dump();
+
+  mlir::PassManager pm(&context);
+  pm.addPass(createLowerModulePass());
+  if (mlir::failed(pm.run(theModule))) {
+    return -1;
+  }
+  std::cout << "==== After Lower pass GRAPH-LOWER =====" << std::endl;
   theModule->dump();
-
-  // std::cout << ShapedType::kDynamic << std::endl;
-
-  // mlir::PassManager pm(&context);
-  // pm.addPass(createLowerModulePass());
-  // if (mlir::failed(pm.run(theModule))) {
-  //   return 4;
-  // }
-  // std::cout << "==== After Lower pass GRAPH-LOWER =====" << std::endl;
-  // theModule->dump();
 
   return 0;
 }

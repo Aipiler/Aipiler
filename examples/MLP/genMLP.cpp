@@ -107,14 +107,14 @@ int main() {
   auto arg1 = builder.create<arith::ConstantOp>(loc, argAttr);
   builder.create<func::CallOp>(loc, graph0, ValueRange{arg0, arg1});
   builder.create<func::ReturnOp>(loc);
-  // mlir::PassManager pm(&context);
-  // pm.addPass(createLowerModulePass());
+  mlir::PassManager pm(&context);
+  pm.addPass(createLowerModulePass());
   // pm.addPass(createLowerCompositePass());
   // pm.addPass(createLowerPrimaryToTosa());
 
-  // if (mlir::failed(pm.run(theModule))) {
-  //   return 4;
-  // }
+  if (mlir::failed(pm.run(theModule))) {
+    return 4;
+  }
   theModule->dump();
 
   return 0;

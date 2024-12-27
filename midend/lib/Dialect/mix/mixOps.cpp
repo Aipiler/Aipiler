@@ -95,7 +95,7 @@ LogicalResult mix::ConvertOp::inferReturnTypes(
   auto inputType = adaptor.getValue().getType();
 
   // 获取目标元素类型
-  auto elementType = adaptor.getElementTy();
+  auto elementType = adaptor.getElementTyAttr().getValue();
   if (!mlir::isa<Type>(elementType)) {
     return emitOptionalError(location,
                              "element_ty attribute must be a valid type");
@@ -358,10 +358,6 @@ LogicalResult mix::MatMulOp::verify() {
   auto rhsElemTy = rhsType.getElementType();
   if (lhsElemTy != rhsElemTy) {
     this->emitOpError() << "Types mismatch.";
-    return failure();
-  }
-  if (lhsRank != rhsRank || lhsRank != 2 || rhsRank != 2) {
-    this->emitOpError() << "Unexpected ranks.";
     return failure();
   }
   if (lhsShape[1] != rhsShape[0]) {
