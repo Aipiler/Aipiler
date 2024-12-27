@@ -21,3 +21,6 @@ log*
 
 # Pytorch binary files
 *.bin
+
+# python cache
+__pycache__/

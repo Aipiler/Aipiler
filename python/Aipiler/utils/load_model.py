@@ -12,7 +12,7 @@ logging.basicConfig(
 )
 
 
-def load_model_weights(model_path: str) -> Dict[str, List[Union[float, List[float]]]]:
+def load_model_weights(model_path: str) -> Dict[str, np.ndarray]:
     logging.info(f"Loading binary file: {model_path}")
     try:
         model_weights = torch.load(model_path, weights_only=True)
@@ -28,13 +28,14 @@ def load_model_weights(model_path: str) -> Dict[str, List[Union[float, List[floa
 
             numpy_array = value.cpu().numpy()
             total_params += numpy_array.size
-            weights_dict[key] = numpy_array.tolist()
+            weights_dict[key] = numpy_array
 
             logging.info(
                 f"Layer {key}: shape {value.shape}, "
                 f"dtype {value.dtype}, "
                 f"parameters {numpy_array.size}"
             )
+            break
 
         logging.info(f"Total parameters: {total_params}")
         return weights_dict
@@ -46,7 +47,7 @@ def load_model_weights(model_path: str) -> Dict[str, List[Union[float, List[floa
 
 if __name__ == "__main__":
     try:
-        model_path = "/home/gaoshihao/project/Aipiler/examples/LoadWeight/pytorch_model_00001-of-00004.bin"
+        model_path = "./pytorch_model_00001-of-00004.bin"
         weights_dict = load_model_weights(model_path)
         logging.info("Successfully loaded and converted weights")
     except Exception as e:

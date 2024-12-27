@@ -35,7 +35,6 @@ def load_model_weights(model_path: str) -> Dict[str, np.ndarray]:
                 f"dtype {value.dtype}, "
                 f"parameters {numpy_array.size}"
             )
-            break
 
         logging.info(f"Total parameters: {total_params}")
         return weights_dict
@@ -47,7 +46,7 @@ def load_model_weights(model_path: str) -> Dict[str, np.ndarray]:
 
 if __name__ == "__main__":
     try:
-        model_path = "./pytorch_model_00001-of-00004.bin"
+        model_path = "./linear_model.bin"
         weights_dict = load_model_weights(model_path)
         logging.info("Successfully loaded and converted weights")
     except Exception as e:

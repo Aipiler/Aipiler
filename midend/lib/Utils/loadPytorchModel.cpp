@@ -1,40 +1,11 @@
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
-#include "mlir/Dialect/MLProgram/IR/MLProgram.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/Shape/IR/Shape.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/BuiltinTypeInterfaces.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/Location.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OpDefinition.h"
-#include "mlir/IR/Operation.h"
-#include "mlir/IR/TypeRange.h"
-#include "mlir/IR/ValueRange.h"
-#include "mlir/IR/Verifier.h"
-#include "mlir/Pass/PassManager.h"
-#include "mlir/Support/LLVM.h"
-#include "mlir/Transforms/Passes.h"
-#include "llvm/ADT/APFloat.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/ScopedHashTable.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/raw_ostream.h"
+#include "Utils/loadPytorchModel.h"
 
 #include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <pybind11/embed.h>
 #include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
 #include <sstream>
 #include <sys/types.h>
 
@@ -67,7 +38,7 @@ void log(LogLevel level, const std::string &message) {
             << std::endl;
 }
 
-void load_model(const std::string &model_path, mlir::ModuleOp &theModule,
+void load_model(const std::string model_path, mlir::ModuleOp &theModule,
                 mlir::OpBuilder &builder) {
   try {
     log(LogLevel::INFO, "Initializing Python interpreter");
@@ -75,7 +46,6 @@ void load_model(const std::string &model_path, mlir::ModuleOp &theModule,
 
     log(LogLevel::INFO, "Importing Python module: load_model");
     py::module load_model_module = py::module::import("load_model");
-
     log(LogLevel::INFO, "Loading model weights from: " + model_path);
     py::dict model_weights =
         load_model_module.attr("load_model_weights")(model_path);
@@ -116,29 +86,22 @@ void load_model(const std::string &model_path, mlir::ModuleOp &theModule,
   }
 }
 
-int main() {
-  // 输入模型文件路径
-  std::string model_path = "pytorch_model_00001-of-00004.bin";
+// int main() {
+//   // 输入模型文件路径
+//   std::string model_path = "pytorch_model_00001-of-00004.bin";
 
-  mlir::MLIRContext context;
-  context.getOrLoadDialect<mlir::arith::ArithDialect>();
-  context.getOrLoadDialect<mlir::func::FuncDialect>();
-  context.getOrLoadDialect<mlir::tensor::TensorDialect>();
+//   mlir::MLIRContext context;
+//   context.getOrLoadDialect<mlir::arith::ArithDialect>();
+//   context.getOrLoadDialect<mlir::func::FuncDialect>();
+//   context.getOrLoadDialect<mlir::tensor::TensorDialect>();
 
-  mlir::OpBuilder builder(&context);
-  auto loc = builder.getUnknownLoc();
-  auto theModule = mlir::ModuleOp::create(loc);
-  builder.setInsertionPointToEnd(theModule.getBody());
-  // theModule->setAttr("abc", builder.getI32TensorAttr({1, 2, 3, 4}));
-  // auto abc = theModule->getAttr("abcd");
-  // if (abc) {
-  //   abc.dump();
+//   mlir::OpBuilder builder(&context);
+//   auto loc = builder.getUnknownLoc();
+//   auto theModule = mlir::ModuleOp::create(loc);
+//   builder.setInsertionPointToEnd(theModule.getBody());
 
-  // } else {
-  //   std::cout << "abccccc" << std::endl;
-  // }
-  // // 加载模型权重
-  load_model(model_path, theModule, builder);
-  theModule->dump();
-  return 0;
-}
+//   // 加载模型权重
+//   load_model(model_path, theModule, builder);
+//   theModule->dump();
+//   return 0;
+// }

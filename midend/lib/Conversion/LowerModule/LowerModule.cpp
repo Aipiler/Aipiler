@@ -61,7 +61,8 @@ public:
     SmallVector<int64_t> weightShape{out_feature, in_feature};
     auto weightType = RankedTensorType::get(weightShape, dtype);
     auto weight = rewriter.create<mix::WeightOp>(loc, weightType, weight_loc);
-    auto matmul0 = rewriter.create<mix::MatMulOp>(loc, input, weight);
+    auto transpose0 = rewriter.create<mix::TransposeOp>(loc, weight, 0, 1);
+    auto matmul0 = rewriter.create<mix::MatMulOp>(loc, input, transpose0);
     Value output = matmul0;
     if (has_bias) {
       auto bias_loc = params_loc + ".bias";

@@ -1,11 +1,15 @@
-
 find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development)
 
-# 添加 C++ 源文件
-add_executable(loadWeight main.cpp)
 
-# 链接 pybind11 和 Python 库
-target_link_libraries(loadWeight PRIVATE 
+add_executable(linear
+linear.cpp
+)
+
+get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
+get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
+
+target_link_libraries(linear
+    PUBLIC
     pybind11::embed 
     Python3::Python
     MLIRAnalysis
@@ -33,9 +37,11 @@ target_link_libraries(loadWeight PRIVATE
     MLIRSCFToControlFlow
     MLIRAffineToStandard
     ${dialect_libs}
-    ${conversion_libs})
-    
-target_include_directories(loadWeight PRIVATE ${Python3_INCLUDE_DIRS})
+    ${conversion_libs}
+    MLIRMIX
+    LowerModule
+    LowerComposite
+    LowerPrimaryToTosa
+)
 
-# 设置 Python 模块路径
-# set(PYTHON_MODULE_PATH ${Aipiler_PYTHON_PACKAGES_DIR}/Aipiler/utils)
+target_include_directories(linear PRIVATE ${Python3_INCLUDE_DIRS})

@@ -173,11 +173,49 @@ public:
 };
 #undef GET_DENSE
 
+class WeightOpLoadTorchPattern : public OpRewritePattern<mix::WeightOp> {
+public:
+  using OpRewritePattern<mix::WeightOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::WeightOp op,
+                                PatternRewriter &rewriter) const override {
+
+    auto returnType = op.getType();
+    auto data_loc = op.getParamLoc();
+    auto loc = op->getLoc();
+    std::vector<double> result;
+    auto theModule = op->getParentOfType<ModuleOp>();
+    auto attr = theModule->getAttr(data_loc);
+    if (!attr) {
+      op.emitOpError("Cannot find parameter: ")
+          << data_loc << " from modelfile.";
+    }
+    auto tensorAttr = mlir::dyn_cast<DenseElementsAttr>(attr);
+    if (tensorAttr.getType().getElementType() != returnType.getElementType()) {
+      return op->emitOpError("Loaded params have unexpected element type.");
+    }
+    auto attrShape = tensorAttr.getType().getShape();
+    auto returnShape = returnType.getShape();
+    if (attrShape.size() != returnShape.size()) {
+      return op.emitOpError("Loaded params have unexpected rank.");
+    }
+    for (size_t i = 0; i < attrShape.size(); i++) {
+      if (attrShape[i] != returnShape[i]) {
+        return op->emitOpError("Loaded params have unexpected shape.");
+      }
+    }
+
+    // create consatant op
+    auto constantOp = rewriter.create<mix::ConstantOp>(loc, tensorAttr);
+    rewriter.replaceOp(op, constantOp);
+    return success();
+  }
+};
+
 } // namespace
 
 void populateLowerCompositeOpPatterns(RewritePatternSet &patterns) {
   patterns.add<SiLULoweringPattern, SigmoidLoweringPattern, MeanLoweringPattern,
-               WeightOpLoweringPattern>(patterns.getContext());
+               WeightOpLoadTorchPattern>(patterns.getContext());
 }
 
 namespace {
