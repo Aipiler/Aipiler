@@ -1,0 +1,8 @@
+[submodule "thirdparty/llvm"]
+	path = thirdparty/llvm
+	url = https://mirrors.tuna.tsinghua.edu.cn/git/llvm-project.git
+	branch = release/19.x
+[submodule "thirdparty/pybind11"]
+	path = thirdparty/pybind11
+	url = https://github.com/pybind/pybind11.git
+	branch = master
