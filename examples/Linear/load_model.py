@@ -29,11 +29,11 @@ def load_model_weights(model_path: str) -> Dict[str, np.ndarray]:
             numpy_array = value.cpu().numpy()
             total_params += numpy_array.size
             weights_dict[key] = numpy_array
-
             logging.info(
                 f"Layer {key}: shape {value.shape}, "
                 f"dtype {value.dtype}, "
-                f"parameters {numpy_array.size}"
+                f"parameters {numpy_array.size},\n"
+                f"data {numpy_array}"
             )
 
         logging.info(f"Total parameters: {total_params}")

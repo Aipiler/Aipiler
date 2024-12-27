@@ -39,7 +39,7 @@ void log(LogLevel level, const std::string &message) {
 }
 
 void load_model(const std::string model_path, mlir::ModuleOp &theModule,
-                mlir::OpBuilder &builder) {
+                mlir::OpBuilder &builder, mlir::Type dtype) {
   try {
     log(LogLevel::INFO, "Initializing Python interpreter");
     py::scoped_interpreter guard{};
@@ -61,8 +61,6 @@ void load_model(const std::string model_path, mlir::ModuleOp &theModule,
         shape.push_back(value_shape[i]);
       }
       auto value_dtype = value.dtype();
-      // TODO: change dtype according to  value_dtype
-      auto dtype = builder.getF16Type();
       auto tensorTy = mlir::RankedTensorType::get(shape, dtype);
       const void *data = value.data();
       const char *raw_data = static_cast<const char *>(data);
