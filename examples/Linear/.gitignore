@@ -1,0 +1,5 @@
+*.ll
+*.mlir
+log
+*.bin
+linear

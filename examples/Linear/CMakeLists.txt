@@ -42,6 +42,7 @@ target_link_libraries(linear
     LowerModule
     LowerComposite
     LowerPrimaryToTosa
+    loadPytorchModel
 )
 
 target_include_directories(linear PRIVATE ${Python3_INCLUDE_DIRS})

@@ -35,6 +35,6 @@
 #include <string>
 
 void load_model(const std::string model_path, mlir::ModuleOp &theModule,
-                mlir::OpBuilder &builder);
+                mlir::OpBuilder &builder, mlir::Type dtype);
 
 #endif

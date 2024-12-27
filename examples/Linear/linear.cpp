@@ -54,82 +54,82 @@
 #include <sstream>
 #include <sys/types.h>
 
-namespace py = pybind11;
+// namespace py = pybind11;
 
 // 日志级别枚举
-enum class LogLevel { INFO, WARNING, ERROR };
+// enum class LogLevel { INFO, WARNING, ERROR };
 
 // 日志输出函数
-void log(LogLevel level, const std::string &message) {
-  auto now = std::chrono::system_clock::now();
-  auto time = std::chrono::system_clock::to_time_t(now);
-  std::stringstream ss;
-  ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+// void log(LogLevel level, const std::string &message) {
+//   auto now = std::chrono::system_clock::now();
+//   auto time = std::chrono::system_clock::to_time_t(now);
+//   std::stringstream ss;
+//   ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
 
-  const char *level_str;
-  switch (level) {
-  case LogLevel::INFO:
-    level_str = "INFO";
-    break;
-  case LogLevel::WARNING:
-    level_str = "WARNING";
-    break;
-  case LogLevel::ERROR:
-    level_str = "ERROR";
-    break;
-  }
+//   const char *level_str;
+//   switch (level) {
+//   case LogLevel::INFO:
+//     level_str = "INFO";
+//     break;
+//   case LogLevel::WARNING:
+//     level_str = "WARNING";
+//     break;
+//   case LogLevel::ERROR:
+//     level_str = "ERROR";
+//     break;
+//   }
 
-  std::cout << "[" << ss.str() << "][" << level_str << "] " << message
-            << std::endl;
-}
+//   std::cout << "[" << ss.str() << "][" << level_str << "] " << message
+//             << std::endl;
+// }
 
-void load_model(const std::string model_path, mlir::ModuleOp &theModule,
-                mlir::OpBuilder &builder) {
-  try {
-    log(LogLevel::INFO, "Initializing Python interpreter");
-    py::scoped_interpreter guard{};
+// void load_model(const std::string model_path, mlir::ModuleOp &theModule,
+//                 mlir::OpBuilder &builder) {
+//   try {
+//     log(LogLevel::INFO, "Initializing Python interpreter");
+//     py::scoped_interpreter guard{};
 
-    log(LogLevel::INFO, "Importing Python module: load_model");
-    py::module load_model_module = py::module::import("load_model");
-    log(LogLevel::INFO, "Loading model weights from: " + model_path);
-    py::dict model_weights =
-        load_model_module.attr("load_model_weights")(model_path);
-    log(LogLevel::INFO, "Successfully loaded model weights");
+//     log(LogLevel::INFO, "Importing Python module: load_model");
+//     py::module load_model_module = py::module::import("load_model");
+//     log(LogLevel::INFO, "Loading model weights from: " + model_path);
+//     py::dict model_weights =
+//         load_model_module.attr("load_model_weights")(model_path);
+//     log(LogLevel::INFO, "Successfully loaded model weights");
 
-    for (auto item : model_weights) {
-      std::string key = item.first.cast<std::string>();
-      py::array value = item.second.cast<py::array>();
-      auto value_shape = value.shape();
-      auto rank = value.ndim();
-      llvm::SmallVector<int64_t> shape;
-      for (int i = 0; i < rank; i++) {
-        shape.push_back(value_shape[i]);
-      }
-      auto value_dtype = value.dtype();
-      // TODO: change dtype according to  value_dtype
-      auto dtype = builder.getF32Type();
-      auto tensorTy = mlir::RankedTensorType::get(shape, dtype);
-      const void *data = value.data();
-      const char *raw_data = static_cast<const char *>(data);
-      auto size = value.size();
-      auto raw_data_byte_len =
-          size * (dtype.getIntOrFloatBitWidth() / 8) / sizeof(char);
+//     for (auto item : model_weights) {
+//       std::string key = item.first.cast<std::string>();
+//       py::array value = item.second.cast<py::array>();
+//       auto value_shape = value.shape();
+//       auto rank = value.ndim();
+//       llvm::SmallVector<int64_t> shape;
+//       for (int i = 0; i < rank; i++) {
+//         shape.push_back(value_shape[i]);
+//       }
+//       auto value_dtype = value.dtype();
+//       // TODO: change dtype according to  value_dtype
+//       auto dtype = builder.getF32Type();
+//       auto tensorTy = mlir::RankedTensorType::get(shape, dtype);
+//       const void *data = value.data();
+//       const char *raw_data = static_cast<const char *>(data);
+//       auto size = value.size();
+//       auto raw_data_byte_len =
+//           size * (dtype.getIntOrFloatBitWidth() / 8) / sizeof(char);
 
-      auto tensorAttr = mlir::DenseElementsAttr::getFromRawBuffer(
-          tensorTy, llvm::ArrayRef<char>(raw_data, raw_data_byte_len));
-      theModule->setAttr(key, tensorAttr);
-    }
-  } catch (const py::error_already_set &e) {
-    log(LogLevel::ERROR, "Python exception: " + std::string(e.what()));
-    throw;
-  } catch (const std::exception &e) {
-    log(LogLevel::ERROR, "Standard exception: " + std::string(e.what()));
-    throw;
-  } catch (...) {
-    log(LogLevel::ERROR, "Unknown exception occurred");
-    throw;
-  }
-}
+//       auto tensorAttr = mlir::DenseElementsAttr::getFromRawBuffer(
+//           tensorTy, llvm::ArrayRef<char>(raw_data, raw_data_byte_len));
+//       theModule->setAttr(key, tensorAttr);
+//     }
+//   } catch (const py::error_already_set &e) {
+//     log(LogLevel::ERROR, "Python exception: " + std::string(e.what()));
+//     throw;
+//   } catch (const std::exception &e) {
+//     log(LogLevel::ERROR, "Standard exception: " + std::string(e.what()));
+//     throw;
+//   } catch (...) {
+//     log(LogLevel::ERROR, "Unknown exception occurred");
+//     throw;
+//   }
+// }
 
 using namespace mlir;
 std::unique_ptr<Pass> createLowerModulePass();
@@ -210,44 +210,45 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   generateCode(theModule, builder);
 
-  load_model("./linear_model.bin", theModule, builder);
+  load_model("./linear_model.bin", theModule, builder, builder.getF32Type());
 
-  mlir::PassManager pm(&context);
-  pm.addPass(createLowerModulePass());
-  pm.addPass(createLowerCompositePass());
-  pm.addPass(createLowerPrimaryToTosa());
-  // Add the lower pass
-  llvm::StringRef passPipelineStr = "builtin.module( \
-        lower-mix-module, \
-        lower-mix-composite, \
-		lower-mix-primary-to-tosa, \
-        func.func( \
-            tosa-to-linalg-named, \
-            tosa-to-linalg, \
-            tosa-to-tensor \
-        ), \
-        empty-tensor-to-alloc-tensor, \
-        one-shot-bufferize{bufferize-function-boundaries}, \
-        convert-linalg-to-loops, \
-        buffer-deallocation-pipeline, \
-        expand-strided-metadata, \
-        lower-affine, \
-        lower-affine, \
-        finalize-memref-to-llvm, \
-        convert-math-to-llvm, \
-        convert-scf-to-cf, \
-        convert-cf-to-llvm, \
-        convert-func-to-llvm, \
-        reconcile-unrealized-casts \
-    )";
+  // mlir::PassManager pm(&context);
+  // pm.addPass(createLowerModulePass());
+  // pm.addPass(createLowerCompositePass());
+  // pm.addPass(createLowerPrimaryToTosa());
 
-  if (mlir::failed(mlir::parsePassPipeline(passPipelineStr, pm))) {
-    std::cerr << "error happened when parse pass." << std::endl;
-    return 1;
-  }
-  if (mlir::failed(pm.run(theModule))) {
-    return 4;
-  }
+  // // Add the lower pass
+  // llvm::StringRef passPipelineStr = "builtin.module( \
+  //       lower-mix-module, \
+  //       lower-mix-composite, \
+	// 	lower-mix-primary-to-tosa, \
+  //       func.func( \
+  //           tosa-to-linalg-named, \
+  //           tosa-to-linalg, \
+  //           tosa-to-tensor \
+  //       ), \
+  //       empty-tensor-to-alloc-tensor, \
+  //       one-shot-bufferize{bufferize-function-boundaries}, \
+  //       convert-linalg-to-loops, \
+  //       buffer-deallocation-pipeline, \
+  //       expand-strided-metadata, \
+  //       lower-affine, \
+  //       lower-affine, \
+  //       finalize-memref-to-llvm, \
+  //       convert-math-to-llvm, \
+  //       convert-scf-to-cf, \
+  //       convert-cf-to-llvm, \
+  //       convert-func-to-llvm, \
+  //       reconcile-unrealized-casts \
+  //   )";
+
+  // if (mlir::failed(mlir::parsePassPipeline(passPipelineStr, pm))) {
+  //   std::cerr << "error happened when parse pass." << std::endl;
+  //   return 1;
+  // }
+  // if (mlir::failed(pm.run(theModule))) {
+  //   return 4;
+  // }
   theModule->dump();
 
   return 0;
