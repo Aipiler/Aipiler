@@ -27,6 +27,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 # MLIR/LLVM Configuration
 #-------------------------------------------------------------------------------
 find_package(MLIR REQUIRED CONFIG)
+
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
@@ -36,6 +37,7 @@ set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
 
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+
 
 include(TableGen)
 include(AddLLVM)
@@ -69,23 +71,19 @@ include_directories(${PROJECT_BINARY_DIR}/midend/include/Dialect)
 
 
 
-add_subdirectory(midend)
-add_subdirectory(tools)
-add_subdirectory(examples)
-# add_subdirectory(runtime)
-add_subdirectory(thirdparty/pybind11)
-
-
 #-------------------------------------------------------------------------------
 # Initialize Python packages
 #-------------------------------------------------------------------------------
 
-# Find the Python interpreter and development components,
-# requiring a minimum version of 3.10
+message(STATUS "Using Python3Config.cmake in: ${Python3_DIR}")
 find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development)
 message(STATUS "Python3_EXECUTABLE: ${Python3_EXECUTABLE}")
 message(STATUS "Python3_INCLUDE_DIRS: ${Python3_INCLUDE_DIRS}")
 message(STATUS "Python3_LIBRARIES: ${Python3_LIBRARIES}")
+set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+add_subdirectory(thirdparty/pybind11)
+
+
 
 # if(DEFINED ENV{CONDA_PREFIX})
 #    set(Python3_ROOT_DIR $ENV{CONDA_PREFIX})
@@ -93,7 +91,7 @@ message(STATUS "Python3_LIBRARIES: ${Python3_LIBRARIES}")
 
 
 # 设置 Python 模块路径
-set(PYTHON_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+set(PYTHON_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/python)
 
 # Create directories for the BUDDY-MLIR Python packages
 # file(MAKE_DIRECTORY ${BUDDY_MLIR_PYTHON_PACKAGES_DIR}/buddy)
@@ -103,3 +101,9 @@ set(PYTHON_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 # file(WRITE ${BUDDY_MLIR_PYTHON_PACKAGES_DIR}/buddy/compiler/__init__.py "")
 
 # install(DIRECTORY ${BUDDY_MLIR_PYTHON_PACKAGES_DIR}/buddy DESTINATION python_packages)
+
+
+add_subdirectory(midend)
+add_subdirectory(tools)
+add_subdirectory(examples)
+# add_subdirectory(runtime)

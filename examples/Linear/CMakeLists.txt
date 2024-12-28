@@ -1,41 +1,27 @@
 find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development)
 
-
-add_executable(linear
-linear.cpp
+add_executable(genLinear
+    linear.cpp
 )
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 
-target_link_libraries(linear
+target_link_libraries(genLinear
     PUBLIC
-    pybind11::embed 
-    Python3::Python
-    MLIRAnalysis
-    MLIRCallInterfaces
-    MLIRCastInterfaces
-    MLIRExecutionEngine
-    MLIRIR
-    MLIRAffineDialect
-    MLIRFuncDialect
-    MLIRSCFDialect
-    MLIRLLVMToLLVMIRTranslation
-    MLIRMemRefDialect
-    MLIRParser
-    MLIRPass
-    MLIRSideEffectInterfaces
-    MLIRTargetLLVMIRExport
-    MLIRTransforms
-    MLIRSupport
-    MLIRLLVMCommonConversion
-    MLIRLLVMToLLVMIRTranslation
-    MLIRTargetLLVMIRExport
-    MLIRControlFlowToLLVM
-    MLIRFuncToLLVM
-    MLIRMemRefToLLVM
-    MLIRSCFToControlFlow
-    MLIRAffineToStandard
+    LLVMSupport
+    MLIRToLLVMIRTranslationRegistration
+    MLIRFromLLVMIRTranslationRegistration
+    LLVMX86Info
+    LLVMX86TargetMCA
+    LLVMX86Disassembler
+    LLVMX86Desc
+    LLVMX86CodeGen
+    LLVMX86AsmParser
+    MLIRTargetCpp
+    MLIRFuncAllExtensions
+    MLIRSPIRVTranslateRegistration
+    MLIRLLVMIRToLLVMTranslation
     ${dialect_libs}
     ${conversion_libs}
     MLIRMIX
@@ -43,6 +29,4 @@ target_link_libraries(linear
     LowerComposite
     LowerPrimaryToTosa
     loadPytorchModel
-)
-
-target_include_directories(linear PRIVATE ${Python3_INCLUDE_DIRS})
+    )

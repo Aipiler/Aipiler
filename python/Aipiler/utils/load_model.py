@@ -35,7 +35,6 @@ def load_model_weights(model_path: str) -> Dict[str, np.ndarray]:
                 f"dtype {value.dtype}, "
                 f"parameters {numpy_array.size}"
             )
-            break
 
         logging.info(f"Total parameters: {total_params}")
         return weights_dict

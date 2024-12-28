@@ -1,9 +1,11 @@
 #include "Utils/loadPytorchModel.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <pybind11/embed.h>
+#include <pybind11/eval.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <sstream>
@@ -43,9 +45,8 @@ void load_model(const std::string model_path, mlir::ModuleOp &theModule,
   try {
     log(LogLevel::INFO, "Initializing Python interpreter");
     py::scoped_interpreter guard{};
-
-    log(LogLevel::INFO, "Importing Python module: load_model");
-    py::module load_model_module = py::module::import("load_model");
+    log(LogLevel::INFO, "Importing Python module: Aipiler");
+    py::module load_model_module = py::module::import("Aipiler");
     log(LogLevel::INFO, "Loading model weights from: " + model_path);
     py::dict model_weights =
         load_model_module.attr("load_model_weights")(model_path);
