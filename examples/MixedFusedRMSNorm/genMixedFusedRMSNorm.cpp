@@ -111,19 +111,41 @@ void registerLowerModulePass();
 void registerLowerCompositePass();
 void registerLowerPrimaryToTosaPass();
 
-mlir::Value embedding(mlir::OpBuilder &builder, mlir::Location loc,
-                      mlir::Value indices, std::string param_loc,
-                      int num_embeddings, int embedding_dim, mlir::Type dtype) {
-  auto embed0 = builder.create<mix::EmbeddingOp>(
-      loc, indices, param_loc, num_embeddings, embedding_dim, dtype);
-  return embed0;
+mlir::Value FusedRMSNorm(mlir::OpBuilder &builder, mlir::Location loc,
+                         mlir::Value hidden_states, int hidden_size,
+                         float eps) {
+  auto elementType = builder.getF32Type();
+  auto hidden_states_type =
+      llvm::dyn_cast<RankedTensorType>(hidden_states.getType());
+  auto hidden_states_shape = hidden_states_type.getShape();
+  auto hidden_states_rank = hidden_states_shape.size();
+  llvm::ArrayRef<int64_t> weightShape{int64_t(hidden_size)};
+  auto weightTensorType =
+      RankedTensorType::get(weightShape, hidden_states_type.getElementType());
+
+  auto _weight3 =
+      builder.create<mix::WeightOp>(loc, weightTensorType, "rms.weight");
+  auto constantTensorType = RankedTensorType::get({1}, elementType);
+  auto constantTensor = DenseElementsAttr::get(constantTensorType, {2.0f});
+  auto c2Tensor = builder.create<arith::ConstantOp>(loc, constantTensor);
+  auto pow0 = builder.create<mix::PowOp>(loc, hidden_states, c2Tensor);
+  auto mean0 = builder.create<mix::MeanOp>(
+      loc, pow0, builder.getI32ArrayAttr({int32_t(hidden_states_rank - 1)}),
+      builder.getBoolAttr(true));
+
+  auto epsAttr = builder.getFloatAttr(elementType, eps);
+  auto const_eps = builder.create<arith::ConstantOp>(loc, epsAttr);
+  auto add0 = builder.create<mix::AddOp>(loc, mean0, const_eps);
+  auto rsqrt0 = builder.create<mix::RsqrtOp>(loc, add0);
+  auto mul0 = builder.create<mix::MulOp>(loc, hidden_states, rsqrt0);
+  auto mul1 = builder.create<mix::MulOp>(loc, _weight3, mul0);
+  return mul1;
 }
 
 void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
-  auto loc = builder.getUnknownLoc();
+  auto loc = theModule->getLoc();
   builder.setInsertionPointToEnd(theModule.getBody());
 
-  // printMemrefF32
   auto elementType = builder.getF32Type();
   auto printInputType = UnrankedTensorType::get(elementType);
   auto printFunTy =
@@ -131,25 +153,26 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   auto printfunc =
       builder.create<func::FuncOp>(loc, "printMemrefF32", printFunTy);
   printfunc.setPrivate();
+  auto tensorType = RankedTensorType::get({4, 16}, elementType);
 
-  // Graph0
-  auto indicesType = RankedTensorType::get({4, 5}, builder.getI32Type());
-  //   auto resultType
-  auto functionTy = builder.getFunctionType({indicesType}, {});
+  // graph0
+  auto functionTy = builder.getFunctionType({tensorType}, {});
   auto graph0 = builder.create<func::FuncOp>(loc, "graph0", functionTy);
   graph0.setPrivate();
   auto body = graph0.addEntryBlock();
   builder.setInsertionPointToEnd(body);
 
-  auto indices = graph0.getArgument(0);
-  auto embed0 = embedding(builder, loc, indices, "embedding", 20, 5,
-                          builder.getF32Type());
+  auto hidden_states = graph0.getArgument(0);
+  int hidden_size = 16;
+  float eps = 1e-6;
+  auto res = FusedRMSNorm(builder, loc, hidden_states, hidden_size, eps);
+  graph0.setFunctionType(
+      builder.getFunctionType({tensorType}, {res.getType()}));
 
-  auto returnType = embed0.getType();
-  graph0.setFunctionType(builder.getFunctionType(indicesType, returnType));
-  builder.create<func::ReturnOp>(loc, ValueRange{embed0});
+  builder.create<func::ReturnOp>(loc, ValueRange{res});
 
-  // Main
+  // function main
+
   builder.setInsertionPointToEnd(theModule.getBody());
   auto mainfunc = builder.create<func::FuncOp>(loc, "main",
                                                builder.getFunctionType({}, {}));
@@ -158,14 +181,19 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   builder.setInsertionPointToEnd(mainbody);
 
   auto argAttr = DenseElementsAttr::get(
-      indicesType, llvm::ArrayRef<int>{1, 2, 3, 4, 5,  5,  4,  3,  2,  1,
-                                       2, 4, 6, 8, 10, 12, 14, 16, 18, 19});
+      tensorType,
+      llvm::ArrayRef<float>{1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13,
+                            14, 15, 16, 16, 15, 14, 13, 12, 11, 10, 9,  8,  7,
+                            6,  5,  4,  3,  2,  1,  1,  2,  3,  4,  5,  6,  7,
+                            8,  9,  10, 11, 12, 13, 14, 15, 16, 16, 15, 14, 13,
+                            12, 11, 10, 9,  8,  7,  6,  5,  4,  3,  2,  1});
 
   auto arg0 = builder.create<arith::ConstantOp>(loc, argAttr);
-  auto call0 = builder.create<func::CallOp>(loc, graph0, ValueRange{arg0});
-  auto cast =
-      builder.create<tensor::CastOp>(loc, printInputType, call0->getResult(0));
-  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
+  auto rms_res = builder.create<func::CallOp>(loc, graph0, ValueRange{arg0});
+
+  auto cast2 = builder.create<tensor::CastOp>(loc, printInputType,
+                                              rms_res->getResult(0));
+  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast2});
   builder.create<func::ReturnOp>(loc);
 }
 
@@ -217,6 +245,8 @@ void generateExecutable(llvm::Module &module, llvm::StringRef outputFilename) {
   args.push_back("-L../../thirdparty/llvm/build/lib");
   args.push_back("-lmlir_runner_utils");
   args.push_back("-lmlir_c_runner_utils");
+  // for powf op
+  args.push_back("-lm");
   args.push_back("-o");
   args.push_back(outputFilename);
   std::string errormsg;
@@ -255,13 +285,13 @@ int main() {
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::func::FuncDialect>();
   context.getOrLoadDialect<mlir::tensor::TensorDialect>();
-
   mlir::OpBuilder builder(&context);
   auto loc = builder.getUnknownLoc();
   auto theModule = mlir::ModuleOp::create(loc);
+
   generateCode(theModule, builder);
 
-  load_model("./embedding_model.bin", theModule, builder, builder.getF32Type());
+  load_model("./rms_model.bin", theModule, builder, builder.getF32Type());
 
   mlir::PassManager pm(&context);
 
@@ -322,7 +352,7 @@ int main() {
     return -1;
   }
 
-  generateExecutable(*llvmModule.get(), "embedding");
+  generateExecutable(*llvmModule.get(), "rms");
 
   return 0;
 }

@@ -196,7 +196,9 @@ public:
     auto attrShape = tensorAttr.getType().getShape();
     auto returnShape = returnType.getShape();
     if (attrShape.size() != returnShape.size()) {
-      return op.emitOpError("Loaded params have unexpected rank.");
+      return op.emitOpError("Loaded params have unexpected rank: ")
+             << "expected: " << returnShape.size()
+             << " but got: " << attrShape.size() << "\n";
     }
     for (size_t i = 0; i < attrShape.size(); i++) {
       if (attrShape[i] != returnShape[i]) {

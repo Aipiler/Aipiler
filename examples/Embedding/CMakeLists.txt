@@ -7,34 +7,24 @@ get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 
 target_link_libraries(genEmbedding
     PUBLIC
-    MLIRAnalysis
-    MLIRCallInterfaces
-    MLIRCastInterfaces
-    MLIRExecutionEngine
-    MLIRIR
-    MLIRAffineDialect
-    MLIRFuncDialect
-    MLIRSCFDialect
-    MLIRLLVMToLLVMIRTranslation
-    MLIRMemRefDialect
-    MLIRParser
-    MLIRPass
-    MLIRSideEffectInterfaces
-    MLIRTargetLLVMIRExport
-    MLIRTransforms
-    MLIRSupport
-    MLIRLLVMCommonConversion
-    MLIRLLVMToLLVMIRTranslation
-    MLIRTargetLLVMIRExport
-    MLIRControlFlowToLLVM
-    MLIRFuncToLLVM
-    MLIRMemRefToLLVM
-    MLIRSCFToControlFlow
-    MLIRAffineToStandard
+    LLVMSupport
+    MLIRToLLVMIRTranslationRegistration
+    MLIRFromLLVMIRTranslationRegistration
+    LLVMX86Info
+    LLVMX86TargetMCA
+    LLVMX86Disassembler
+    LLVMX86Desc
+    LLVMX86CodeGen
+    LLVMX86AsmParser
+    MLIRTargetCpp
+    MLIRFuncAllExtensions
+    MLIRSPIRVTranslateRegistration
+    MLIRLLVMIRToLLVMTranslation
     ${dialect_libs}
     ${conversion_libs}
     MLIRMIX
     LowerModule
     LowerComposite
     LowerPrimaryToTosa
+    loadPytorchModel
 )

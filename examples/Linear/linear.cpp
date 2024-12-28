@@ -254,9 +254,6 @@ int main() {
   auto loc = builder.getUnknownLoc();
   auto theModule = mlir::ModuleOp::create(loc);
 
-  llvm::Triple triple;
-  llvm::DataLayout DL("");
-
   generateCode(theModule, builder);
 
   load_model("./linear_model.bin", theModule, builder, builder.getF32Type());

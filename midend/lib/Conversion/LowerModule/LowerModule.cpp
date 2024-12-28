@@ -108,10 +108,13 @@ public:
     std::string params_loc(op.getParamsLoc());
     auto weight_loc = params_loc + ".weight";
     // load weight
-    SmallVector<int64_t> weightShape{1, num_embeddings, embedding_dim};
-    auto weightType = RankedTensorType::get(weightShape, dtype);
-    Value weight = rewriter.create<mix::WeightOp>(loc, weightType, weight_loc);
-    // process weight
+    auto weightType = RankedTensorType::get(
+        ArrayRef<int64_t>{num_embeddings, embedding_dim}, dtype);
+    Value _weight = rewriter.create<mix::WeightOp>(loc, weightType, weight_loc);
+    Value weight = rewriter.create<mix::ReshapeOp>(
+        loc, _weight,
+        rewriter.getI64ArrayAttr(
+            ArrayRef<int64_t>{1, num_embeddings, embedding_dim}));
     if (opt_pad_idx.has_value()) {
       auto pad_idx = opt_pad_idx.value();
       std::vector<float> mask_data(num_embeddings, 1.0f);

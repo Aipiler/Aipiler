@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <iostream>
 #include <optional>
+#include <string>
 
 using namespace mlir;
 
@@ -224,8 +225,7 @@ verify:
     if (verifyBroadcastCompatibility(lhsTensorTy, rhsTensorTy)) {
       return success();
     } else {
-      op->emitOpError() << "Failed broadcast shapes.";
-      return failure();
+      return op->emitOpError() << "Failed broadcast shapes.";
     }
   } else {
     return success();
@@ -284,7 +284,13 @@ SmallVector<int64_t> inferBroadcastShape(ArrayRef<int64_t> lhsShape,
         resultShape.push_back(std::max(lhsDim, rhsDim));
       }
     } else {
-      llvm_unreachable("Verify passed but got error when broadcasting");
+      std::string errmsg;
+      errmsg.append("Verify passed but got error when broadcasting: ");
+      errmsg.append("lhsDim = ");
+      errmsg.append(std::to_string(lhsDim));
+      errmsg.append(", rhsDim = ");
+      errmsg.append(std::to_string(rhsDim));
+      llvm_unreachable(errmsg.c_str());
     }
   }
 
