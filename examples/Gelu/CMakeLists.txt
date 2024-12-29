@@ -11,7 +11,7 @@ target_link_libraries(genGelu
     MLIRToLLVMIRTranslationRegistration
     MLIRFromLLVMIRTranslationRegistration
     LLVMX86Info
-    LLVMX86TargetMCA
+    # LLVMX86TargetMCA
     LLVMX86Disassembler
     LLVMX86Desc
     LLVMX86CodeGen

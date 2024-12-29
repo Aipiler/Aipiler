@@ -33,6 +33,15 @@ LogicalResult mix::SiLUOp::inferReturnTypes(
   return success();
 }
 
+LogicalResult mix::BitwiseNotOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto inputType = operands[0].getType();
+  inferredReturnTypes.push_back(inputType);
+  return success();
+}
+
 LogicalResult mix::SigmoidOp::inferReturnTypes(
     MLIRContext *context, std::optional<::mlir::Location> location,
     ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
@@ -240,6 +249,10 @@ LogicalResult mix::MulOp::verify() { return verifyElementWiseOp(*this); }
 
 LogicalResult mix::DivOp::verify() { return verifyElementWiseOp(*this); }
 
+LogicalResult mix::LtOp::verify() { return verifyElementWiseOp(*this); }
+
+LogicalResult mix::BitwiseOrOp::verify() { return verifyElementWiseOp(*this); }
+
 LogicalResult mix::PowOp::verify() {
 
   /*
@@ -348,6 +361,8 @@ ELEMENTWISE_SHAPE_INFER(mix::SubOp)
 ELEMENTWISE_SHAPE_INFER(mix::MulOp)
 ELEMENTWISE_SHAPE_INFER(mix::DivOp)
 ELEMENTWISE_SHAPE_INFER(mix::PowOp)
+ELEMENTWISE_SHAPE_INFER(mix::LtOp)
+ELEMENTWISE_SHAPE_INFER(mix::BitwiseOrOp)
 
 // 特殊的shape inference 算子，需要改变shape
 
@@ -716,6 +731,132 @@ LogicalResult mix::ReshapeOp::inferReturnTypes(
   }
 
   // Create output tensor type with inferred shape
+  auto resultType =
+      RankedTensorType::get(outputShape, inputType.getElementType());
+  inferredReturnTypes.push_back(resultType);
+
+  return success();
+}
+
+LogicalResult mix::ExpandOp::verify() {
+  // Get the input tensor
+  auto input = getInput();
+  if (!input) {
+    return emitOpError("requires an input tensor");
+  }
+
+  // Check if input is a ranked tensor
+  auto inputType = dyn_cast<RankedTensorType>(input.getType());
+  if (!inputType) {
+    return emitOpError("input must be a ranked tensor");
+  }
+
+  // Get the input shape
+  auto inputShape = inputType.getShape();
+
+  // Get the target shape from attributes
+  auto targetShape = getShape();
+  if (!targetShape) {
+    return emitOpError("requires a target shape attribute");
+  }
+
+  // Verify target shape
+  if (targetShape.size() < inputShape.size()) {
+    return emitOpError(
+        "target shape must have at least as many dimensions as input shape");
+  }
+
+  for (size_t i = 0; i < targetShape.size(); ++i) {
+    auto dimAttr = targetShape[i].dyn_cast<IntegerAttr>();
+    if (!dimAttr) {
+      return emitOpError("target shape must contain only integer attributes");
+    }
+
+    int64_t targetDim = dimAttr.getInt();
+    if (targetDim < 1 && targetDim != -1) {
+      return emitOpError(
+          "target shape dimensions must be positive integers or -1");
+    }
+
+    // Validate compatibility with input shape
+    if (i < inputShape.size()) {
+      int64_t inputDim = inputShape[i];
+      if (inputDim != ShapedType::kDynamic && targetDim != -1 &&
+          inputDim != 1 && inputDim != targetDim) {
+        return emitOpError("input dimension ")
+               << inputDim << " cannot be expanded to target dimension "
+               << targetDim;
+      }
+    }
+  }
+
+  return success();
+}
+
+LogicalResult mix::ExpandOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location,
+    ExpandOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  // Get the input tensor type
+  auto inputType = dyn_cast<RankedTensorType>(adaptor.getInput().getType());
+  if (!inputType) {
+    return emitOptionalError(location, "input must be a ranked tensor");
+  }
+
+  // Get the input shape
+  auto inputShape = inputType.getShape();
+
+  // Get the target shape from attributes
+  auto targetShape = adaptor.getShape();
+  if (!targetShape) {
+    return emitOptionalError(location, "requires a target shape attribute");
+  }
+
+  SmallVector<int64_t> outputShape;
+
+  // Verify and infer the output shape
+  if (targetShape.size() < inputShape.size()) {
+    return emitOptionalError(
+        location,
+        "target shape must have at least as many dimensions as input shape");
+  }
+
+  size_t inputOffset = targetShape.size() - inputShape.size();
+  for (size_t i = 0; i < targetShape.size(); ++i) {
+    auto dimAttr = targetShape[i].dyn_cast<IntegerAttr>();
+    if (!dimAttr) {
+      return emitOptionalError(
+          location, "target shape must contain only integer attributes");
+    }
+
+    int64_t targetDim = dimAttr.getInt();
+    if (targetDim < 1 && targetDim != -1) {
+      return emitOptionalError(
+          location, "target shape dimensions must be positive integers or -1");
+    }
+
+    // Handle dimensions with broadcasting rules
+    if (i < inputOffset) {
+      // Extra dimensions in target shape
+      outputShape.push_back(targetDim);
+    } else {
+      // Compare with input dimensions
+      int64_t inputDim = inputShape[i - inputOffset];
+      if (inputDim == ShapedType::kDynamic) {
+        outputShape.push_back(targetDim);
+      } else if (targetDim == -1 || inputDim == 1) {
+        // -1 means broadcast the input dimension
+        outputShape.push_back(inputDim);
+      } else if (inputDim == targetDim) {
+        outputShape.push_back(targetDim);
+      } else {
+        return emitOptionalError(location, "input dimension ", inputDim,
+                                 " cannot be expanded to target dimension ",
+                                 targetDim);
+      }
+    }
+  }
+
+  // Create output tensor type
   auto resultType =
       RankedTensorType::get(outputShape, inputType.getElementType());
   inferredReturnTypes.push_back(resultType);
