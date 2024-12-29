@@ -171,7 +171,7 @@ int main() {
 
   SmallVector<int64_t> shape2{1, 1, 5, 5}; // seq_len = 5
   auto outputType = RankedTensorType::get(shape2, elementType);
-  auto functionTy = builder.getFunctionType({elementType}, {outputType});
+  auto functionTy = builder.getFunctionType({maskType}, {outputType});
   auto graph0 = builder.create<func::FuncOp>(loc, "Mask", functionTy);
   graph0.setPrivate();
   auto body = graph0.addEntryBlock();
