@@ -367,8 +367,7 @@ LogicalResult mix::MatMulOp::verify() {
     return failure();
   }
   if (lhsShape[1] != rhsShape[0] || lhsRank != 2 || rhsRank != 2) {
-    this->emitError() << "Unexpect shapes.";
-    return failure();
+    return this->emitOpError() << "Unexpect shapes.";
   }
   return success();
 }
@@ -522,11 +521,11 @@ LogicalResult mix::MeanOp::verify() {
     if (auto dimAttr = dyn_cast<IntegerAttr>(attr)) {
       auto dim = dimAttr.getInt();
       if (size_t(dim) >= inputRank) {
-        return this->emitError() << "Unexpected dim value: " << dim << ".";
+        return this->emitOpError() << "Unexpected dim value: " << dim << ".";
       }
       dims.push_back(dim);
     } else {
-      return this->emitError() << "Unexpected dim attribute type.";
+      return this->emitOpError() << "Unexpected dim attribute type.";
     }
   }
   for (size_t i = 0; i < dims.size(); i++) {
@@ -534,7 +533,7 @@ LogicalResult mix::MeanOp::verify() {
     for (size_t j = i + 1; j < dims.size(); j++) {
       auto another = dims[j];
       if (dim == another) {
-        return this->emitError() << "Repetitive dimensions in meanOp.";
+        return this->emitOpError() << "Repetitive dimensions in meanOp.";
       }
     }
   }
@@ -1264,7 +1263,9 @@ LogicalResult mix::LinearOp::verify() {
   auto shape = inputType.getShape();
   auto input_feature = this->getInFeature();
   if (shape.back() != input_feature) {
-    return this->emitError() << "Unexpect input shape";
+    return this->emitOpError()
+           << "Unexpect input shape: expected *x" << input_feature
+           << ", but got: " << shape.back();
   }
   return success();
 }
