@@ -164,6 +164,65 @@ def AddOp : MIX_Op<"prim.add", [Pure, Commutative, DeclareOpInterfaceMethods<Inf
     let hasVerifier = 1;
 }
 
+def LtOp : MIX_Op<"prim.lt", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    let summary = "a letter than b";
+    let description = [{
+        a letter than b
+    }];
+    let arguments = (ins
+        mixData: $lhs,
+        mixData: $rhs
+    );
+    let results = (outs
+        mixData: $output
+    );
+    let hasVerifier = 1;
+}
+
+def BitwiseNotOp : MIX_Op<"prim.bitwise_not", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    let summary = "bitwise_not";
+    let description = [{
+        bitwise_not
+    }];
+    let arguments = (ins
+        mixData: $input
+    );
+    let results = (outs
+        mixData: $output
+    );
+}
+
+def BitwiseOrOp : MIX_Op<"prim.bitwise_or", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    let summary = "bitwise_or";
+    let description = [{
+        bitwise_or
+    }];
+    let arguments = (ins
+        mixData: $lhs,
+        mixData: $rhs
+    );
+    let results = (outs
+        mixData: $output
+    );
+
+    let hasVerifier = 1;
+}
+
+def ExpandOp : MIX_Op<"prim.expand", [Pure, InferTypeOpAdaptor]> {
+    let summary = "expand";
+    let description = [{
+        expand
+    }];
+    let arguments = (ins
+        mixData: $input,
+        I64ArrayAttr: $shape
+    );
+    let results = (outs
+        mixData: $output
+    );
+    let hasVerifier = 1;
+}
+
 def SubOp : MIX_Op<"prim.sub", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "sub";
     let description = [{

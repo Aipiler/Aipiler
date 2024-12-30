@@ -514,14 +514,13 @@ public:
                                 PatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     auto input = op.getValue();
-    auto dims = op.getElementTy();
     auto resultType = op.getType();
 
     Value newop;
-    if (auto resTensorType = llvm::dyn_cast<RankedTensorType>(resultType)) {
+    if (auto resTensorType = mlir::dyn_cast<RankedTensorType>(resultType)) {
       newop = rewriter.create<tosa::CastOp>(loc, resultType, input);
-    }
-    newop = rewriter.create<arith::BitcastOp>(loc, resultType, input);
+    } else // TODO: airth::BitcastOp must accept the same bit width.
+      newop = rewriter.create<arith::BitcastOp>(loc, resultType, input);
 
     rewriter.replaceOp(op, newop);
     return success();
@@ -552,9 +551,10 @@ public:
 
     llvm::SmallVector<int64_t> shapeNum;
     for (auto dim : inputType.getShape()) {
-      if (dim == axis)
+      if (dim == axis) {
         shapeNum.push_back(1);
-      else {
+        shapeNum.push_back(dim);
+      } else {
         shapeNum.push_back(dim);
       }
     }
@@ -564,6 +564,7 @@ public:
     rewriter.replaceOpWithNewOp<tosa::ReshapeOp>(
         op, op.getType().dyn_cast<RankedTensorType>(), input,
         rewriter.getDenseI64ArrayAttr(shapeNum));
+    return success();
   }
 };
 

@@ -664,7 +664,7 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                                      "transformer.word_embeddings.weight",
                                      vocab_size, hidden_size, F16Type);
 
-  // TODO: 创建mask
+  // TODO: 创建mask，并根据torch-mlir计算mask
   auto attention_mask_tensorType = RankedTensorType::get(
       {batch_size, batch_size, input_len, input_len}, BoolType);
   auto attention_mask_tensor =
