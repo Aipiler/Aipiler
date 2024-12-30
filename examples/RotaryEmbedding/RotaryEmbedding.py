@@ -32,20 +32,28 @@ class RotaryEmbedding(torch.nn.Module):
             self_config_training_seqlen = 8192
             seq_len = max(seq_len, self_config_training_seqlen)
             self.mscale = float(self.get_mscale(seq_len / self_config_training_seqlen))
+            print("mscale: ", self.mscale)
         ntk_alpha = self.get_ntk_alpha(seq_len)
+        # print("nkt_alpha: ", ntk_alpha)
         base = self.base * ntk_alpha ** (self.dim / (self.dim - 2))
+        # print("base: ", base)
         self.inv_freq = 1.0 / (
             base ** (torch.arange(0, self.dim, 2, device=x.device).float() / self.dim)
         )
+        # print("inv_freq: ", self.inv_freq.shape, self.inv_freq)
         self.max_seq_len_cached = seq_len
         t = torch.arange(
             self.max_seq_len_cached, device=x.device, dtype=self.inv_freq.dtype
         )
         freqs = torch.einsum("i,j->ij", t, self.inv_freq)
+        print("freqs shape: ", freqs.shape)
+        print("freqs: ", freqs)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
         # if self.precision == torch.bfloat16:
         emb = emb.float() if dtype == torch.bfloat16 else emb
+        # print("emb shape: ", emb.shape)
+        # print("emb: ", emb)
         # [sx, 1 (b * np), hn]
         self.cos_cached = self.mscale * emb.cos()[:, None, :].to(dtype)
         self.sin_cached = self.mscale * emb.sin()[:, None, :].to(dtype)
@@ -58,11 +66,12 @@ if __name__ == "__main__":
     head_dim = hidden_size // n_head
     rotary = RotaryEmbedding(dim=head_dim)
     rotary.eval()
+    # cos, sin = rotary(torch.ones(40), torch.float16)
     cos, sin = rotary(torch.ones(40), torch.float16)
-    cos1, sin1 = rotary(torch.ones(8192), torch.float16)
-    cos_equal = torch.equal(cos, cos1)
-    sin_equal = torch.equal(sin, sin1)
-    print("cos equal:", cos_equal)
-    print("sin equal:", sin_equal)
-
+    # print("cos equal:", cos_equal)
+    # print("sin equal:", sin_equal)
+    print("cos shape: ", cos.shape)
+    print("sin shape: ", sin.shape)
+    print("cos: ", cos)
+    print("sin: ", sin)
     print("RotaryEmbedding passed")

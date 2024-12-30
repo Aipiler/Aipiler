@@ -119,7 +119,7 @@ std::unique_ptr<Pass> createLowerPrimaryToTosa();
 void registerLowerModulePass();
 void registerLowerCompositePass();
 void registerLowerPrimaryToTosaPass();
-const int max_seq_len = 2;
+const int max_seq_len = 40;
 const int n_head = 32;
 const int hidden_size = 5120;
 const int head_dim = hidden_size / n_head;
@@ -162,7 +162,6 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   // 下面是RotaryEmbedding 的代码，应该在genRotaryEmbedding中实现
 
   // line 94: torch.aten.arange.start_step
-
   llvm::SmallVector<mlir::Attribute> tmp94;
   for (int j = 0; j < head_dim; j += 2) {
     tmp94.push_back(mlir::IntegerAttr::get(type_i16, int16_t(j)));
@@ -170,8 +169,6 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   auto dense94 = DenseElementsAttr::get(
       RankedTensorType::get({long(tmp94.size())}, type_i16), tmp94);
   auto constant94 = builder.create<mix::ConstantOp>(loc, dense94);
-
-  // builder.create<func::CallOp>(loc, print, ValueRange{});
 
   // line 102: torch.aten._to_copy
   auto convert102 = builder.create<mix::ConvertOp>(loc, constant94, type_f16);
@@ -183,19 +180,14 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   // line 106: torch.aten.div.Tensor
   auto dev106 = builder.create<mix::DivOp>(loc, convert102, constant101);
 
-  auto cast_convert102 =
-      builder.create<tensor::CastOp>(loc, printMemrefType, convert102);
-  builder.create<func::CallOp>(loc, printMemRefFunc,
-                               ValueRange{cast_convert102});
-
-  // line 108: torch.constant.float
+  // line 108: torch.constant.float | base
   auto scalar108 = FloatAttr::get(type_f16, 30420.108888514722);
   auto constant108 = builder.create<mix::ConstantOp>(loc, scalar108);
 
   // line 110: torch.aten.pow.Scalar
   auto pow110 = builder.create<mix::PowOp>(loc, constant108, dev106);
 
-  // line 112: torch.aten.reciprocal
+  // line 112: torch.aten.reciprocal | self.inv_freq
   auto reciprocal112 = builder.create<mix::ReciprocalOp>(loc, pow110);
 
   // line 114: torch.constant.float
@@ -208,11 +200,9 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   // line 123: torch.aten.arange
   llvm::SmallVector<mlir::Attribute> tmp123;
   for (int i = 0; i < max_seq_len; ++i) {
-    tmp123.push_back(mlir::FloatAttr::get(type_f16, 1.0f));
+    tmp123.push_back(mlir::FloatAttr::get(type_f16, float(i)));
   }
-
   auto tensorType = RankedTensorType::get({max_seq_len}, type_f16);
-
   auto dense123 = DenseElementsAttr::get(tensorType, tmp123);
   auto constant123 = builder.create<mix::ConstantOp>(loc, dense123);
 
@@ -238,6 +228,11 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   SmallVector<Value> tmp145{mul141, mul141};
   auto cat145 = builder.create<mix::ConcatOp>(
       loc, tmp145, IntegerAttr::get(IntegerType::get(&context, 64), 1));
+
+  // auto cast_mul141 =
+  //     builder.create<tensor::CastOp>(loc, printMemrefType, mul141);
+  // builder.create<func::CallOp>(loc, printMemRefFunc,
+  // ValueRange{cast_mul141});
 
   // line 147: torch.aten.cos
   auto cos147 = builder.create<mix::CosOp>(loc, cat145);
@@ -301,12 +296,6 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
       theModule->getLoc(), "printMemrefF16", printFunTy);
   printMemRefFunc.setPrivate();
 
-  // print
-  // auto printfunc = builder.create<func::FuncOp>(
-  //     theModule->getLoc(), "print", builder.getFunctionType({}, {}));
-  // printfunc.setPrivate();
-  // genRotaryEmbedding
-
   auto functionTy = builder.getFunctionType({}, {cosType, sinType});
   auto graph0 = builder.create<func::FuncOp>(theModule->getLoc(),
                                              "RotaryEmbedding", functionTy);
@@ -327,9 +316,7 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   auto mainbody = mainfunc.addEntryBlock();
   builder.setInsertionPointToEnd(mainbody);
 
-  // builder.create<func::CallOp>(loc, printfunc, ValueRange{});
   auto res = builder.create<func::CallOp>(loc, graph0, ValueRange{});
-  // builder.create<func::CallOp>(loc, printfunc, ValueRange{});
 
   auto castCos =
       builder.create<tensor::CastOp>(loc, printInputType, res->getResult(0));
@@ -436,7 +423,7 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   generateCode(theModule, builder, context);
 
-  theModule->dump();
+  // theModule->dump();
 
   std::cout << "-------------------------------------------------" << std::endl;
 
@@ -470,7 +457,7 @@ int main() {
     return -1;
   }
 
-  theModule->dump();
+  // theModule->dump();
 
   //   translate to llvm ir
   llvm::LLVMContext LLVMContext;

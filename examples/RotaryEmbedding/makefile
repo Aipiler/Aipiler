@@ -19,11 +19,13 @@ MTRIPLE := x86_64-apple-darwin
 endif
 
 RotaryEmbedding: 
+	cd ../../build && ninja
 	PYTHONPATH=${AIPILER_PY_PATH} ../../build/bin/genRotaryEmbedding
 
 run_RotaryEmbedding: RotaryEmbedding
-	LD_LIBRARY_PATH=${MLIR_LIB}:${LD_LIBRARY_PATH} ./RotaryEmbedding
+	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./RotaryEmbedding
 
+# LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:../../thirdparty/llvm/build/lib ./RotaryEmbedding
 
 RotaryEmbedding-run:
 	@${MIX_OPT}  ./RotaryEmbedding.mlir \
@@ -38,4 +40,4 @@ RotaryEmbedding-run:
 
 .PHONY: clean RotaryEmbedding-run
 clean:
-	rm -rf *.mlir *.ll mlp *.bin
+	rm -rf *.mlir *.ll mlp *.bin RotaryEmbedding
