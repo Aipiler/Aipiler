@@ -1000,10 +1000,6 @@ LogicalResult mix::SliceOp::verify() {
            << dimSize - 1 << "]";
   }
 
-  if (end > dimSize) {
-    end = dimSize;
-  }
-
   if (end < 0 || end > dimSize) {
     return emitOpError("end index must be in range [0, ") << dimSize << "]";
   }

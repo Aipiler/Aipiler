@@ -3,8 +3,10 @@ MLIR_OPT := ../../thirdparty/llvm/build/bin/mlir-opt
 
 
 # TODO: add lower pass for self-attention op
-lower-self-attention:
-	@${MIX_OPT} ./self_attention.mlir -o ./log.mlir
+lower-rotary-embedding:
+	@${MIX_OPT} ./RotaryEmbedding.mlir \
+		-lower-mix-primary-to-tosa \
+		-o ./log.mlir
 
 .PHONY: clean
 
