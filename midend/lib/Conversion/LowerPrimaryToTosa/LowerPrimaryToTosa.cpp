@@ -422,13 +422,15 @@ public:
     auto end = op.getEnd();
     auto step = op.getStep();
     auto shape = input.getType().getShape();
-    auto shapeNum = shape.size();
+    auto rank = shape.size();
     auto resultType = dyn_cast<ShapedType>(op.getType());
+    if (end > shape[dim])
+      end = shape[dim];
     if (llvm::isa<UnrankedTensorType>(resultType))
       return failure();
-    SmallVector<int64_t> offset(shapeNum, 0);
+    SmallVector<int64_t> offset(rank, 0);
     SmallVector<int64_t> size = llvm::to_vector(shape);
-    SmallVector<int64_t> stride(shapeNum, 1);
+    SmallVector<int64_t> stride(rank, 1);
     offset[dim] = begin;
     size[dim] = end - begin;
     stride[dim] = step;
@@ -464,7 +466,6 @@ public:
     }
     dimsVector[dim1] = dim2;
     dimsVector[dim2] = dim1;
-    SmallVector<Value> dimsValues;
     auto dimAttr = rewriter.getI32TensorAttr(dimsVector);
 
     auto perm = rewriter.create<arith::ConstantOp>(loc, dimAttr);
@@ -484,21 +485,18 @@ public:
                                 PatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     auto input = op.getInput();
-    auto dims = op.getDims();
+    auto dimsAttr = op.getDims();
     auto resultType = dyn_cast<ShapedType>(op.getType());
     if (llvm::isa<UnrankedTensorType>(resultType))
       return failure();
 
-    SmallVector<int64_t> dimsVector;
-    for (auto dim : dims) {
-      dimsVector.push_back(dim.cast<IntegerAttr>().getInt());
+    SmallVector<int32_t> dimsVector;
+    for (auto dim : dimsAttr) {
+      dimsVector.push_back(mlir::cast<IntegerAttr>(dim).getInt());
     }
 
-    SmallVector<Value> dimsValues;
-    for (auto dim : dimsVector) {
-      dimsValues.push_back(rewriter.create<arith::ConstantIndexOp>(loc, dim));
-    }
-    Value perm = rewriter.create<tensor::FromElementsOp>(loc, dimsValues);
+    auto dimAttr = rewriter.getI32TensorAttr(dimsVector);
+    auto perm = rewriter.create<arith::ConstantOp>(loc, dimAttr);
     auto newop =
         rewriter.create<tosa::TransposeOp>(loc, op.getType(), input, perm);
 
@@ -538,7 +536,7 @@ public:
     auto inputType = dyn_cast<RankedTensorType>(input.getType());
     if (!inputType)
       return failure();
-
+    auto inputShape = inputType.getShape();
     auto rank = inputType.getRank();
     auto elemTy = inputType.getElementType();
     if (!elemTy.isIntOrFloat()) {
@@ -550,19 +548,19 @@ public:
       return rewriter.notifyMatchFailure(op, "axis is invalid");
 
     llvm::SmallVector<int64_t> shapeNum;
-    for (auto dim : inputType.getShape()) {
-      if (dim == axis) {
+    for (auto idx = 0; idx < rank; idx++) {
+      if (idx == axis) {
         shapeNum.push_back(1);
-        shapeNum.push_back(dim);
+        shapeNum.push_back(inputShape[idx]);
       } else {
-        shapeNum.push_back(dim);
+        shapeNum.push_back(inputShape[idx]);
       }
     }
     if (axis == rank)
       shapeNum.push_back(1);
 
     rewriter.replaceOpWithNewOp<tosa::ReshapeOp>(
-        op, op.getType().dyn_cast<RankedTensorType>(), input,
+        op, mlir::dyn_cast<RankedTensorType>(op.getType()), input,
         rewriter.getDenseI64ArrayAttr(shapeNum));
     return success();
   }
