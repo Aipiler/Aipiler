@@ -30,6 +30,9 @@ find_package(MLIR REQUIRED CONFIG)
 
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+set(LLD_DIR "${LLVM_DIR}/../lld")
+message(STATUS "Using LLDConfig.cmake in: ${LLD_DIR}")
+
 
 set(LLVM_RUNTIME_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/bin)
 set(LLVM_LIBRARY_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/lib)
@@ -38,17 +41,19 @@ set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 
+find_package(LLD REQUIRED)
 
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
 
+
 # Add MLIR and LLVM headers to the include path
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
-
-
+include_directories(${LLD_INCLUDE_DIRS})
+message(STATUS "LLD INCLUDES: ${LLD_INCLUDE_DIRS}")
 #-------------------------------------------------------------------------------
 # Aipiler configuration
 #-------------------------------------------------------------------------------

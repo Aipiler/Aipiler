@@ -11,8 +11,9 @@ $ git submodule update --init
 
 ```
 $ cd thirdparty/llvm
+$ git apply ../llvm_lld_link.patch
 $ cmake -G Ninja -Sllvm -Bbuild \
-    -DLLVM_ENABLE_PROJECTS="mlir;clang" \
+    -DLLVM_ENABLE_PROJECTS="mlir;clang;lld" \
     -DLLVM_ENABLE_ASSERTIONS=ON \
     -DLLVM_ENABLE_RTTI=ON \
     -DCMAKE_BUILD_TYPE=RELEASE

@@ -202,7 +202,9 @@ public:
     }
     for (size_t i = 0; i < attrShape.size(); i++) {
       if (attrShape[i] != returnShape[i]) {
-        return op->emitOpError("Loaded params have unexpected shape.");
+        return op->emitOpError("Loaded params have unexpected shape: ")
+               << "expected: " << returnShape[i]
+               << ", but got: " << attrShape[i];
       }
     }
 

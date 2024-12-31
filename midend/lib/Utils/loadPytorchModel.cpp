@@ -1,5 +1,5 @@
 #include "Utils/loadPytorchModel.h"
-
+#include "Utils/logger.h"
 #include <chrono>
 #include <cstdlib>
 #include <iomanip>
@@ -12,34 +12,7 @@
 #include <sys/types.h>
 
 namespace py = pybind11;
-
-// 日志级别枚举
-enum class LogLevel { INFO, WARNING, ERROR };
-
-// 日志输出函数
-void log(LogLevel level, const std::string &message) {
-  auto now = std::chrono::system_clock::now();
-  auto time = std::chrono::system_clock::to_time_t(now);
-  std::stringstream ss;
-  ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
-
-  const char *level_str;
-  switch (level) {
-  case LogLevel::INFO:
-    level_str = "INFO";
-    break;
-  case LogLevel::WARNING:
-    level_str = "WARNING";
-    break;
-  case LogLevel::ERROR:
-    level_str = "ERROR";
-    break;
-  }
-
-  std::cout << "[" << ss.str() << "][" << level_str << "] " << message
-            << std::endl;
-}
-
+using namespace mix::utils;
 void load_model(const std::string model_path, mlir::ModuleOp &theModule,
                 mlir::OpBuilder &builder, mlir::Type dtype) {
   try {
@@ -68,10 +41,11 @@ void load_model(const std::string model_path, mlir::ModuleOp &theModule,
       auto size = value.size();
       auto raw_data_byte_len =
           size * (dtype.getIntOrFloatBitWidth() / 8) / sizeof(char);
-
+      log(LogLevel::INFO, "start create attr: " + key);
       auto tensorAttr = mlir::DenseElementsAttr::getFromRawBuffer(
           tensorTy, llvm::ArrayRef<char>(raw_data, raw_data_byte_len));
       theModule->setAttr(key, tensorAttr);
+      log(LogLevel::INFO, "end create attr: " + key);
     }
   } catch (const py::error_already_set &e) {
     log(LogLevel::ERROR, "Python exception: " + std::string(e.what()));
@@ -84,23 +58,3 @@ void load_model(const std::string model_path, mlir::ModuleOp &theModule,
     throw;
   }
 }
-
-// int main() {
-//   // 输入模型文件路径
-//   std::string model_path = "pytorch_model_00001-of-00004.bin";
-
-//   mlir::MLIRContext context;
-//   context.getOrLoadDialect<mlir::arith::ArithDialect>();
-//   context.getOrLoadDialect<mlir::func::FuncDialect>();
-//   context.getOrLoadDialect<mlir::tensor::TensorDialect>();
-
-//   mlir::OpBuilder builder(&context);
-//   auto loc = builder.getUnknownLoc();
-//   auto theModule = mlir::ModuleOp::create(loc);
-//   builder.setInsertionPointToEnd(theModule.getBody());
-
-//   // 加载模型权重
-//   load_model(model_path, theModule, builder);
-//   theModule->dump();
-//   return 0;
-// }
