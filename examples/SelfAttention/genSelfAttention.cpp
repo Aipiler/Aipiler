@@ -131,7 +131,7 @@ std::string getOpName(std::string_view prefix, int idx, std::string_view name) {
   return std::string(prefix) + std::to_string(idx) + std::string(name);
 }
 
-ArrayAttr createIntArrayAttr(mlir::MLIRContext &context,
+ArrayAttr createIntArrayAttr(MLIRContext &context,
                              const std::vector<int64_t> &values) {
   SmallVector<Attribute> attrs;
   attrs.reserve(values.size());
@@ -146,6 +146,7 @@ ArrayAttr createIntArrayAttr(mlir::MLIRContext &context,
 std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
                                            mlir::OpBuilder &builder,
                                            Location loc) {
+  printf("genRotaryEmbedding\n");
   /* 定义一些可重用的信息 */
 
   // types:
@@ -233,6 +234,11 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
   SmallVector<Value> tmp145{mul141, mul141};
   auto cat145 = builder.create<mix::ConcatOp>(
       loc, tmp145, IntegerAttr::get(IntegerType::get(&context, 64), 1));
+
+  // auto cast_mul141 =
+  //     builder.create<tensor::CastOp>(loc, printMemrefType, mul141);
+  // builder.create<func::CallOp>(loc, printMemRefFunc,
+  // ValueRange{cast_mul141});
 
   // line 147: torch.aten.cos
   auto cos147 = builder.create<mix::CosOp>(loc, cat145);
