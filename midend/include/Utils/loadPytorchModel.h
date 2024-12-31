@@ -37,4 +37,8 @@
 void load_model(const std::string model_path, mlir::ModuleOp &theModule,
                 mlir::OpBuilder &builder, mlir::Type dtype);
 
+void load_model(const std::vector<std::string> model_paths,
+                mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
+                mlir::Type dtype);
+
 #endif
