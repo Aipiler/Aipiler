@@ -20,7 +20,7 @@ def load_model_weights(model_paths) -> Dict[str, np.ndarray]:
         weights_dict = {}
         total_params = 0
         for model_path in model_paths:
-            logging.info("Loading weight from path: {model_path}")
+            logging.info(f"Loading weight from path: {model_path}")
             model_weights = torch.load(model_path, weights_only=True)
             logging.info("Successfully loaded model weights")
 

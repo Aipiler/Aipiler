@@ -36,6 +36,7 @@
 #include "mix/mixDialect.h"
 #include "mix/mixOps.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/CodeGen/GlobalISel/Utils.h"
 
 using namespace mlir;
 
@@ -69,7 +70,9 @@ public:
     auto exp0 = rewriter.create<mix::ExpOp>(loc, inputTy, neg0);
 
     auto tensorTy = RankedTensorType::get({1}, elementTy);
-    auto c1_attr = DenseElementsAttr::get(tensorTy, {1.0f});
+    auto c1_attr = DenseElementsAttr::get(
+        tensorTy,
+        {llvm::getAPFloatFromSize(1, elementTy.getIntOrFloatBitWidth())});
     auto c1 = rewriter.create<arith::ConstantOp>(loc, c1_attr);
     auto add0 = rewriter.create<mix::AddOp>(loc, c1, exp0);
     auto div0 = rewriter.create<mix::DivOp>(loc, c1, add0);
@@ -111,67 +114,15 @@ public:
                                             rewriter.getI64ArrayAttr(resShape));
     }
     auto scaleType = RankedTensorType::get({1}, elementTy);
-    auto scaleAttr = DenseElementsAttr::get(scaleType, float(1.0 / scale));
+    auto scaleAttr = DenseElementsAttr::get(
+        scaleType, llvm::getAPFloatFromSize(1.0 / scale,
+                                            elementTy.getIntOrFloatBitWidth()));
     auto scaleValue = rewriter.create<arith::ConstantOp>(loc, scaleAttr);
     res = rewriter.create<mix::MulOp>(loc, res, scaleValue);
     rewriter.replaceOp(op, res);
     return success();
   }
 };
-
-#define GET_DENSE(T)                                                           \
-  std::vector<T> castedResult;                                                 \
-  for (auto e : result) {                                                      \
-    castedResult.push_back(T(e));                                              \
-  }                                                                            \
-  dataAttr = DenseElementsAttr::get(returnType, ArrayRef<T>(castedResult));
-
-class WeightOpLoweringPattern : public OpRewritePattern<mix::WeightOp> {
-public:
-  using OpRewritePattern<mix::WeightOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(mix::WeightOp op,
-                                PatternRewriter &rewriter) const override {
-
-    auto returnType = op.getType();
-    auto elementType = returnType.getElementType();
-    auto data_loc = op.getParamLoc();
-    auto loc = op->getLoc();
-    std::vector<double> result;
-    // read weight from json file.
-    if (!getElementFromJson(data_loc.str(), result)) {
-      return op->emitOpError()
-             << "error happended when reading data from: " << data_loc;
-    }
-    // generate dense attr
-    DenseElementsAttr dataAttr;
-    if (auto floatElemType = llvm::dyn_cast<FloatType>(elementType)) {
-      auto width = floatElemType.getWidth();
-      if (width == 32) {
-        GET_DENSE(float)
-      } else if (width == 64) {
-        GET_DENSE(double)
-      } else {
-        op.emitOpError() << "unsupported element type.";
-      }
-    } else if (auto intElemType = llvm::dyn_cast<IntegerType>(elementType)) {
-      auto width = intElemType.getWidth();
-      if (width == 32) {
-        GET_DENSE(int)
-      } else if (width == 64) {
-        GET_DENSE(long)
-      } else {
-        op.emitOpError() << "unsupported element type.";
-      }
-    } else {
-      return op.emitOpError() << "Unexpected type.";
-    }
-    // create consatant op
-    auto constantOp = rewriter.create<mix::ConstantOp>(loc, dataAttr);
-    rewriter.replaceOp(op, constantOp);
-    return success();
-  }
-};
-#undef GET_DENSE
 
 class WeightOpLoadTorchPattern : public OpRewritePattern<mix::WeightOp> {
 public:
@@ -186,8 +137,8 @@ public:
     auto theModule = op->getParentOfType<ModuleOp>();
     auto attr = theModule->getAttr(data_loc);
     if (!attr) {
-      op.emitOpError("Cannot find parameter: ")
-          << data_loc << " from modelfile.";
+      return op.emitOpError("Cannot find parameter: ")
+             << data_loc << " from modelfile.";
     }
     auto tensorAttr = mlir::dyn_cast<DenseElementsAttr>(attr);
     if (tensorAttr.getType().getElementType() != returnType.getElementType()) {
@@ -249,8 +200,8 @@ void LowerCompositePass::runOnOperation() {
   ConversionTarget target(context);
   target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
                          mix::MIXDialect>();
-  target
-      .addIllegalOp<mix::SiLUOp, mix::SigmoidOp, mix::MeanOp, mix::WeightOp>();
+  target.addIllegalOp<mix::SiLUOp, mix::SigmoidOp, mix::MeanOp,
+                      mix::WeightOp>(); //
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerCompositeOpPatterns(patterns);
