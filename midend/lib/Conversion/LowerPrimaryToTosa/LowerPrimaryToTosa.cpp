@@ -627,8 +627,47 @@ public:
   }
 };
 
-} // namespace
+class MaskFillLoweringPattern : public OpRewritePattern<mix::MaskedFillOp> {
+public:
+  using OpRewritePattern<mix::MaskedFillOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::MaskedFillOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    auto input = op.getInput();
+    auto mask = op.getMask();
+    auto onTrue = op.getNumber();
+    auto onTrueTensorType =
+        RankedTensorType::get(ArrayRef<int64_t>{1}, onTrue.getType());
+    auto onTureTensor =
+        rewriter.create<tensor::FromElementsOp>(loc, onTrueTensorType, onTrue);
+    auto select0 = rewriter.create<tosa::SelectOp>(loc, input.getType(), mask,
+                                                   onTureTensor, input);
+    rewriter.replaceOp(op, select0);
+    return success();
+  }
+};
+class SoftmaxLoweringPattern : public OpRewritePattern<mix::SoftmaxOp> {
+public:
+  using OpRewritePattern<mix::SoftmaxOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::SoftmaxOp op,
+                                PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    auto input = op.getInput();
+    auto signed_axis = op.getAxis();
+    uint64_t axis = signed_axis < 0
+                        ? input.getType().getShape().size() + signed_axis
+                        : signed_axis;
+    auto outputType = op.getType();
+    auto empty0 = rewriter.create<tensor::EmptyOp>(loc, outputType.getShape(),
+                                                   outputType.getElementType());
+    auto softmax0 = rewriter.create<linalg::SoftmaxOp>(loc, op.getType(), input,
+                                                       empty0, axis);
+    rewriter.replaceOp(op, empty0);
+    return success();
+  }
+};
 
+} // namespace
 void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
   patterns.add<
       AddLoweringPattern, SubLoweringPattern, MulLoweringPattern,
@@ -639,7 +678,8 @@ void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
       CosLoweringPattern, SinLoweringPattern, BatchMatmulLoweringPattern,
       ConvertLoweringPattern, PermuteLoweringPattern, SliceLoweringPattern,
       UnsqueezeLoweringPattern, TransposeLoweringPattern,
-      ConstantLoweringPattern, LtLoweringPattern>(patterns.getContext());
+      ConstantLoweringPattern, LtLoweringPattern, MaskFillLoweringPattern,
+      SoftmaxLoweringPattern>(patterns.getContext());
 }
 
 namespace {
@@ -658,7 +698,7 @@ public:
 
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<arith::ArithDialect, tosa::TosaDialect, math::MathDialect,
-                    tensor::TensorDialect>();
+                    tensor::TensorDialect, linalg::LinalgDialect>();
   }
 };
 } // namespace
@@ -667,17 +707,17 @@ void LowerPrimaryToTosaPass::runOnOperation() {
   MLIRContext &context = this->getContext();
   ModuleOp module = this->getOperation();
   ConversionTarget target(context);
-  target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
-                         mix::MIXDialect, tosa::TosaDialect,
-                         tensor::TensorDialect, math::MathDialect,
-                         bufferization::BufferizationDialect>();
+  target.addLegalDialect<
+      arith::ArithDialect, ml_program::MLProgramDialect, mix::MIXDialect,
+      tosa::TosaDialect, tensor::TensorDialect, math::MathDialect,
+      bufferization::BufferizationDialect, linalg::LinalgDialect>();
   target.addIllegalOp<
       mix::AddOp, mix::SubOp, mix::MulOp, mix::DivOp, mix::MatMulOp,
       mix::BatchMatMulOp, mix::NegOp, mix::ExpOp, mix::PowOp, mix::ConcatOp,
       mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp, mix::TanhOp,
       mix::ReciprocalOp, mix::CosOp, mix::SinOp, mix::ConstantOp, mix::GatherOp,
       mix::ConvertOp, mix::PermuteOp, mix::SliceOp, mix::UnsqueezeOp,
-      mix::TransposeOp, mix::LtOp>();
+      mix::TransposeOp, mix::LtOp, mix::MaskedFillOp, mix::SoftmaxOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);

@@ -117,7 +117,7 @@ def SelfAttentionOp : MIX_Op<"module.self_attn", [Pure]> {
     );
 }
 
-def SoftmaxOp : MIX_Op<"comp.softmax", [Pure, InferTypeOpAdaptor]> {
+def SoftmaxOp : MIX_Op<"prim.softmax", [Pure, InferTypeOpAdaptor]> {
     let summary = "Compute the softmax of a tensor along a specific axis";
     let description = [{
         Computes the softmax of the input tensor along the specified axis.
@@ -324,7 +324,7 @@ def UnsqueezeOp : MIX_Op<"prim.unsqueeze", [Pure, InferTypeOpAdaptor]> {
   let hasVerifier = 1;
 }
 
-def MaskedFillOp : MIX_Op<"comp.masked_fill", [Pure, InferTypeOpAdaptor]> {
+def MaskedFillOp : MIX_Op<"prim.masked_fill", [Pure, InferTypeOpAdaptor]> {
   let summary = "Masked Fill";
 
   let arguments = (ins 
@@ -606,6 +606,7 @@ def GatherOp : MIX_Op<"prim.gather", [Pure, InferTypeOpAdaptor]> {
         mixTensor: $output
     );
 }
+
 
 
 #endif // MIX_OPS_TD

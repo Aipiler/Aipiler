@@ -330,24 +330,20 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   const std::string common = "transformer.h.";
 
   // %arg0
-  auto query_weight = builder.create<mix::WeightOp>(
-      loc, type_query_weight,
-      getOpName(common, idx, ".self_attention.query.weight"));
+  auto query_weight =
+      builder.create<mix::WeightOp>(loc, type_query_weight, "query.weight");
 
   // %arg1
   auto key_value_weight = builder.create<mix::WeightOp>(
-      loc, type_key_value_weight,
-      getOpName(common, idx, ".self_attention.key_value.weight"));
+      loc, type_key_value_weight, "key_value.weight");
 
   // %arg2
-  auto dense_weight = builder.create<mix::WeightOp>(
-      loc, type_dense_weight,
-      getOpName(common, idx, ".self_attention.dense.weight"));
+  auto dense_weight =
+      builder.create<mix::WeightOp>(loc, type_dense_weight, "dense.weight");
 
   // %arg3
-  auto dense_bias = builder.create<mix::WeightOp>(
-      loc, type_dense_bias,
-      getOpName(common, idx, ".self_attention.dense.bias"));
+  auto dense_bias =
+      builder.create<mix::WeightOp>(loc, type_dense_bias, "dense.bias");
 
   // line 14: torch.aten.transpose.int
   auto transpose14 = builder.create<mix::TransposeOp>(loc, hidden_states,
@@ -785,7 +781,7 @@ int main() {
   registerLowerModulePass();
   registerLowerCompositePass();
   registerLowerPrimaryToTosaPass();
-
+  context.disableMultithreading();
   context.getOrLoadDialect<mix::MIXDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::func::FuncDialect>();
@@ -797,11 +793,15 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   generateCode(theModule, builder, context);
 
-  theModule->dump();
-
-  std::cout << "-------------------------------------------------" << std::endl;
+  load_model("./attention_model.bin", theModule, builder, builder.getF16Type());
 
   mlir::PassManager pm(&context);
+  std::function<bool(Pass *, Operation *)> shouldPrintBeforePass;
+  std::function<bool(Pass *, Operation *)> shouldPrintAfterPass;
+  shouldPrintBeforePass = [&](Pass *pass, Operation *) { return false; };
+  shouldPrintAfterPass = [](Pass *, Operation *) { return true; };
+  pm.enableIRPrinting(shouldPrintBeforePass, shouldPrintAfterPass, false, false,
+                      true, llvm::errs());
   pm.addPass(createLowerModulePass());
   pm.addPass(createLowerCompositePass());
   pm.addPass(createLowerPrimaryToTosa());
@@ -830,8 +830,6 @@ int main() {
   if (mlir::failed(pm.run(theModule))) {
     return -1;
   }
-
-  theModule->dump();
 
   //   translate to llvm ir
   llvm::LLVMContext LLVMContext;
