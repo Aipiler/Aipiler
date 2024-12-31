@@ -164,7 +164,7 @@ def AddOp : MIX_Op<"prim.add", [Pure, Commutative, DeclareOpInterfaceMethods<Inf
     let hasVerifier = 1;
 }
 
-def LtOp : MIX_Op<"prim.lt", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+def LtOp : MIX_Op<"prim.lt", [Pure, InferTypeOpAdaptor]> {
     let summary = "a letter than b";
     let description = [{
         a letter than b

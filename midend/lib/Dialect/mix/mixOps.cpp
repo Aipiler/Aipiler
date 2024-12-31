@@ -361,10 +361,27 @@ ELEMENTWISE_SHAPE_INFER(mix::SubOp)
 ELEMENTWISE_SHAPE_INFER(mix::MulOp)
 ELEMENTWISE_SHAPE_INFER(mix::DivOp)
 ELEMENTWISE_SHAPE_INFER(mix::PowOp)
-ELEMENTWISE_SHAPE_INFER(mix::LtOp)
 ELEMENTWISE_SHAPE_INFER(mix::BitwiseOrOp)
 
 // 特殊的shape inference 算子，需要改变shape
+
+LogicalResult mix::LtOp::inferReturnTypes(
+    MLIRContext *context, std::optional<::mlir::Location> location,
+    LtOp::Adaptor adaptor, SmallVectorImpl<Type> &inferredReturnTypes) {
+  // Extract the input tensor types
+  auto lhsTy = adaptor.getLhs().getType().dyn_cast<RankedTensorType>();
+  auto rhsTy = adaptor.getRhs().getType().dyn_cast<RankedTensorType>();
+
+  // Compute result shape
+  mlir::OpBuilder builder(context);
+  auto resultShape = inferBroadcastShape(lhsTy.getShape(), rhsTy.getShape());
+
+  // Create result type
+  auto resultType = RankedTensorType::get(resultShape, builder.getI1Type());
+  inferredReturnTypes.push_back(resultType);
+
+  return success();
+}
 
 LogicalResult mix::MatMulOp::verify() {
   auto lhs = this->getLhs();

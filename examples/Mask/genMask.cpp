@@ -41,6 +41,7 @@ std::unique_ptr<Pass> createLowerModulePass();
 std::unique_ptr<Pass> createLowerCompositePass();
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
 const int max_seq_len = 40;
+const int seq_len = 5;
 
 ArrayAttr createIntArrayAttr(MLIRContext &context,
                              const std::vector<int64_t> &values) {
@@ -76,13 +77,9 @@ auto genMask(MLIRContext &context, OpBuilder &builder, Location loc,
   auto attr_i32_1 = IntegerAttr::get(IntegerType::get(&context, 32), 1);
   auto attr_i32_2 = IntegerAttr::get(IntegerType::get(&context, 32), 2);
   auto attr_i32_3 = IntegerAttr::get(IntegerType::get(&context, 32), 3);
-
+  auto attr_i64_1 = IntegerAttr::get(IntegerType::get(&context, 64), 1);
+  auto attr_i64_0 = IntegerAttr::get(IntegerType::get(&context, 64), 0);
   // 逻辑
-
-  // line 12 : torch.aten.empty.memory_format
-  auto dense12 = DenseElementsAttr::get(
-      RankedTensorType::get({seq_len, seq_len}, type_i1), {false});
-  auto constant12 = builder.create<mix::ConstantOp>(loc, dense12);
 
   // line 19 : torch.aten.arange
   SmallVector<int16_t> tmp19(seq_len);
@@ -111,46 +108,36 @@ auto genMask(MLIRContext &context, OpBuilder &builder, Location loc,
   // line 39: torch.aten.lt.Tensor
   auto lt39 = builder.create<mix::LtOp>(loc, unsqueeze28, slice37);
 
-  // line 45: torch.aten.slice.Tensor
-  auto slice45 =
-      builder.create<mix::SliceOp>(loc, constant12, 0, 0, INT64_MAX, 1);
+  auto dense1 = DenseElementsAttr::get(
+      RankedTensorType::get({seq_len, max_seq_len - seq_len}, type_i1), {true});
+  auto constant1 = builder.create<mix::ConstantOp>(loc, dense1);
 
-  // line 51: torch.aten.slice.Tensor
-  auto slice51 = builder.create<mix::SliceOp>(loc, slice45, 1, 0, INT64_MAX, 1);
+  auto dense2 = DenseElementsAttr::get(
+      RankedTensorType::get({max_seq_len - seq_len, seq_len}, type_i1), {true});
+  auto constant2 = builder.create<mix::ConstantOp>(loc, dense2);
 
-  // line 54: torch.aten.copy 略过，直接使用lt39 代替%1
+  auto dense3 = DenseElementsAttr::get(
+      RankedTensorType::get({max_seq_len - seq_len, max_seq_len - seq_len},
+                            type_i1),
+      {true});
+  auto constant3 = builder.create<mix::ConstantOp>(loc, dense3);
 
-  // line 60: torch.aten.slice.Tensor
-  auto slice60 = builder.create<mix::SliceOp>(loc, lt39, 1, 0, INT64_MAX, 1);
+  //   SmallVector<Value> tmp1;
+  auto cat1 = builder.create<mix::ConcatOp>(loc, ValueRange{lt39, constant1},
+                                            attr_i64_1);
 
-  // line 66: torch.aten.slice_scatter 略过
+  SmallVector<Value> tmp2{constant2, constant3};
+  auto cat2 = builder.create<mix::ConcatOp>(loc, tmp2, attr_i64_1);
 
-  // line 81: torch.aten.unsqueeze
-  auto unsqueeze81 =
-      builder.create<mix::UnsqueezeOp>(loc, attention_mask, attr_i32_1);
+  SmallVector<Value> tmp3{cat1, cat2};
+  auto cat3 = builder.create<mix::ConcatOp>(loc, tmp3, attr_i64_0);
 
-  // line 84: torch.aten.unsqueeze
+  auto unsqueeze81 = builder.create<mix::UnsqueezeOp>(loc, cat3, attr_i32_0);
+
   auto unsqueeze84 =
-      builder.create<mix::UnsqueezeOp>(loc, unsqueeze81, attr_i32_2);
+      builder.create<mix::UnsqueezeOp>(loc, unsqueeze81, attr_i32_0);
 
-  // line 100: torch.aten.bitwise_not
-  auto bitwise_not100 = builder.create<mix::BitwiseNotOp>(loc, unsqueeze84);
-
-  // line 108: torch.aten.expand
-  auto expand108 = builder.create<mix::ExpandOp>(
-      loc, bitwise_not100, createIntArrayAttr(context, {1, 1, 5, 5}));
-
-  // line 111: torch.aten.unsqueeze
-  auto unsqueeze111 = builder.create<mix::UnsqueezeOp>(loc, lt39, attr_i32_0);
-
-  // line 114: torch.aten.unsqueeze
-  auto unsqueeze114 =
-      builder.create<mix::UnsqueezeOp>(loc, unsqueeze111, attr_i32_1);
-
-  // line 136: torch.aten.bitwise_or.Tensor
-  auto bitwise_or136 =
-      builder.create<mix::BitwiseOrOp>(loc, expand108, unsqueeze114);
-  return bitwise_or136;
+  return unsqueeze84;
 }
 
 int main() {
@@ -166,10 +153,10 @@ int main() {
   builder.setInsertionPointToEnd(theModule.getBody());
 
   auto elementType = builder.getI1Type();
-  SmallVector<int64_t> shape{1, 5}; // seq_len = 5
+  SmallVector<int64_t> shape{1, seq_len};
   auto maskType = RankedTensorType::get(shape, elementType);
 
-  SmallVector<int64_t> shape2{1, 1, 5, 5}; // seq_len = 5
+  SmallVector<int64_t> shape2{1, 1, max_seq_len, max_seq_len};
   auto outputType = RankedTensorType::get(shape2, elementType);
   auto functionTy = builder.getFunctionType({maskType}, {outputType});
   auto graph0 = builder.create<func::FuncOp>(loc, "Mask", functionTy);
@@ -189,6 +176,7 @@ int main() {
   mlir::PassManager pm(&context);
   pm.addPass(createLowerModulePass());
   pm.addPass(createLowerCompositePass());
+
   pm.addPass(createLowerPrimaryToTosa());
 
   if (mlir::failed(pm.run(theModule))) {
