@@ -31,11 +31,26 @@ option(LLVM_BUILD_TOOLS "Build the LLVM tools. If OFF, just generate build targe
 option(BUDDY_MLIR_OUT_OF_TREE_BUILD "Specifies an out of tree build" OFF)
 
 find_package(MLIR REQUIRED CONFIG)
-find_package(LLD REQUIRED CONFIG)
 find_package(LLVM REQUIRED CONFIG)
 
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+set(LLD_DIR "${LLVM_DIR}/../lld")
+message(STATUS "Using LLDConfig.cmake in: ${LLD_DIR}")
+
+
+if(NOT DEFINED LLVM_MAIN_SRC_DIR)
+  get_filename_component(LLVM_MAIN_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/llvm/llvm ABSOLUTE)
+endif()
+set(MLIR_MAIN_SRC_DIR ${LLVM_MAIN_SRC_DIR}/../mlir)
+set(LLD_MAIN_SRC_DIR ${LLVM_MAIN_SRC_DIR}/../lld)
+
+list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${LLD_CMAKE_DIR}")
+
+find_program(LLVM_TABLEGEN_EXE "llvm-tblgen" ${LLVM_TOOLS_BINARY_DIR}
+        NO_DEFAULT_PATH)
 
 if(NOT DEFINED LLVM_MAIN_SRC_DIR)
   get_filename_component(LLVM_MAIN_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/llvm/llvm ABSOLUTE)
@@ -58,11 +73,13 @@ set(MLIR_INCLUDE_DIR ${MLIR_MAIN_SRC_DIR}/include)
 
 
 
+find_package(LLD REQUIRED)
 
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
+
 
 # Add MLIR and LLVM headers to the include path
 include_directories(${LLVM_INCLUDE_DIRS})

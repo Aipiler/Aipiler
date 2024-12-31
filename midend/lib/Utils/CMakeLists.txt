@@ -6,6 +6,10 @@ add_library(readjson
 
 target_link_libraries(readjson PRIVATE ${llvm_libs})
 
+add_library(mixlogger
+    STATIC
+    logger.cpp
+)
 
 add_library(loadPytorchModel
     STATIC
@@ -13,6 +17,7 @@ add_library(loadPytorchModel
 )
 
 target_link_libraries(loadPytorchModel PRIVATE 
+    mixlogger
     ${llvm_libs}     
     pybind11::embed 
     Python3::Python

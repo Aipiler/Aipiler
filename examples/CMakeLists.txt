@@ -1,6 +1,7 @@
 add_subdirectory(CodeGen)
 add_subdirectory(Gelu)
 add_subdirectory(MLP)
+add_subdirectory(MLP-LLC)
 # add_subdirectory(SelfAttention)
 add_subdirectory(MixedFusedRMSNorm)
 add_subdirectory(RotaryEmbedding)
