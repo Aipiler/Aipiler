@@ -140,7 +140,6 @@ std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
                                            mlir::OpBuilder &builder,
                                            Location loc,
                                            mlir::func::FuncOp printMemRefFunc) {
-  printf("genRotaryEmbedding\n");
   /* 定义一些可重用的信息 */
 
   // types:
