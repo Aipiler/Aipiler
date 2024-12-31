@@ -18,6 +18,9 @@
 void registerLowerModulePass();
 void registerLowerCompositePass();
 void registerLowerPrimaryToTosaPass();
+void registerBatchMatMulOptimizePass();
+void registerConv2dNhwcFhwcOptimizePass();
+void registerPoolingNhwcMaxOptimizePass();
 
 int main(int argc, char **argv) {
   // Register all MLIR passes.
@@ -26,6 +29,9 @@ int main(int argc, char **argv) {
   registerLowerModulePass();
   registerLowerCompositePass();
   registerLowerPrimaryToTosaPass();
+  registerBatchMatMulOptimizePass();
+  registerConv2dNhwcFhwcOptimizePass();
+  registerPoolingNhwcMaxOptimizePass();
 
   mlir::DialectRegistry registry;
   // Register all MLIR core dialects.
