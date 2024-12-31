@@ -176,7 +176,6 @@ int main() {
   mlir::PassManager pm(&context);
   pm.addPass(createLowerModulePass());
   pm.addPass(createLowerCompositePass());
-
   pm.addPass(createLowerPrimaryToTosa());
 
   if (mlir::failed(pm.run(theModule))) {

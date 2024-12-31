@@ -271,19 +271,7 @@ public:
         rhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, rhs);
       }
 
-      if (elemTy.isa<FloatType>()) {
-        newop = rewriter.create<arith::CmpFOp>(
-            loc,
-            ::mlir::arith::CmpFPredicateAttr::get(
-                context, mlir::arith::CmpFPredicate::OLT),
-            lhs, rhs);
-      } else {
-        newop = rewriter.create<arith::CmpIOp>(
-            loc,
-            ::mlir::arith::CmpIPredicateAttr::get(
-                context, mlir::arith::CmpIPredicate::ult),
-            lhs, rhs);
-      }
+      newop = rewriter.create<tosa::GreaterOp>(loc, op.getType(), rhs, lhs);
     }
     rewriter.replaceOp(op, newop);
     return success();
