@@ -229,6 +229,67 @@ public:
   }
 };
 
+class LtLoweringPattern : public OpRewritePattern<mix::LtOp> {
+public:
+  using OpRewritePattern<mix::LtOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::LtOp op,
+                                PatternRewriter &rewriter) const override {
+    auto context = rewriter.getContext();
+    auto lhs = op.getLhs();
+    auto rhs = op.getRhs();
+    auto loc = op->getLoc();
+    auto lhsType = lhs.getType();
+    auto rhsType = rhs.getType();
+    auto resultType = op.getType();
+    auto resultTensorType = dyn_cast<RankedTensorType>(resultType);
+    Value newop;
+    if (!resultTensorType) {
+      if (auto resIntType = dyn_cast<IntegerType>(resultType)) {
+
+        newop = rewriter.create<arith::CmpIOp>(
+            loc,
+            ::mlir::arith::CmpIPredicateAttr::get(
+                context, mlir::arith::CmpIPredicate::slt),
+            lhs, rhs); // slt
+      } else if (auto resFloatType = dyn_cast<FloatType>(resultType)) {
+        newop = rewriter.create<arith::CmpFOp>(
+            loc,
+            ::mlir::arith::CmpFPredicateAttr::get(
+                context, mlir::arith::CmpFPredicate::OLT),
+            lhs, rhs);
+      } else {
+        return op.emitOpError() << "Unexpected types.";
+      }
+    } else {
+      auto lhsTensorType = dyn_cast<RankedTensorType>(lhsType);
+      auto rhsTensorType = dyn_cast<RankedTensorType>(rhsType);
+      auto elemTy = resultTensorType.getElementType();
+      auto tensorTy = RankedTensorType::get({1}, elemTy);
+      if (!lhsTensorType) {
+        lhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, lhs);
+      } else if (!rhsTensorType) {
+        rhs = rewriter.create<tensor::FromElementsOp>(loc, tensorTy, rhs);
+      }
+
+      if (elemTy.isa<FloatType>()) {
+        newop = rewriter.create<arith::CmpFOp>(
+            loc,
+            ::mlir::arith::CmpFPredicateAttr::get(
+                context, mlir::arith::CmpFPredicate::OLT),
+            lhs, rhs);
+      } else {
+        newop = rewriter.create<arith::CmpIOp>(
+            loc,
+            ::mlir::arith::CmpIPredicateAttr::get(
+                context, mlir::arith::CmpIPredicate::ult),
+            lhs, rhs);
+      }
+    }
+    rewriter.replaceOp(op, newop);
+    return success();
+  }
+};
+
 class MatmulLoweringPattern : public OpRewritePattern<mix::MatMulOp> {
 public:
   using OpRewritePattern<mix::MatMulOp>::OpRewritePattern;
@@ -590,7 +651,7 @@ void populateLowerPrimaryToTosaPatterns(RewritePatternSet &patterns) {
       CosLoweringPattern, SinLoweringPattern, BatchMatmulLoweringPattern,
       ConvertLoweringPattern, PermuteLoweringPattern, SliceLoweringPattern,
       UnsqueezeLoweringPattern, TransposeLoweringPattern,
-      ConstantLoweringPattern>(patterns.getContext());
+      ConstantLoweringPattern, LtLoweringPattern>(patterns.getContext());
 }
 
 namespace {
@@ -628,7 +689,7 @@ void LowerPrimaryToTosaPass::runOnOperation() {
       mix::ReduceSumOp, mix::ReshapeOp, mix::RsqrtOp, mix::TanhOp,
       mix::ReciprocalOp, mix::CosOp, mix::SinOp, mix::ConstantOp, mix::GatherOp,
       mix::ConvertOp, mix::PermuteOp, mix::SliceOp, mix::UnsqueezeOp,
-      mix::TransposeOp>();
+      mix::TransposeOp, mix::LtOp>();
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
   populateLowerPrimaryToTosaPatterns(patterns);
