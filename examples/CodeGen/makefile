@@ -18,8 +18,8 @@ MLIR_C_RUNNER_UTILS := ../../thirdparty/llvm/build/lib/libmlir_c_runner_utils.dy
 MTRIPLE := x86_64-apple-darwin
 endif
 
+# cd ../../build && ninja
 Telechat: 
-	cd ../../build && ninja
 	PYTHONPATH=${AIPILER_PY_PATH} ../../build/bin/genTelechat
 
 run_Telechat: Telechat
