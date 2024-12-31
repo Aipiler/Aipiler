@@ -849,9 +849,9 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                                   "transformer.ln_f.weight");
 
   // Linear:将hidden_states映射到vocab_size上
-  auto lm_head = builder.create<mix::LinearOp>(graph->getLoc(), hidden_states,
-                                               "lm_head.weight", hidden_size,
-                                               vocab_size, false, F16Type);
+  auto lm_head =
+      builder.create<mix::LinearOp>(graph->getLoc(), hidden_states, "lm_head",
+                                    hidden_size, vocab_size, false, F16Type);
   builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{lm_head});
   // builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{hidden_states});
   return graph;
@@ -1025,11 +1025,24 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   generateCode(theModule, builder, context);
 
-  //   theModule->dump();
+  load_model(
+      std::vector<std::string>{"/home/gaoshihao/project/Aipiler/examples/"
+                               "CodeGen/pytorch_model_00001-of-00004.bin",
+                               "/home/gaoshihao/project/Aipiler/examples/"
+                               "CodeGen/pytorch_model_00002-of-00004.bin",
+                               "/home/gaoshihao/project/Aipiler/examples/"
+                               "CodeGen/pytorch_model_00003-of-00004.bin",
+                               "/home/gaoshihao/project/Aipiler/examples/"
+                               "CodeGen/pytorch_model_00004-of-00004.bin"},
+      theModule, builder, builder.getF16Type());
 
-  std::cout << "-------------------------------------------------" << std::endl;
+  mutil::log(mutil::LogLevel::INFO, "Start pass.");
+
+  theModule->dump();
 
   mlir::PassManager pm(&context);
+  pm.enableIRPrinting([](Pass *pass, Operation *op) { return true; },
+                      [](Pass *pass, Operation *op) { return true; }, true, {});
   pm.addPass(createLowerModulePass());
   pm.addPass(createLowerCompositePass());
   pm.addPass(createLowerPrimaryToTosa());
@@ -1051,6 +1064,7 @@ int main() {
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());
   pm.addPass(mlir::createConvertMathToLLVMPass());
+  pm.addPass(mlir::createConvertMathToLibmPass());
   pm.addPass(mlir::createArithToLLVMConversionPass());
   pm.addPass(mlir::createConvertFuncToLLVMPass());
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
@@ -1059,7 +1073,9 @@ int main() {
     return -1;
   }
 
-  // theModule->dump();
+  mutil::log(mutil::LogLevel::INFO, "End pass.");
+
+  mutil::log(mutil::LogLevel::INFO, "Start gen LLVM IR.");
 
   //   translate to llvm ir
   llvm::LLVMContext LLVMContext;
@@ -1069,7 +1085,14 @@ int main() {
     llvm::errs() << "Failed to emit LLVM IR\n";
     return -1;
   }
+
+  mutil::log(mutil::LogLevel::INFO, "End gen LLVM IR.");
+
+  mutil::log(mutil::LogLevel::INFO, "Start gen exe.");
+
   generateExecutable(*llvmModule.get(), "Telechat");
+
+  mutil::log(mutil::LogLevel::INFO, "End gen exe.");
 
   return 0;
 }
