@@ -41,7 +41,6 @@ std::unique_ptr<Pass> createLowerModulePass();
 std::unique_ptr<Pass> createLowerCompositePass();
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
 const int max_seq_len = 40;
-const int seq_len = 5;
 
 ArrayAttr createIntArrayAttr(MLIRContext &context,
                              const std::vector<int64_t> &values) {
@@ -56,11 +55,7 @@ ArrayAttr createIntArrayAttr(MLIRContext &context,
 }
 
 auto genMask(MLIRContext &context, OpBuilder &builder, Location loc,
-             Value attention_mask) {
-  auto attention_mask_type =
-      mlir::dyn_cast<mlir::RankedTensorType>(attention_mask.getType());
-  auto attention_mask_shape = attention_mask_type.getShape();
-  auto seq_len = attention_mask_shape[1];
+             int seq_len) {
 
   // types:
   auto type_i1 = builder.getI1Type();
@@ -152,6 +147,7 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   builder.setInsertionPointToEnd(theModule.getBody());
 
+  const int seq_len = 5;
   auto elementType = builder.getI1Type();
   SmallVector<int64_t> shape{1, seq_len};
   auto maskType = RankedTensorType::get(shape, elementType);
@@ -164,8 +160,7 @@ int main() {
   auto body = graph0.addEntryBlock();
   builder.setInsertionPointToEnd(body);
 
-  auto output =
-      genMask(context, builder, graph0->getLoc(), graph0.getArgument(0));
+  auto output = genMask(context, builder, graph0->getLoc(), seq_len);
 
   builder.create<func::ReturnOp>(loc, ValueRange{output});
 
