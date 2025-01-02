@@ -28,7 +28,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 #-------------------------------------------------------------------------------
 option(LLVM_INCLUDE_TOOLS "Generate build targets for the LLVM tools." ON)
 option(LLVM_BUILD_TOOLS "Build the LLVM tools. If OFF, just generate build targets." ON)
-option(BUDDY_MLIR_OUT_OF_TREE_BUILD "Specifies an out of tree build" OFF)
 
 find_package(MLIR REQUIRED CONFIG)
 find_package(LLVM REQUIRED CONFIG)
@@ -96,7 +95,6 @@ set(Aipiler_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(Aipiler_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/bin)
 set(Aipiler_LIBRARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/lib)
 set(Aipiler_EXAMPLES_DIR ${Aipiler_SOURCE_DIR}/examples)
-set(Aipiler_PYTHON_PACKAGES_DIR ${BUDDY_BUILD_DIR}/python)
 
 set(EXECUTABLE_OUTPUT_PATH ${Aipiler_BINARY_DIR})
 set(LIBRARY_OUTPUT_DIRECTORY ${Aipiler_LIBRARY_DIR})
@@ -130,15 +128,6 @@ add_subdirectory(thirdparty/pybind11)
 
 # 设置 Python 模块路径
 set(PYTHON_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/python)
-
-# Create directories for the BUDDY-MLIR Python packages
-# file(MAKE_DIRECTORY ${BUDDY_MLIR_PYTHON_PACKAGES_DIR}/buddy)
-# file(MAKE_DIRECTORY ${BUDDY_MLIR_PYTHON_PACKAGES_DIR}/buddy/compiler)
-# # Create empty __init__.py files to make these directories Python packages
-# file(WRITE ${BUDDY_MLIR_PYTHON_PACKAGES_DIR}/buddy/__init__.py "")
-# file(WRITE ${BUDDY_MLIR_PYTHON_PACKAGES_DIR}/buddy/compiler/__init__.py "")
-
-# install(DIRECTORY ${BUDDY_MLIR_PYTHON_PACKAGES_DIR}/buddy DESTINATION python_packages)
 
 
 add_subdirectory(midend)
