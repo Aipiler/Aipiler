@@ -18,11 +18,14 @@ MLIR_C_RUNNER_UTILS := ../../thirdparty/llvm/build/lib/libmlir_c_runner_utils.dy
 MTRIPLE := x86_64-apple-darwin
 endif
 
-Telechat: 
-	cd ../../build && ninja
+# cd ../../build && ninja
+Telechat: print.o
 	PYTHONPATH=${AIPILER_PY_PATH} ../../build/bin/genTelechat
 
-run_Telechat: Telechat
+print.o: print.cpp
+	g++ $^ -c -o $@
+
+run_Telechat: Telechat print.o
 	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./Telechat
 
 # LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:../../thirdparty/llvm/build/lib ./RotaryEmbedding
@@ -42,4 +45,4 @@ Telechat-run:
 
 .PHONY: clean 
 clean:
-	rm -rf *.mlir *.ll mlp *.bin Telechat
+	rm -rf *.mlir *.ll Telechat *.o

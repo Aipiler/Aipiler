@@ -28,4 +28,5 @@ target_link_libraries(genSelfAttention
     LowerPrimaryToTosa
     StaticMLIRRunnerUtils
     StaticMLIRCRunnerUtils
+    loadPytorchModel
 )

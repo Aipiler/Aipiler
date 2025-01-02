@@ -1,12 +1,13 @@
-MIX_OPT := ../../build/bin/mix-opt
-MLIR_OPT := ../../thirdparty/llvm/build/bin/mlir-opt
+.PHONY: clean Self_attention
+MLIR_LIB := ../../thirdparty/llvm/build/lib
+AIPILER_PY_PATH := ../../python
 
+Self_attention: 
+	python SelfAttention.py
+	PYTHONPATH=${AIPILER_PY_PATH} ../../build/bin/genSelfAttention
 
-# TODO: add lower pass for self-attention op
-lower-self-attention:
-	@${MIX_OPT} ./self_attention.mlir -o ./log.mlir
-
-.PHONY: clean
+run: Self_attention
+	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./Self_attention
 
 clean:
-	rm log.mlir
+	rm -rf *.mlir *.ll Self_attention *.bin
