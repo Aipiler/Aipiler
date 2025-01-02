@@ -857,51 +857,6 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   return graph;
 }
 
-Value genTelechatModelInline(mlir::MLIRContext &context,
-                             mlir::OpBuilder &builder, Location loc,
-                             Value input_ids, func::FuncOp printfunc) {
-  printf("genTelechatModel\n");
-  /* Types */
-  auto F16Type = builder.getF16Type();
-  auto I32Type = builder.getI32Type();
-  auto BoolType = builder.getI1Type();
-  auto input_ids_type = RankedTensorType::get({1, max_seq_len}, I32Type);
-
-  int seq_len = max_seq_len;
-  /* 逻辑 */
-  Value hidden_states =
-      genEmbedding(builder, loc, input_ids, "transformer.word_embeddings",
-                   vocab_size, hidden_size, F16Type);
-
-  auto attention_mask = genMask(context, builder, loc, seq_len);
-  auto printInputType = UnrankedTensorType::get(F16Type);
-  // print
-  builder.create<func::CallOp>(loc, printfunc, ValueRange{});
-
-  // 循环创建N个Block
-  for (int i = 0; i < n_layer; ++i) {
-    // transformer block
-    hidden_states = genTransformerBlock(context, builder, loc, hidden_states,
-                                        attention_mask, i);
-    // print
-    builder.create<func::CallOp>(loc, printfunc, ValueRange{});
-  }
-
-  // RMSNorm
-  hidden_states =
-      genFusedRMSNorm(builder, loc, hidden_states, "transformer.ln_f.weight");
-  // print
-  builder.create<func::CallOp>(loc, printfunc, ValueRange{});
-
-  // Linear:将hidden_states映射到vocab_size上
-  auto lm_head = builder.create<mix::LinearOp>(
-      loc, hidden_states, "lm_head", hidden_size, vocab_size, false, F16Type);
-  // print
-  builder.create<func::CallOp>(loc, printfunc, ValueRange{});
-
-  return lm_head;
-}
-
 void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
                   mlir::MLIRContext &context) {
   builder.setInsertionPointToEnd(theModule.getBody());
@@ -909,19 +864,19 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   auto elementType = builder.getF16Type();
   auto input_ids_type = RankedTensorType::get({1, max_seq_len}, elementType);
   auto output_type = RankedTensorType::get({1, max_seq_len}, elementType);
-  builder.setInsertionPointToEnd(theModule.getBody());
-  // print
-  auto printInputType = RankedTensorType::get(ArrayRef<int64_t>{1, 40, 120000},
-                                              builder.getF16Type());
-  auto printFunc = builder.create<func::FuncOp>(
-      loc, "printMemrefF16",
-      builder.getFunctionType(TypeRange{printInputType}, {}));
-  printFunc.setPrivate();
 
-  auto printpoint = builder.create<func::FuncOp>(
-      loc, "printpoint", builder.getFunctionType({}, {}));
-  printpoint.setPrivate();
+  // printMemrefF16
+  auto printInputType = UnrankedTensorType::get(elementType);
+  auto printFunTy =
+      builder.getFunctionType(TypeRange{printInputType}, TypeRange{});
+  auto printMemRefFunc = builder.create<func::FuncOp>(
+      theModule->getLoc(), "printMemrefF16", printFunTy);
+  printMemRefFunc.setPrivate();
+
+  auto telechat = genTelechatModel(context, builder, theModule->getLoc());
+
   // main
+  builder.setInsertionPointToEnd(theModule.getBody());
   auto mainfunc = builder.create<func::FuncOp>(loc, "main",
                                                builder.getFunctionType({}, {}));
   mainfunc.setPrivate();
@@ -932,17 +887,16 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
       RankedTensorType::get({1, max_seq_len}, builder.getI32Type()),
       {int32_t(1)});
   auto input_ids = builder.create<mix::ConstantOp>(loc, dense94);
-  // print point
-  builder.create<func::CallOp>(loc, printpoint, ValueRange{});
-  // end
 
-  // calc
-  auto telechat = genTelechatModelInline(context, builder, theModule->getLoc(),
-                                         input_ids, printpoint);
+  auto res = builder.create<func::CallOp>(loc, telechat, ValueRange{input_ids});
 
-  // print result
-  builder.create<func::CallOp>(loc, printFunc, ValueRange{telechat});
-  // end print
+  auto castCos =
+      builder.create<tensor::CastOp>(loc, printInputType, res->getResult(0));
+  //   auto castSin =
+  //       builder.create<tensor::CastOp>(loc, printInputType,
+  //       res->getResult(1));
+  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castCos});
+  //   builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castSin});
   builder.create<func::ReturnOp>(loc);
 }
 
@@ -965,7 +919,7 @@ void generateExecutable(llvm::Module &module, llvm::StringRef outputFilename) {
   llvm::TargetOptions opt;
   llvm::TargetMachine *targetMachine =
       target->createTargetMachine(targetTriple, "generic", "", opt,
-                                  llvm::Reloc::Static, llvm::CodeModel::Large);
+                                  llvm::Reloc::PIC_, llvm::CodeModel::Large);
 
   module.setDataLayout(targetMachine->createDataLayout());
 
@@ -985,25 +939,43 @@ void generateExecutable(llvm::Module &module, llvm::StringRef outputFilename) {
   mutil::log(mutil::LogLevel::INFO, "End create object.");
 
   llvm::SmallVector<const char *, 32> args = {
-      "/root/Aipiler/thirdparty/llvm/build/bin/ld.lld", "-z", "relro",
-      "--hash-style=gnu", "--eh-frame-hdr", "-m", "elf_x86_64",
-      //   "-pie",
-      "-dynamic-linker", "/lib64/ld-linux-x86-64.so.2", "-o",
-      outputFilename.data(), "/lib/x86_64-linux-gnu/Scrt1.o",
+      "/root/Aipiler/thirdparty/llvm/build/bin/ld.lld",
+      "-z",
+      "relro",
+      "--hash-style=gnu",
+      "--eh-frame-hdr",
+      "-m",
+      "elf_x86_64",
+      "-pie",
+      "-dynamic-linker",
+      "/lib64/ld-linux-x86-64.so.2",
+      "-o",
+      outputFilename.data(),
+      "/lib/x86_64-linux-gnu/Scrt1.o",
       "/lib/x86_64-linux-gnu/crti.o",
       "/usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o",
-      //   "-L../../thirdparty/llvm/build/lib",
+      "-L../../thirdparty/llvm/build/lib",
       "-L/usr/lib/gcc/x86_64-linux-gnu/11",
       "-L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib64",
-      "-L/lib/x86_64-linux-gnu", "-L/lib/../lib64",
-      "-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib/../lib64", "-L/lib",
+      "-L/lib/x86_64-linux-gnu",
+      "-L/lib/../lib64",
+      "-L/usr/lib/x86_64-linux-gnu",
+      "-L/usr/lib/../lib64",
+      "-L/lib",
       "-L/usr/lib",
       "from_memory", // load from memory
-      "./print.o", "-lgcc", "--as-needed", "-lgcc_s", "--no-as-needed", "-lc",
-      "-lgcc", "-lm",
-      //   "-lmlir_runner_utils",
-      //   "-lmlir_c_runner_utils",
-      "--as-needed", "-lgcc_s", "--no-as-needed",
+      "-lgcc",
+      "--as-needed",
+      "-lgcc_s",
+      "--no-as-needed",
+      "-lc",
+      "-lgcc",
+      "-lm",
+      "-lmlir_runner_utils",
+      "-lmlir_c_runner_utils",
+      "--as-needed",
+      "-lgcc_s",
+      "--no-as-needed",
       "/usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o",
       "/lib/x86_64-linux-gnu/crtn.o"};
 
@@ -1097,7 +1069,7 @@ int main() {
 
   mutil::log(mutil::LogLevel::INFO, "Start gen LLVM IR.");
 
-  // translate to llvm ir
+  //   translate to llvm ir
   llvm::LLVMContext LLVMContext;
   auto llvmModule = mlir::translateModuleToLLVMIR(theModule, LLVMContext);
   if (!llvmModule) {
