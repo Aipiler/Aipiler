@@ -29,5 +29,7 @@ target_link_libraries(genTelechat
     LowerComposite
     LowerPrimaryToTosa
     loadPytorchModel
+    StaticMLIRRunnerUtils
+    StaticMLIRCRunnerUtils
     mixlogger
 )
