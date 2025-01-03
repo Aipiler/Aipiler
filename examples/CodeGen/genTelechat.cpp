@@ -138,7 +138,7 @@ const int key_value_projection_size = hidden_size * 2;
 const int key_value_projection_head_dim = key_value_projection_size / n_head;
 const int vocab_size = 120000;
 const int batch_size = 1;
-const int n_layer = 2;
+const int n_layer = 38;
 
 std::string getOpName(std::string_view prefix, int idx, std::string_view name) {
   return std::string(prefix) + std::to_string(idx) + std::string(name);
@@ -939,7 +939,7 @@ void generateExecutable(llvm::Module &module, llvm::StringRef outputFilename) {
   mutil::log(mutil::LogLevel::INFO, "End create object.");
 
   llvm::SmallVector<const char *, 32> args = {
-      "/root/Aipiler/thirdparty/llvm/build/bin/ld.lld",
+      "/home/gaoshihao/project/Aipiler/thirdparty/llvm/build/bin/ld.lld",
       "-z",
       "relro",
       "--hash-style=gnu",
@@ -954,7 +954,7 @@ void generateExecutable(llvm::Module &module, llvm::StringRef outputFilename) {
       "/lib/x86_64-linux-gnu/Scrt1.o",
       "/lib/x86_64-linux-gnu/crti.o",
       "/usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o",
-      "-L../../thirdparty/llvm/build/lib",
+      "-L/home/gaoshihao/project/Aipiler/thirdparty/llvm/build/lib",
       "-L/usr/lib/gcc/x86_64-linux-gnu/11",
       "-L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib64",
       "-L/lib/x86_64-linux-gnu",
@@ -1026,11 +1026,18 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   generateCode(theModule, builder, context);
 
-  load_model(std::vector<std::string>{"./pytorch_model_00001-of-00004.bin",
-                                      "./pytorch_model_00002-of-00004.bin",
-                                      "./pytorch_model_00003-of-00004.bin",
-                                      "./pytorch_model_00004-of-00004.bin"},
-             theModule, builder, builder.getF16Type());
+  load_model(
+      std::vector<std::string>{
+          "/home/gaoshihao/project/Aipiler/examples/"
+          "CodeGen/pytorch_model_00001-of-00004.bin",
+          "/home/gaoshihao/project/Aipiler/examples/"
+          "CodeGen/pytorch_model_00002-of-00004.bin",
+          "/home/gaoshihao/project/Aipiler/examples/"
+          "CodeGen/pytorch_model_00003-of-00004.bin",
+          "/home/gaoshihao/project/Aipiler/examples/"
+          "CodeGen/pytorch_model_00004-of-00004.bin",
+      },
+      theModule, builder, builder.getF16Type());
 
   mutil::log(mutil::LogLevel::INFO, "Start pass.");
 

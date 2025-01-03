@@ -1,14 +1,12 @@
-import sys
-sys.path.append("/home/caohanghang/gitproject/Telechat/download/TeleChat-12B")
 import torch
 import os
 from torch import nn
 from torch.nn import functional as F
 import math
 from typing import Tuple
+
 """ Telechat configuration"""
 
-from packaging import version
 from collections import OrderedDict
 from transformers.utils import is_torch_available, logging
 from transformers.configuration_utils import PretrainedConfig
@@ -23,6 +21,7 @@ except ImportError:
 logger = logging.get_logger(__name__)
 
 dtype = torch.float16
+
 
 class TelechatConfig(PretrainedConfig):
     """
@@ -66,9 +65,9 @@ class TelechatConfig(PretrainedConfig):
         hidden_dropout=0.0,
         attention_dropout=0.0,
         ffn_hidden_size=12288,
-        training_seqlen = 8192,
-        logn = True,
-        embed_layernorm = False,
+        training_seqlen=8192,
+        logn=True,
+        embed_layernorm=False,
         **kwargs,
     ):
         self.flash_attn = False
@@ -80,7 +79,9 @@ class TelechatConfig(PretrainedConfig):
         self.layer_norm_epsilon = layer_norm_epsilon
         self.initializer_range = initializer_range
         self.use_cache = use_cache
-        self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
+        self.apply_residual_connection_post_layernorm = (
+            apply_residual_connection_post_layernorm
+        )
         self.hidden_dropout = hidden_dropout
         self.attention_dropout = attention_dropout
         self.bos_token_id = bos_token_id
@@ -90,12 +91,12 @@ class TelechatConfig(PretrainedConfig):
         self.training_seqlen = training_seqlen
         self.embed_layernorm = embed_layernorm
 
-
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
 
 
-
-def dropout_add(x: torch.Tensor, residual: torch.Tensor, prob: float, training: bool) -> torch.Tensor:
+def dropout_add(
+    x: torch.Tensor, residual: torch.Tensor, prob: float, training: bool
+) -> torch.Tensor:
     """
     Dropout add function
 
@@ -116,12 +117,19 @@ def dropout_add(x: torch.Tensor, residual: torch.Tensor, prob: float, training: 
 
 # rotary pos emb helpers:
 def rotate_half(x):
-    x1, x2 = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
-    return torch.cat((-x2, x1), dim=x1.ndim - 1)  # dim=-1 triggers a bug in earlier torch versions
+    x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
+    return torch.cat(
+        (-x2, x1), dim=x1.ndim - 1
+    )  # dim=-1 triggers a bug in earlier torch versions
 
 
-def apply_rotary_pos_emb_torch(q, k, cos, sin, offset: int = 0):  # jitting fails with bf16
-    cos, sin = cos[offset:q.shape[0] + offset, ...], sin[offset:q.shape[0] + offset, ...]
+def apply_rotary_pos_emb_torch(
+    q, k, cos, sin, offset: int = 0
+):  # jitting fails with bf16
+    cos, sin = (
+        cos[offset : q.shape[0] + offset, ...],
+        sin[offset : q.shape[0] + offset, ...],
+    )
     return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
 
 
@@ -155,10 +163,14 @@ class RotaryEmbedding(torch.nn.Module):
             self.mscale = float(self.get_mscale(seq_len / self.config.training_seqlen))
         ntk_alpha = self.get_ntk_alpha(seq_len)
         base = self.base * ntk_alpha ** (self.dim / (self.dim - 2))
-        self.inv_freq = 1.0 / (base ** (torch.arange(0, self.dim, 2, device=x.device).float() / self.dim))
+        self.inv_freq = 1.0 / (
+            base ** (torch.arange(0, self.dim, 2, device=x.device).float() / self.dim)
+        )
         self.max_seq_len_cached = seq_len
-        t = torch.arange(self.max_seq_len_cached, device=x.device, dtype=self.inv_freq.dtype)
-        freqs = torch.einsum('i,j->ij', t, self.inv_freq)
+        t = torch.arange(
+            self.max_seq_len_cached, device=x.device, dtype=self.inv_freq.dtype
+        )
+        freqs = torch.einsum("i,j->ij", t, self.inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
         # if self.precision == torch.bfloat16:
@@ -167,6 +179,7 @@ class RotaryEmbedding(torch.nn.Module):
         self.cos_cached = self.mscale * emb.cos()[:, None, :].to(dtype)
         self.sin_cached = self.mscale * emb.sin()[:, None, :].to(dtype)
         return self.cos_cached[:seq_len, ...], self.sin_cached[:seq_len, ...]
+
 
 class TelechatAttention(nn.Module):
     def __init__(self, config: TelechatConfig, layer_idx):
@@ -194,9 +207,13 @@ class TelechatAttention(nn.Module):
         self.num_key_value_heads = self.num_heads
         kv_projection_size = self.head_dim * self.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
-        self.query = nn.Linear(self.hidden_size, self.hidden_size, bias=False, dtype = torch.float16)
-        self.key_value = nn.Linear(self.hidden_size, kv_projection_size * 2, bias=False, dtype = torch.float16)
-        self.dense = nn.Linear(self.hidden_size, self.hidden_size, dtype = torch.float16)
+        self.query = nn.Linear(
+            self.hidden_size, self.hidden_size, bias=False, dtype=torch.float16
+        )
+        self.key_value = nn.Linear(
+            self.hidden_size, kv_projection_size * 2, bias=False, dtype=torch.float16
+        )
+        self.dense = nn.Linear(self.hidden_size, self.hidden_size, dtype=torch.float16)
         self.attention_dropout = nn.Dropout(config.attention_dropout)
         self.rotary_emb = RotaryEmbedding(self.head_dim, config=config)
         # self.rotary_emb = torch.compile(self.rotary_emb, backend=my_backend)
@@ -207,15 +224,19 @@ class TelechatAttention(nn.Module):
         slen, batch, num_key_value_heads_per_partition, head_dim = hidden_states.shape
         if n_rep == 1:
             return hidden_states
-        hidden_states = hidden_states[:, :, :, None, :].expand(slen, batch, num_key_value_heads_per_partition, n_rep,
-                                                               head_dim)
-        return hidden_states.reshape(slen, batch, num_key_value_heads_per_partition * n_rep, head_dim)
+        hidden_states = hidden_states[:, :, :, None, :].expand(
+            slen, batch, num_key_value_heads_per_partition, n_rep, head_dim
+        )
+        return hidden_states.reshape(
+            slen, batch, num_key_value_heads_per_partition * n_rep, head_dim
+        )
 
-    def split_tensor_along_last_dim(self,
-                                    tensor: torch.Tensor,
-                                    num_partitions: int,
-                                    contiguous_split_chunks: bool = False,
-                                    ):
+    def split_tensor_along_last_dim(
+        self,
+        tensor: torch.Tensor,
+        num_partitions: int,
+        contiguous_split_chunks: bool = False,
+    ):
 
         # Get the size and dimension.
         last_dim = tensor.dim() - 1
@@ -236,41 +257,49 @@ class TelechatAttention(nn.Module):
         return x.reshape(batch_size, seq_length, self.num_heads * self.head_dim)
 
     def forward(
-            self,
-            hidden_states: torch.Tensor,
-            residual: torch.Tensor,
-            attention_mask: torch.Tensor,
-            layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
-            use_cache: bool = False,
-            output_attentions: bool = False,
+        self,
+        hidden_states: torch.Tensor,
+        residual: torch.Tensor,
+        attention_mask: torch.Tensor,
+        layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        use_cache: bool = False,
+        output_attentions: bool = False,
     ):
-        print("hidden_states.shape:", hidden_states.shape)
-        print("residual.shape: ", residual.shape)
-        print("attention_mask.shape: ", attention_mask.shape)
+        # print("hidden_states.shape:", hidden_states.shape)
+        # print("residual.shape: ", residual.shape)
+        # print("attention_mask.shape: ", attention_mask.shape)
         if layer_past is not None:
             for idx, t in enumerate(layer_past):
-                print("layer_past["+str(idx) +"].shape = ", t.shape)                
-            
+                print("layer_past[" + str(idx) + "].shape = ", t.shape)
+
         hidden_states = hidden_states.transpose(1, 0)
         query_layer = self.query(hidden_states)
-        new_tensor_shape = query_layer.size()[:-1] + \
-                           (self.num_heads,
-                            self.head_dim)
+        # print("query_layer.shape:", query_layer.shape)
+        # print("query_layer:", query_layer)
+        new_tensor_shape = query_layer.size()[:-1] + (self.num_heads, self.head_dim)
         query_layer = query_layer.view(*new_tensor_shape)
 
         mixed_kv_layer = self.key_value(hidden_states)
-        new_tensor_shape = mixed_kv_layer.size()[:-1] + \
-                           (self.num_key_value_heads,
-                            2 * self.head_dim)
+        # print("mixed_kv_layer.shape:", mixed_kv_layer.shape)
+        # print("mixed_kv_layer:", mixed_kv_layer)
+        new_tensor_shape = mixed_kv_layer.size()[:-1] + (
+            self.num_key_value_heads,
+            2 * self.head_dim,
+        )
         mixed_kv_layer = mixed_kv_layer.view(*new_tensor_shape)
         (key_layer, value_layer) = self.split_tensor_along_last_dim(mixed_kv_layer, 2)
 
-        output_size = (query_layer.size(1),
-                       query_layer.size(2),
-                       query_layer.size(0),
-                       key_layer.size(0))
+        output_size = (
+            query_layer.size(1),
+            query_layer.size(2),
+            query_layer.size(0),
+            key_layer.size(0),
+        )
 
-        query_layer = query_layer.view(output_size[2], output_size[0] * output_size[1], -1)
+        query_layer = query_layer.view(
+            output_size[2], output_size[0] * output_size[1], -1
+        )
+
         key_layer = key_layer.view(output_size[3], output_size[0] * output_size[1], -1)
 
         apply_rotary_fn = apply_rotary_pos_emb_torch
@@ -284,13 +313,27 @@ class TelechatAttention(nn.Module):
             seq_len += offset
 
         cos, sin = self.rotary_emb(value_layer, dtype=value_layer.dtype)
+        # print("cos.shape:", cos.shape)
+        # print("cos:", cos)
+        # print("sin.shape:", sin.shape)
+        # print("sin:", sin)
+        query_layer, key_layer = apply_rotary_fn(
+            query_layer, key_layer, cos, sin, offset=offset
+        )
+        print("query_layer.shape:", query_layer.shape)
+        print("query_layer:", query_layer)
+        print("key_layer.shape:", key_layer.shape)
+        print("key_layer:", key_layer)
 
-        query_layer, key_layer = apply_rotary_fn(query_layer, key_layer, cos, sin, offset=offset)
         if use_cache:
             if layer_past != None:
                 past_key, past_value = layer_past
-                key_layer = torch.cat((past_key, key_layer[-1, ...].unsqueeze(0)), dim=0)
-                value_layer = torch.cat((past_value, value_layer[-1, ...].unsqueeze(0)), dim=0)
+                key_layer = torch.cat(
+                    (past_key, key_layer[-1, ...].unsqueeze(0)), dim=0
+                )
+                value_layer = torch.cat(
+                    (past_value, value_layer[-1, ...].unsqueeze(0)), dim=0
+                )
             layer_past = key_layer, value_layer
         s, bz, head, dim = value_layer.shape
         s_key = key_layer.shape[0]
@@ -299,35 +342,66 @@ class TelechatAttention(nn.Module):
         key_layer = key_layer.reshape((s_key, bz, head, dim))
 
         if self.config.flash_attn:
-            q, k, v = [rearrange(x, 's b ... -> b s ...').contiguous() for x in
-                       (query_layer, key_layer, value_layer)]
+            q, k, v = [
+                rearrange(x, "s b ... -> b s ...").contiguous()
+                for x in (query_layer, key_layer, value_layer)
+            ]
             context_layer = self.core_attention_flash(q, k, v)
-            context_layer = rearrange(context_layer, 'b s h d -> b s (h d)').contiguous()
+            context_layer = rearrange(
+                context_layer, "b s h d -> b s (h d)"
+            ).contiguous()
         else:
             ##[sq, b, np, hn] -> [sq, b * np, hn]
             query_layer = query_layer.reshape(s_query, bz * self.num_heads, dim)
             # [sk, b, np, hn] -> [sk, b * np, hn]
             key_layer = key_layer.reshape(s_key, bz * self.num_heads, dim)
-            matmul_result = self.inv_norm_factor * torch.einsum('bik,bkj->bij', query_layer.transpose(0, 1),
-                                                                key_layer.transpose(0, 1).transpose(1, 2))
+            matmul_result = self.inv_norm_factor * torch.einsum(
+                "bik,bkj->bij",
+                query_layer.transpose(0, 1),
+                key_layer.transpose(0, 1).transpose(1, 2),
+            )
+            # print("matmul_result.shape:", matmul_result.shape)
+            # print("matmul_result:", matmul_result)
 
             attention_scores = matmul_result.view(bz, self.num_heads, s_query, s_key)
 
             input_dtype = attention_scores.dtype
-            if input_dtype == torch.float16 or input_dtype == torch.bfloat16:
-                attention_scores = attention_scores.to(torch.float)
-            attn_weights = torch.masked_fill(attention_scores, attention_mask, torch.finfo(attention_scores.dtype).min)
-            attention_probs = F.softmax(attn_weights, dim=-1).to(input_dtype)  ##dtype = torch.float32
+            # if input_dtype == torch.float16 or input_dtype == torch.bfloat16:
+            #     attention_scores = attention_scores.to(torch.float)
+            attn_weights = torch.masked_fill(
+                attention_scores,
+                attention_mask,
+                torch.finfo(attention_scores.dtype).min,
+            )
+            print("attn_weights.shape:", attn_weights.shape)
+            print("attn_weights:", attn_weights)
+            attention_probs = F.softmax(attn_weights, dim=-1).to(
+                input_dtype
+            )  ##dtype = torch.float32
+            print("attention_probs.shape:", attention_probs.shape)
+            print("attention_probs:", attention_probs)
             attention_probs = self.attention_dropout(attention_probs)
-            attention_probs_reshaped = attention_probs.view(bz * self.num_heads, s_query, s_key)
+            attention_probs_reshaped = attention_probs.view(
+                bz * self.num_heads, s_query, s_key
+            )
 
             value_layer = value_layer.reshape(s_key, bz * self.num_heads, dim)
-            context_layer = torch.bmm(attention_probs_reshaped, value_layer.transpose(0, 1))
+            print("value_layer.shape:", value_layer.shape)
+            print("value_layer:", value_layer)
+            context_layer = torch.bmm(
+                attention_probs_reshaped, value_layer.transpose(0, 1)
+            )
+            print("context_layer.shape:", context_layer.shape)
+            print("context_layer:", context_layer)
             context_layer = self._merge_heads(context_layer)
 
         output_tensor = self.dense(context_layer)
 
-        output_tensor = dropout_add(output_tensor, residual, self.hidden_dropout, self.training)
+        output_tensor = dropout_add(
+            output_tensor, residual, self.hidden_dropout, self.training
+        )
+        print("output_tensor.shape:", output_tensor.shape)
+        print("output_tensor:", output_tensor)
         present = None
         outputs = (output_tensor, present)
         if output_attentions:
@@ -340,19 +414,39 @@ def dump_model_bin(model: TelechatAttention):
     # 随机初始化权重
     torch.save(model.state_dict(), "attention_model.bin")
 
+
 def calc_model(model: TelechatAttention):
     if not os.path.exists("attention_model.bin"):
         dump_model_bin(model)
     model.load_state_dict(torch.load("attention_model.bin"))
     hidden_states = torch.ones([1, 5, 5120], dtype=torch.float16)
-    residual =  torch.ones([1, 5, 5120], dtype=torch.float16)
+    residual = torch.ones([1, 5, 5120], dtype=torch.float16)
     attention_mask = torch.ones([1, 1, 5, 5], dtype=torch.bool)
-    print("output:", model(hidden_states, residual, attention_mask))
+    model = model.half()
+    model(hidden_states, residual, attention_mask)
+    # print("output:", model(hidden_states, residual, attention_mask))
+
+
+def load_state_dict():
+    # 加载 state_dict
+    state_dict = torch.load("attention_model.bin")
+
+    # 打印名字、形状和数据内容
+    print("Parameters (name, shape, data):\n")
+    for name, param in state_dict.items():
+        if isinstance(param, torch.Tensor):  # 确保是 Tensor 类型
+            print(f"Name: {name}")
+            print(f"Shape: {param.shape}")
+            print(f"Data:\n{param}\n")
+        else:
+            print(f"Name: {name}")
+            print(f"Not a tensor (type: {type(param)})\n")
 
 
 if __name__ == "__main__":
     config = TelechatConfig()
-    model = TelechatAttention(config, 1)
-    # 创建模型实例
+    model = TelechatAttention(config, 0)
+    # 创建模型实例:
     model.eval()
     calc_model(model)
+    # load_state_dict()
