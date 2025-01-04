@@ -1,4 +1,7 @@
 #include "Utils/loadPytorchModel.h"
+#include "Utils/logger.h"
+#include "lld/../../ELF/Config.h"
+#include "lld/Common/Driver.h"
 #include "mix/mixDialect.h"
 #include "mix/mixOps.h"
 #include "mix/mixTypes.h"
@@ -57,6 +60,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
 #include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
@@ -111,7 +115,19 @@
 #include <optional>
 #include <sys/types.h>
 
+// LLD_HAS_DRIVER(elf)
+
+namespace lld {
+namespace elf {
+bool link(llvm::MemoryBuffer *buffer, ArrayRef<const char *> args,
+          llvm::raw_ostream &stdoutOS, llvm::raw_ostream &stderrOS,
+          bool exitEarly = false, bool disableOutput = false);
+} // namespace elf
+} // namespace lld
+
 using namespace mlir;
+namespace mutil = mix::utils;
+using namespace mix;
 std::unique_ptr<Pass> createLowerModulePass();
 std::unique_ptr<Pass> createLowerCompositePass();
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
@@ -121,11 +137,13 @@ void registerLowerCompositePass();
 void registerLowerPrimaryToTosaPass();
 
 // 模型参数定义
-const int max_seq_len = 40;
+const int max_seq_len = 5;
 const int hidden_size = 5120;
 const int n_head = 32;
 const int head_dim = hidden_size / n_head;
 const int batch_size = 1;
+const int key_value_projection_size = hidden_size * 2;
+const int key_value_projection_head_dim = key_value_projection_size / n_head;
 
 std::string getOpName(std::string_view prefix, int idx, std::string_view name) {
   return std::string(prefix) + std::to_string(idx) + std::string(name);
@@ -290,27 +308,10 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                  Value attention_mask, int idx,
                  mlir::func::FuncOp printMemRefFunc) {
   printf("genSelfAttn\n");
-  auto hidden_states_type =
-      mlir::dyn_cast<RankedTensorType>(hidden_states.getType());
-
-  // hidden_states dims
-  auto hidden_states_shape = hidden_states_type.getShape();
-  auto batch_size = hidden_states_shape[0];
-  // auto seq_length = hidden_states_shape[1];
-  auto hidden_size = hidden_states_shape[2];
-  auto n_head = 32;
-  auto head_dim = hidden_size / n_head;
-  auto key_value_projection_size = hidden_size * 2;
-  auto key_value_projection_head_dim = key_value_projection_size / n_head;
   /* 定义一些可重用的信息 */
 
   // types:
-  auto type_i16 = builder.getI16Type();
-  auto type_i32 = builder.getI32Type();
-  auto type_i64 = builder.getI64Type();
   auto type_f16 = builder.getF16Type();
-  auto type_f32 = builder.getF32Type();
-  auto type_f64 = builder.getF64Type();
   auto type_query_weight =
       RankedTensorType::get({hidden_size, hidden_size}, type_f16);
   auto type_key_value_weight =
@@ -327,7 +328,6 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto attr_i32_3 = IntegerAttr::get(IntegerType::get(&context, 32), 3);
 
   /* 定义算子 */
-  const std::string common = "transformer.h.";
 
   // %arg0
   auto query_weight =
@@ -358,7 +358,7 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, transpose14,
       createIntArrayAttr(context, {max_seq_len, hidden_size}));
 
-  // line 23: torch.aten.mm
+  // line 23: torch.aten.mm -- queary_layer
   auto matmul23 = builder.create<mix::MatMulOp>(loc, reshape21, t16);
 
   // line 29: torch.aten.view
@@ -380,8 +380,13 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, transpose14,
       createIntArrayAttr(context, {max_seq_len, hidden_size}));
 
-  // line 45: torch.aten.mm
+  // line 45: torch.aten.mm -- mixed_kv_layer
   auto matmul45 = builder.create<mix::MatMulOp>(loc, reshape43, t38);
+
+  //   auto cast_matmul45 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(type_f16), matmul45);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //   ValueRange{cast_matmul45});
 
   // line 51: torch.aten.view
   auto reshape51 = builder.create<mix::ReshapeOp>(
@@ -405,7 +410,7 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto reshape76 = builder.create<mix::ReshapeOp>(
       loc, reshape36, createIntArrayAttr(context, {max_seq_len, n_head, -1}));
 
-  // line 82: torch.aten.view
+  // line 82: torch.aten.view -- kv_layer
   auto reshape82 = builder.create<mix::ReshapeOp>(
       loc, slice64, createIntArrayAttr(context, {max_seq_len, n_head, -1}));
 
@@ -539,6 +544,11 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, bmm346,
       createIntArrayAttr(context, {n_head, max_seq_len, 1, max_seq_len}));
 
+  //   auto cast_bmm346 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(type_f16), bmm346);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //   ValueRange{cast_bmm346});
+
   // line 360: torch.aten.permute
   auto permute360 = builder.create<mix::PermuteOp>(
       loc, reshape353, createIntArrayAttr(context, {0, 1, 3, 2}));
@@ -562,7 +572,8 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
 
   // line 380: torch.aten.masked_fill.Scalar
   auto constant380 = builder.create<mix::ConstantOp>(
-      loc, builder.getFloatAttr(type_f16, -3.4028234663852886E+38));
+      loc,
+      builder.getFloatAttr(type_f16, llvm::getAPFloatFromSize(-65504.0f, 16)));
   auto masked_fill380 = builder.create<mix::MaskedFillOp>(
       loc, reshape377, attention_mask, constant380);
 
@@ -570,10 +581,20 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto softmax384 =
       builder.create<mix::SoftmaxOp>(loc, masked_fill380, attr_i32_n1);
 
+  //   auto cast_masked_fill380 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(type_f16), masked_fill380);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //                                ValueRange{cast_masked_fill380});
+
   // line 393: torch.aten.view
   auto reshape393 = builder.create<mix::ReshapeOp>(
       loc, softmax384,
       createIntArrayAttr(context, {n_head, max_seq_len, max_seq_len}));
+
+  //   auto cast_softmax384 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(type_f16), softmax384);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //                                ValueRange{cast_softmax384});
 
   // line 399: torch.aten.view
   auto reshape399 = builder.create<mix::ReshapeOp>(
@@ -590,6 +611,16 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   // line 412: torch.aten.view
   auto reshape412 = builder.create<mix::ReshapeOp>(
       loc, bmm405, createIntArrayAttr(context, {1, n_head, max_seq_len, 160}));
+
+  //   auto cast_reshape399 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(type_f16), reshape399);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //                                ValueRange{cast_reshape399});
+
+  //   auto cast_bmm405 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(type_f16), bmm405);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //   ValueRange{cast_bmm405});
 
   // line 419: torch.aten.permute
   auto permute419 = builder.create<mix::PermuteOp>(
@@ -669,7 +700,7 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   // hidden_states constant
   llvm::SmallVector<mlir::Attribute> tmp1;
   for (int i = 0; i < batch_size * max_seq_len * hidden_size; i++) {
-    tmp1.push_back(mlir::FloatAttr::get(builder.getF16Type(), float(i)));
+    tmp1.push_back(mlir::FloatAttr::get(builder.getF16Type(), float(1)));
   }
   auto hidden_states_attr = DenseElementsAttr::get(hidden_states_type, tmp1);
   auto hidden_states =
@@ -678,7 +709,7 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   // residual constant
   llvm::SmallVector<mlir::Attribute> tmp2;
   for (int i = 0; i < batch_size * max_seq_len * hidden_size; i++) {
-    tmp2.push_back(mlir::FloatAttr::get(builder.getF16Type(), float(i)));
+    tmp2.push_back(mlir::FloatAttr::get(builder.getF16Type(), float(1)));
   }
   auto residual_attr = DenseElementsAttr::get(residual_type, tmp2);
   auto residual = builder.create<arith::ConstantOp>(loc, residual_attr);
@@ -714,52 +745,83 @@ void generateExecutable(llvm::Module &module, llvm::StringRef outputFilename) {
   }
 
   llvm::TargetOptions opt;
-  llvm::TargetMachine *targetMachine = target->createTargetMachine(
-      targetTriple, "generic", "", opt, llvm::Reloc::PIC_);
+  llvm::TargetMachine *targetMachine =
+      target->createTargetMachine(targetTriple, "generic", "", opt,
+                                  llvm::Reloc::PIC_, llvm::CodeModel::Large);
 
   module.setDataLayout(targetMachine->createDataLayout());
 
-  std::string objFilename = "tmp.o";
-  std::error_code EC;
-  llvm::raw_fd_ostream dest(objFilename, EC, llvm::sys::fs::OF_None);
-  if (EC) {
-    llvm::errs() << "Could not open file: " << EC.message() << "\n";
-    return;
-  }
+  llvm::SmallVector<char, 0> buffer;
+  llvm::raw_svector_ostream objStream(buffer);
+
+  mutil::log(mutil::LogLevel::INFO, "Start create object.");
 
   llvm::legacy::PassManager pass;
-  if (targetMachine->addPassesToEmitFile(pass, dest, nullptr,
+  if (targetMachine->addPassesToEmitFile(pass, objStream, nullptr,
                                          llvm::CodeGenFileType::ObjectFile)) {
     llvm::errs() << "TargetMachine can't emit a file of this type\n";
     return;
   }
 
   pass.run(module);
-  dest.flush();
+  mutil::log(mutil::LogLevel::INFO, "End create object.");
 
-  // 调用系统链接器生成可执行文件
-  llvm::SmallVector<llvm::StringRef, 8> args;
-  args.push_back("/usr/bin/cc");
-  args.push_back(objFilename);
-  args.push_back("-fPIE");
-  args.push_back("-L../../thirdparty/llvm/build/lib");
-  args.push_back("-lmlir_runner_utils");
-  args.push_back("-lmlir_c_runner_utils");
-  // for expf
-  args.push_back("-lm");
-  args.push_back("-o");
-  args.push_back(outputFilename);
-  std::string errormsg;
-  int retCode = llvm::sys::ExecuteAndWait(
-      "/usr/bin/cc", args, llvm::ArrayRef<llvm::StringRef>{"PATH=/usr/bin/"},
-      {}, 0, 0, &errormsg);
-  if (retCode != 0) {
-    llvm::errs() << "Linking failed: " << errormsg << "\n";
-  }
+  llvm::SmallVector<const char *, 32> args = {
+      "/home/gaoshihao/project/Aipiler/thirdparty/llvm/build/bin/ld.lld",
+      "-z",
+      "relro",
+      "--hash-style=gnu",
+      "--eh-frame-hdr",
+      "-m",
+      "elf_x86_64",
+      "-pie",
+      "-dynamic-linker",
+      "/lib64/ld-linux-x86-64.so.2",
+      "-o",
+      outputFilename.data(),
+      "/lib/x86_64-linux-gnu/Scrt1.o",
+      "/lib/x86_64-linux-gnu/crti.o",
+      "/usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o",
+      "-L/home/gaoshihao/project/Aipiler/thirdparty/llvm/build/lib",
+      "-L/usr/lib/gcc/x86_64-linux-gnu/11",
+      "-L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib64",
+      "-L/lib/x86_64-linux-gnu",
+      "-L/lib/../lib64",
+      "-L/usr/lib/x86_64-linux-gnu",
+      "-L/usr/lib/../lib64",
+      "-L/lib",
+      "-L/usr/lib",
+      "from_memory", // load from memory
+      "-lgcc",
+      "--as-needed",
+      "-lgcc_s",
+      "--no-as-needed",
+      "-lc",
+      "-lgcc",
+      "-lm",
+      "-lmlir_runner_utils",
+      "-lmlir_c_runner_utils",
+      "--as-needed",
+      "-lgcc_s",
+      "--no-as-needed",
+      "/usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o",
+      "/lib/x86_64-linux-gnu/crtn.o"};
 
-  // 删除临时目标文件
-  if (auto ec = llvm::sys::fs::remove(objFilename)) {
-    llvm::errs() << ec.message() << "\n";
+  auto objBuffer = llvm::MemoryBuffer::getMemBuffer(
+      llvm::StringRef(buffer.data(), buffer.size()), "inMemoryObjectBuffer",
+      false);
+
+  mutil::log(mutil::LogLevel::INFO, "Start link object.");
+
+  auto flag = lld::elf::link(objBuffer.get(), args, llvm::outs(), llvm::errs());
+  // lld::elf::ctx.driver.addFileFromMemory(objBuffer.get(), false);
+  // lld::Result s = lld::lldMain(args, llvm::outs(), llvm::errs(),
+  //                              {{lld::Gnu, &lld::elf::link}});
+
+  mutil::log(mutil::LogLevel::INFO, "End link object.");
+
+  if (!flag) {
+    llvm::errs() << "Linking failed.\n";
   }
 }
 
@@ -793,15 +855,11 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   generateCode(theModule, builder, context);
 
-  load_model("./attention_model.bin", theModule, builder, builder.getF16Type());
+  load_model("/home/gaoshihao/project/Aipiler/examples/SelfAttention/"
+             "attention_model.bin",
+             theModule, builder, builder.getF16Type());
 
   mlir::PassManager pm(&context);
-  std::function<bool(Pass *, Operation *)> shouldPrintBeforePass;
-  std::function<bool(Pass *, Operation *)> shouldPrintAfterPass;
-  shouldPrintBeforePass = [&](Pass *pass, Operation *) { return false; };
-  shouldPrintAfterPass = [](Pass *, Operation *) { return true; };
-  pm.enableIRPrinting(shouldPrintBeforePass, shouldPrintAfterPass, false, false,
-                      true, llvm::errs());
   pm.addPass(createLowerModulePass());
   pm.addPass(createLowerCompositePass());
   pm.addPass(createLowerPrimaryToTosa());
@@ -823,6 +881,7 @@ int main() {
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());
   pm.addPass(mlir::createConvertMathToLLVMPass());
+  pm.addPass(mlir::createConvertMathToLibmPass());
   pm.addPass(mlir::createArithToLLVMConversionPass());
   pm.addPass(mlir::createConvertFuncToLLVMPass());
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
@@ -830,6 +889,10 @@ int main() {
   if (mlir::failed(pm.run(theModule))) {
     return -1;
   }
+
+  mutil::log(mutil::LogLevel::INFO, "End pass.");
+
+  mutil::log(mutil::LogLevel::INFO, "Start gen LLVM IR.");
 
   //   translate to llvm ir
   llvm::LLVMContext LLVMContext;
@@ -840,7 +903,13 @@ int main() {
     return -1;
   }
 
+  mutil::log(mutil::LogLevel::INFO, "End gen LLVM IR.");
+
+  mutil::log(mutil::LogLevel::INFO, "Start gen exe.");
+
   generateExecutable(*llvmModule.get(), "Self_attention");
+
+  mutil::log(mutil::LogLevel::INFO, "End gen exe.");
 
   return 0;
 }
