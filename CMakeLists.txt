@@ -97,7 +97,7 @@ set(Aipiler_LIBRARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/lib)
 set(Aipiler_EXAMPLES_DIR ${Aipiler_SOURCE_DIR}/examples)
 
 set(EXECUTABLE_OUTPUT_PATH ${Aipiler_BINARY_DIR})
-set(LIBRARY_OUTPUT_DIRECTORY ${Aipiler_LIBRARY_DIR})
+set(LIBRARY_OUTPUT_PATH ${Aipiler_LIBRARY_DIR})
 
 # Add Aipiler files to the include path
 include_directories(${PROJECT_SOURCE_DIR}/midend/include)
