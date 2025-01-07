@@ -332,7 +332,7 @@ int main() {
 
   generateCode(theModule, builder);
 
-  load_model("./mlp_model.bin", theModule, builder, builder.getF32Type());
+  mix::utils::load_model("./mlp_model.bin", theModule, builder, builder.getF32Type());
   mutil::log(mutil::LogLevel::INFO, "Start pass.");
   mlir::PassManager pm(&context);
 
