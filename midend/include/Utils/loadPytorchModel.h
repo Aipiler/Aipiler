@@ -32,13 +32,26 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstdint>
 #include <string>
 
+namespace mix {
+namespace utils {
+
+// load model weight and append to theModule attribute
 void load_model(const std::string model_path, mlir::ModuleOp &theModule,
                 mlir::OpBuilder &builder, mlir::Type dtype);
 
+// load model weight from files, and append to theModule attribute
 void load_model(const std::vector<std::string> model_paths,
                 mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
                 mlir::Type dtype);
+
+// load model weight from weight and initialize pointer
+template <typename T>
+void load_model(const std::vector<std::string> model_paths,
+                std::map<std::string, T *> param_and_loc);
+} // namespace utils
+} // namespace mix
 
 #endif

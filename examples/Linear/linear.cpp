@@ -82,6 +82,8 @@ void registerLowerModulePass();
 void registerLowerCompositePass();
 void registerLowerPrimaryToTosaPass();
 
+bool DynamicLoadWeight = true;
+
 void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   auto loc = builder.getUnknownLoc();
   builder.setInsertionPointToEnd(theModule.getBody());
@@ -172,7 +174,9 @@ int main() {
 
   generateCode(theModule, builder);
 
-  // load_model("./linear_model.bin", theModule, builder, builder.getF32Type());
+  if (!DynamicLoadWeight)
+    mix::utils::load_model("./linear_model.bin", theModule, builder,
+                           builder.getF32Type());
 
   mlir::PassManager pm(&context);
 
@@ -199,7 +203,7 @@ int main() {
 // 	reconcile-unrealized-casts)"
 
   pm.addPass(createLowerModulePass());
-  pm.addPass(createLowerCompositePass(true));
+  pm.addPass(createLowerCompositePass(DynamicLoadWeight));
   pm.addPass(createLowerPrimaryToTosa());
   pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToLinalgNamed());
   pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToLinalg());
@@ -215,6 +219,7 @@ int main() {
   pm.addPass(mlir::memref::createExpandStridedMetadataPass());
   pm.addPass(mlir::createLowerAffinePass());
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());
+  pm.nest<func::FuncOp>().addPass(mlir::LLVM::createRequestCWrappersPass());
   pm.addPass(mlir::createConvertMathToLLVMPass());
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createConvertFuncToLLVMPass());

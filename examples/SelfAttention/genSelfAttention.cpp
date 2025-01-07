@@ -793,7 +793,7 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   generateCode(theModule, builder, context);
 
-  load_model("./attention_model.bin", theModule, builder, builder.getF16Type());
+  mix::utils::load_model("./attention_model.bin", theModule, builder, builder.getF16Type());
 
   mlir::PassManager pm(&context);
   std::function<bool(Pass *, Operation *)> shouldPrintBeforePass;
