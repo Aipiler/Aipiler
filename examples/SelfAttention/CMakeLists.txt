@@ -20,13 +20,16 @@ target_link_libraries(genSelfAttention
     MLIRFuncAllExtensions
     MLIRSPIRVTranslateRegistration
     MLIRLLVMIRToLLVMTranslation
+    lldELF
+    lldCommon
     ${dialect_libs}
     ${conversion_libs}
     MLIRMIX
     LowerModule
     LowerComposite
     LowerPrimaryToTosa
+    loadPytorchModel
     StaticMLIRRunnerUtils
     StaticMLIRCRunnerUtils
-    loadPytorchModel
+    mixlogger
 )

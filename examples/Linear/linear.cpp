@@ -88,16 +88,16 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   auto loc = builder.getUnknownLoc();
   builder.setInsertionPointToEnd(theModule.getBody());
   // printMemrefF32
-  auto elementType = builder.getF32Type();
+  auto elementType = builder.getF16Type();
   auto printInputType = UnrankedTensorType::get(elementType);
   auto printFunTy =
       builder.getFunctionType(TypeRange{printInputType}, TypeRange{});
   auto printfunc =
-      builder.create<func::FuncOp>(loc, "printMemrefF32", printFunTy);
+      builder.create<func::FuncOp>(loc, "printMemrefF16", printFunTy);
   printfunc.setPrivate();
 
   // Graph0
-  auto inputType = RankedTensorType::get({2, 10}, builder.getF32Type());
+  auto inputType = RankedTensorType::get({1, 5120}, builder.getF16Type());
   //   auto resultType
   auto functionTy = builder.getFunctionType({inputType}, {});
   auto graph0 = builder.create<func::FuncOp>(loc, "graph0", functionTy);
@@ -106,8 +106,8 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   builder.setInsertionPointToEnd(body);
 
   auto input = graph0.getArgument(0);
-  auto linear0 = builder.create<mix::LinearOp>(loc, input, "linear", 10, 5,
-                                               true, builder.getF32Type());
+  auto linear0 = builder.create<mix::LinearOp>(loc, input, "linear", 5120, 5120,
+                                               true, builder.getF16Type());
 
   auto returnType = linear0.getType();
   graph0.setFunctionType(builder.getFunctionType(inputType, returnType));
@@ -121,13 +121,12 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   auto mainbody = mainfunc.addEntryBlock();
   builder.setInsertionPointToEnd(mainbody);
 
-  SmallVector<float> inputdata;
-  for (int i = 0; i < 20; i++) {
-    inputdata.push_back(float(i));
+  SmallVector<Attribute> inputdata;
+  for (int i = 0; i < 5120; i++) {
+    inputdata.push_back(mlir::FloatAttr::get(builder.getF16Type(), float(1)));
   }
 
-  auto argAttr =
-      DenseElementsAttr::get(inputType, llvm::ArrayRef<float>(inputdata));
+  auto argAttr = DenseElementsAttr::get(inputType, inputdata);
 
   auto arg0 = builder.create<arith::ConstantOp>(loc, argAttr);
   auto call0 = builder.create<func::CallOp>(loc, graph0, ValueRange{arg0});
@@ -218,6 +217,7 @@ int main() {
                                                        deallocopt);
   pm.addPass(mlir::memref::createExpandStridedMetadataPass());
   pm.addPass(mlir::createLowerAffinePass());
+  pm.nest<func::FuncOp>().addPass(mlir::LLVM::createRequestCWrappersPass());
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());
   pm.nest<func::FuncOp>().addPass(mlir::LLVM::createRequestCWrappersPass());
   pm.addPass(mlir::createConvertMathToLLVMPass());

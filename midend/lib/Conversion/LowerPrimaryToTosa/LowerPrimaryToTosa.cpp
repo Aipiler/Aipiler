@@ -646,23 +646,115 @@ public:
     return success();
   }
 };
+
 class SoftmaxLoweringPattern : public OpRewritePattern<mix::SoftmaxOp> {
 public:
   using OpRewritePattern<mix::SoftmaxOp>::OpRewritePattern;
+
   LogicalResult matchAndRewrite(mix::SoftmaxOp op,
                                 PatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     auto input = op.getInput();
     auto signed_axis = op.getAxis();
-    uint64_t axis = signed_axis < 0
-                        ? input.getType().getShape().size() + signed_axis
-                        : signed_axis;
+
+    // 处理负轴索引，确保为正轴索引
+    uint64_t axis =
+        signed_axis < 0
+            ? input.getType().cast<RankedTensorType>().getRank() + signed_axis
+            : signed_axis;
     auto outputType = op.getType();
-    auto empty0 = rewriter.create<tensor::EmptyOp>(loc, outputType.getShape(),
-                                                   outputType.getElementType());
-    auto softmax0 = rewriter.create<linalg::SoftmaxOp>(loc, op.getType(), input,
-                                                       empty0, axis);
-    rewriter.replaceOp(op, empty0);
+    auto elementType =
+        input.getType().cast<RankedTensorType>().getElementType();
+    auto outputShape = outputType.cast<RankedTensorType>().getShape();
+    auto rank = outputShape.size();
+
+    // 1. 计算沿指定 axis 的最大值 (reduceMax)
+    auto reduceMax = rewriter.create<tosa::ReduceMaxOp>(loc, input, axis);
+
+    // 广播 reduceMax 的结果以匹配输入形状
+    // auto broadcastReduceMax = rewriter.create<tosa::BroadcastOp>(
+    //     loc, input.getType(), reduceMax.getResult(),
+    //     rewriter.getI64ArrayAttr(outputShape));
+
+    // 2. 输入减去广播后的 max
+    auto inputMinusMax = rewriter.create<mix::SubOp>(loc, input, reduceMax);
+
+    // 3. 创建 Sum Tensor 的初始值（为 0 的张量）
+    llvm::SmallVector<int64_t, 4> sumTensorShape(outputShape.begin(),
+                                                 outputShape.end());
+    sumTensorShape[axis] = 1;
+    auto sumTensorType =
+        mlir::RankedTensorType::get(sumTensorShape, elementType);
+    auto zeroAttr = rewriter.getZeroAttr(elementType);
+    auto sumTensorInit = rewriter.create<mlir::arith::ConstantOp>(
+        loc, sumTensorType,
+        mlir::DenseElementsAttr::get(sumTensorType, zeroAttr));
+
+    // 4. 创建 AffineMap 用于描述输入和输出的关系
+    llvm::SmallVector<mlir::AffineExpr, 4> inputExprs, sumExprs, resultExprs;
+    for (int i = 0; i < rank; ++i) {
+      inputExprs.push_back(mlir::getAffineDimExpr(i, rewriter.getContext()));
+      resultExprs.push_back(mlir::getAffineDimExpr(i, rewriter.getContext()));
+      if (i == axis)
+        sumExprs.push_back(rewriter.getAffineConstantExpr(0));
+      else
+        sumExprs.push_back(mlir::getAffineDimExpr(i, rewriter.getContext()));
+    }
+    auto inputMap =
+        mlir::AffineMap::get(rank, 0, inputExprs, rewriter.getContext());
+    auto sumMap =
+        mlir::AffineMap::get(rank, 0, sumExprs, rewriter.getContext());
+    auto resultMap =
+        mlir::AffineMap::get(rank, 0, resultExprs, rewriter.getContext());
+
+    llvm::SmallVector<mlir::AffineMap, 4> indexingMaps = {inputMap, sumMap};
+
+    // 定义迭代器类型：parallel 或 reduction
+    llvm::SmallVector<mlir::utils::IteratorType, 4> iteratorTypes(
+        rank, mlir::utils::IteratorType::parallel);
+    iteratorTypes[axis] = mlir::utils::IteratorType::reduction;
+
+    // 5. 创建 linalg::GenericOp 用于计算 sum(exp(input - max))
+    auto sumTensorOp = rewriter.create<mlir::linalg::GenericOp>(
+        loc, sumTensorType, mlir::ValueRange{inputMinusMax},
+        mlir::ValueRange{sumTensorInit}, indexingMaps, iteratorTypes);
+
+    // 填充 reduction 区域
+    {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.createBlock(&sumTensorOp->getRegion(0), {},
+                           {elementType, elementType}, {loc, loc});
+      auto blockArgs = sumTensorOp.getRegion().front().getArguments();
+      auto expOp = rewriter.create<mlir::math::ExpOp>(loc, blockArgs[0]);
+      auto addOp =
+          rewriter.create<mlir::arith::AddFOp>(loc, expOp, blockArgs[1]);
+      rewriter.create<mlir::linalg::YieldOp>(loc, addOp.getResult());
+    }
+
+    // 6. 创建 Softmax 的最终输出
+    auto finalResultTensor =
+        rewriter.create<mlir::tensor::EmptyOp>(loc, outputShape, elementType);
+    indexingMaps.push_back(resultMap); // 添加 resultMap
+    auto softmaxOp = rewriter.create<mlir::linalg::GenericOp>(
+        loc, outputType,
+        mlir::ValueRange{inputMinusMax, sumTensorOp.getResult(0)},
+        mlir::ValueRange{finalResultTensor}, indexingMaps, iteratorTypes);
+
+    // 填充 softmax 的计算逻辑
+    {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.createBlock(&softmaxOp->getRegion(0), {},
+                           {elementType, elementType, elementType},
+                           {loc, loc, loc});
+      auto blockArgs = softmaxOp.getRegion().front().getArguments();
+      auto expOp = rewriter.create<mlir::math::ExpOp>(loc, blockArgs[0]);
+      auto divOp =
+          rewriter.create<mlir::arith::DivFOp>(loc, expOp, blockArgs[1]);
+      rewriter.create<mlir::linalg::YieldOp>(loc, divOp.getResult());
+    }
+
+    // 用 softmax 的结果替换原始操作
+    rewriter.replaceOp(op, softmaxOp.getResult(0));
     return success();
   }
 };
