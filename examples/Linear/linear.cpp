@@ -12,6 +12,7 @@
 #include "mlir/Conversion/TosaToTensor/TosaToTensor.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Bufferization/Pipelines/Passes.h"
 #include "mlir/Dialect/Bufferization/Transforms/OneShotAnalysis.h"
 #include "mlir/Dialect/Bufferization/Transforms/Passes.h"
@@ -46,65 +47,35 @@
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Target/LLVMIR/Dialect/All.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "Utils/compileUtils.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/CodeGen/TargetRegisterInfo.h"
-#include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
-#include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
-#include "llvm/DebugInfo/DWARF/DWARFUnit.h"
-#include "llvm/MC/MCAssembler.h"
-#include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCDisassembler/MCDisassembler.h"
-#include "llvm/MC/MCInstPrinter.h"
-#include "llvm/MC/MCObjectStreamer.h"
-#include "llvm/MC/MCObjectWriter.h"
-#include "llvm/MC/MCRegisterInfo.h"
-#include "llvm/MC/MCSectionELF.h"
-#include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/MC/MCSymbol.h"
-#include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/CodeGen.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/Regex.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/TargetParser/Host.h"
-#include "llvm/TargetParser/Triple.h"
+
 #include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Passes/PassBuilder.h>
-#include <llvm/Support/Error.h>
-#include <llvm/Support/FileSystem.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/Target/TargetMachine.h>
 #include <optional>
 #include <sys/types.h>
 
 using namespace mlir;
 std::unique_ptr<Pass> createLowerModulePass();
-std::unique_ptr<Pass> createLowerCompositePass();
+std::unique_ptr<Pass> createLowerCompositePass(bool dynamicLoadWeight = false);
 std::unique_ptr<Pass> createLowerPrimaryToTosa();
 
 void registerLowerModulePass();
@@ -142,7 +113,7 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
 
   // Main
   builder.setInsertionPointToEnd(theModule.getBody());
-  auto mainfunc = builder.create<func::FuncOp>(loc, "main",
+  auto mainfunc = builder.create<func::FuncOp>(loc, "call_graph0",
                                                builder.getFunctionType({}, {}));
   mainfunc.setPrivate();
   auto mainbody = mainfunc.addEntryBlock();
@@ -161,71 +132,15 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   auto cast =
       builder.create<tensor::CastOp>(loc, printInputType, call0->getResult(0));
   builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
+  // print bias
+  // auto biasType = MemRefType::get(ArrayRef<int64_t>{5},
+  // builder.getF32Type()); auto bias = builder.create<memref::GetGlobalOp>(loc,
+  // biasType, "linear_bias"); auto biasTensor =
+  //     builder.create<bufferization::ToTensorOp>(loc, biasType, bias, true);
+  // auto cast1 = builder.create<tensor::CastOp>(loc, printInputType,
+  //                                             biasTensor->getResult(0));
+  // builder.create<func::CallOp>(loc, printfunc, ValueRange{cast1});
   builder.create<func::ReturnOp>(loc);
-}
-
-void generateExecutable(llvm::Module &module, llvm::StringRef outputFilename) {
-  // llvm::InitializeAllTargetInfos();
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmParser();
-  llvm::InitializeNativeTargetAsmPrinter();
-  std::string targetTriple = llvm::sys::getDefaultTargetTriple();
-  module.setTargetTriple(targetTriple);
-
-  std::string error;
-  const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(targetTriple, error);
-  if (!target) {
-    llvm::errs() << "Error: " << error << "\n";
-    return;
-  }
-
-  llvm::TargetOptions opt;
-  llvm::TargetMachine *targetMachine = target->createTargetMachine(
-      targetTriple, "generic", "", opt, llvm::Reloc::PIC_);
-
-  module.setDataLayout(targetMachine->createDataLayout());
-
-  std::string objFilename = "tmp.o";
-  std::error_code EC;
-  llvm::raw_fd_ostream dest(objFilename, EC, llvm::sys::fs::OF_None);
-  if (EC) {
-    llvm::errs() << "Could not open file: " << EC.message() << "\n";
-    return;
-  }
-
-  llvm::legacy::PassManager pass;
-  if (targetMachine->addPassesToEmitFile(pass, dest, nullptr,
-                                         llvm::CodeGenFileType::ObjectFile)) {
-    llvm::errs() << "TargetMachine can't emit a file of this type\n";
-    return;
-  }
-
-  pass.run(module);
-  dest.flush();
-
-  // 调用系统链接器生成可执行文件
-  llvm::SmallVector<llvm::StringRef, 8> args;
-  args.push_back("/usr/bin/cc");
-  args.push_back(objFilename);
-  args.push_back("-fPIE");
-  args.push_back("-L../../thirdparty/llvm/build/lib");
-  args.push_back("-lmlir_runner_utils");
-  args.push_back("-lmlir_c_runner_utils");
-  args.push_back("-o");
-  args.push_back(outputFilename);
-  std::string errormsg;
-  int retCode = llvm::sys::ExecuteAndWait(
-      "/usr/bin/cc", args, llvm::ArrayRef<llvm::StringRef>{"PATH=/usr/bin/"},
-      {}, 0, 0, &errormsg);
-  if (retCode != 0) {
-    llvm::errs() << "Linking failed: " << errormsg << "\n";
-  }
-
-  // 删除临时目标文件
-  if (auto ec = llvm::sys::fs::remove(objFilename)) {
-    llvm::errs() << ec.message() << "\n";
-  }
 }
 
 int main() {
@@ -247,6 +162,7 @@ int main() {
   registerLowerPrimaryToTosaPass();
 
   context.getOrLoadDialect<mix::MIXDialect>();
+  context.getOrLoadDialect<mlir::bufferization::BufferizationDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::func::FuncDialect>();
   context.getOrLoadDialect<mlir::tensor::TensorDialect>();
@@ -256,7 +172,7 @@ int main() {
 
   generateCode(theModule, builder);
 
-  load_model("./linear_model.bin", theModule, builder, builder.getF32Type());
+  // load_model("./linear_model.bin", theModule, builder, builder.getF32Type());
 
   mlir::PassManager pm(&context);
 
@@ -283,7 +199,7 @@ int main() {
 // 	reconcile-unrealized-casts)"
 
   pm.addPass(createLowerModulePass());
-  pm.addPass(createLowerCompositePass());
+  pm.addPass(createLowerCompositePass(true));
   pm.addPass(createLowerPrimaryToTosa());
   pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToLinalgNamed());
   pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToLinalg());
@@ -308,16 +224,10 @@ int main() {
     return 4;
   }
 
-  // translate to llvm ir
-  llvm::LLVMContext LLVMContext;
-  auto llvmModule = mlir::translateModuleToLLVMIR(theModule, LLVMContext);
-  if (!llvmModule) {
-    theModule->dump();
-    llvm::errs() << "Failed to emit LLVM IR\n";
-    return -1;
-  }
-
-  generateExecutable(*llvmModule.get(), "linear");
-
+  mix::utils::CompileUtils util(theModule, "linear",
+                                {mix::utils::CompileUtils::TARGET::MLIR,
+                                 mix::utils::CompileUtils::TARGET::LLVMIR,
+                                 mix::utils::CompileUtils::TARGET::OBJECT});
+  util.compile();
   return 0;
 }

@@ -29,4 +29,5 @@ target_link_libraries(genLinear
     LowerComposite
     LowerPrimaryToTosa
     loadPytorchModel
+    compileUtils
     )

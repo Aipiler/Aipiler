@@ -1,6 +1,8 @@
 #include "math.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -9,6 +11,7 @@
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/Dialect/X86Vector/X86VectorDialect.h"
 #include "mlir/IR/Attributes.h"
@@ -37,6 +40,8 @@
 #include "mix/mixOps.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/GlobalISel/Utils.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
 
@@ -124,7 +129,8 @@ public:
   }
 };
 
-class WeightOpLoadTorchPattern : public OpRewritePattern<mix::WeightOp> {
+class WeightOpLoadTorchStaticallyPattern
+    : public OpRewritePattern<mix::WeightOp> {
 public:
   using OpRewritePattern<mix::WeightOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(mix::WeightOp op,
@@ -166,11 +172,43 @@ public:
   }
 };
 
+class WeightOpLoadTorchDynamicallyPattern
+    : public OpRewritePattern<mix::WeightOp> {
+public:
+  using OpRewritePattern<mix::WeightOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mix::WeightOp op,
+                                PatternRewriter &rewriter) const override {
+
+    auto returnType = op.getType();
+    auto data_loc = op.getParamLoc();
+    auto loc = op->getLoc();
+    std::vector<double> result;
+    auto theModule = op->getParentOfType<ModuleOp>();
+    auto data_loc_str = data_loc.str();
+    std::replace(data_loc_str.begin(), data_loc_str.end(), '.', '_');
+    auto record = rewriter.saveInsertionPoint();
+    rewriter.setInsertionPointToStart(theModule.getBody());
+    auto globalVarType =
+        bufferization::getMemRefTypeWithStaticIdentityLayout(returnType);
+    rewriter.create<memref::GlobalOp>(
+        loc, data_loc_str, rewriter.getStringAttr("public"),
+        cast<MemRefType>(globalVarType), nullptr, false, IntegerAttr{});
+    rewriter.restoreInsertionPoint(record);
+    auto globalVarMemref =
+        rewriter.create<memref::GetGlobalOp>(loc, globalVarType, data_loc_str);
+    auto globalVarTensor = rewriter.create<bufferization::ToTensorOp>(
+        loc, returnType, globalVarMemref, true);
+    rewriter.replaceOp(op, globalVarTensor);
+    return success();
+  }
+};
+
 } // namespace
 
 void populateLowerCompositeOpPatterns(RewritePatternSet &patterns) {
-  patterns.add<SiLULoweringPattern, SigmoidLoweringPattern, MeanLoweringPattern,
-               WeightOpLoadTorchPattern>(patterns.getContext());
+  patterns
+      .add<SiLULoweringPattern, SigmoidLoweringPattern, MeanLoweringPattern>(
+          patterns.getContext());
 }
 
 namespace {
@@ -179,7 +217,17 @@ class LowerCompositePass
 public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerCompositePass)
   LowerCompositePass() = default;
+  LowerCompositePass(bool dynamicLoadWeight) {
+    this->dynamicLoadWeight.setValue(dynamicLoadWeight);
+  };
   LowerCompositePass(const LowerCompositePass &) {}
+
+  Option<bool> dynamicLoadWeight{
+      *this, "dynamic-load-weight",
+      llvm::cl::desc("If true, weightOp will load weight at runtime, or at "
+                     "compile time(this will generate large files.)"),
+      llvm::cl::init(false)};
+
   StringRef getArgument() const final { return "lower-mix-composite"; }
   StringRef getDescription() const final {
     return "Convert mix.comp ops to mix.prim ops.";
@@ -188,8 +236,9 @@ public:
   void runOnOperation() override;
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<ml_program::MLProgramDialect, func::FuncDialect,
-                    arith::ArithDialect, index::IndexDialect>();
+    registry
+        .insert<func::FuncDialect, arith::ArithDialect, index::IndexDialect,
+                memref::MemRefDialect, bufferization::BufferizationDialect>();
   }
 };
 } // namespace
@@ -197,14 +246,28 @@ public:
 void LowerCompositePass::runOnOperation() {
   MLIRContext &context = this->getContext();
   ModuleOp module = this->getOperation();
+
+  llvm::outs() << "dynamic-load-weight: "
+               << (dynamicLoadWeight ? "true" : "false") << "\n";
+
   ConversionTarget target(context);
-  target.addLegalDialect<arith::ArithDialect, ml_program::MLProgramDialect,
-                         mix::MIXDialect>();
+  target.addLegalDialect<arith::ArithDialect, mix::MIXDialect,
+                         memref::MemRefDialect,
+                         bufferization::BufferizationDialect>();
   target.addIllegalOp<mix::SiLUOp, mix::SigmoidOp, mix::MeanOp,
                       mix::WeightOp>(); //
   target.addLegalOp<ModuleOp>();
   RewritePatternSet patterns(&context);
+
   populateLowerCompositeOpPatterns(patterns);
+
+  // handle dynamic-load-weight
+  if (this->dynamicLoadWeight) {
+    patterns.add<WeightOpLoadTorchDynamicallyPattern>(&context);
+  } else {
+    patterns.add<WeightOpLoadTorchStaticallyPattern>(&context);
+  }
+
   if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
     signalPassFailure();
   }
@@ -214,4 +277,8 @@ void registerLowerCompositePass() { PassRegistration<LowerCompositePass>(); }
 
 std::unique_ptr<Pass> createLowerCompositePass() {
   return std::make_unique<LowerCompositePass>();
+}
+
+std::unique_ptr<Pass> createLowerCompositePass(bool dynamicLoadWeight) {
+  return std::make_unique<LowerCompositePass>(dynamicLoadWeight);
 }
