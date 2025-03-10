@@ -24,7 +24,7 @@ def calc_model(model):
         dump_model_bin(model)
     model.load_state_dict(torch.load("linear_model.bin"))
     input = torch.ones(
-        [1, 5120],
+        [1, 512],
         dtype=torch.float16,
     )
     print("weight: ", model.linear.weight)
@@ -33,7 +33,7 @@ def calc_model(model):
 
 
 if __name__ == "__main__":
-    model = LinearModel(input_size=5120, output_size=5120)
+    model = LinearModel(input_size=512, output_size=512)
     # 创建模型实例
     model.eval()
     calc_model(model)
