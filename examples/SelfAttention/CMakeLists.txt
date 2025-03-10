@@ -1,5 +1,5 @@
 add_executable(genSelfAttention
-    genSelfAttention.cpp
+    genSelfAttention1.cpp
 )
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
