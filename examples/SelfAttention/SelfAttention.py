@@ -202,11 +202,12 @@ class TelechatAttention(nn.Module):
 
         # Layer-wise attention scaling
         self.inv_norm_factor = 1.0 / math.sqrt(self.head_dim)
+        print("self.inv_norm_factor", self.inv_norm_factor)
         self.beta = 1.0
 
-        self.num_key_value_heads = self.num_heads
-        kv_projection_size = self.head_dim * self.num_key_value_heads
-        self.num_key_value_groups = self.num_heads // self.num_key_value_heads
+        # self.num_key_value_heads = self.num_heads
+        kv_projection_size = self.head_dim * self.num_heads
+        self.num_key_value_groups = self.num_heads // self.num_heads
         self.query = nn.Linear(
             self.hidden_size, self.hidden_size, bias=False, dtype=torch.float16
         )
@@ -283,11 +284,13 @@ class TelechatAttention(nn.Module):
         # print("mixed_kv_layer.shape:", mixed_kv_layer.shape)
         # print("mixed_kv_layer:", mixed_kv_layer)
         new_tensor_shape = mixed_kv_layer.size()[:-1] + (
-            self.num_key_value_heads,
+            self.num_heads,
             2 * self.head_dim,
-        )
+        )  # []
         mixed_kv_layer = mixed_kv_layer.view(*new_tensor_shape)
         (key_layer, value_layer) = self.split_tensor_along_last_dim(mixed_kv_layer, 2)
+        print("value_layer.shape:", value_layer.shape)
+        print("value_layer:", value_layer)
 
         output_size = (
             query_layer.size(1),
@@ -313,10 +316,10 @@ class TelechatAttention(nn.Module):
             seq_len += offset
 
         cos, sin = self.rotary_emb(value_layer, dtype=value_layer.dtype)
-        # print("cos.shape:", cos.shape)
-        # print("cos:", cos)
-        # print("sin.shape:", sin.shape)
-        # print("sin:", sin)
+        print("cos.shape:", cos.shape)
+        print("cos:", cos)
+        print("sin.shape:", sin.shape)
+        print("sin:", sin)
         query_layer, key_layer = apply_rotary_fn(
             query_layer, key_layer, cos, sin, offset=offset
         )
@@ -373,21 +376,21 @@ class TelechatAttention(nn.Module):
                 attention_mask,
                 torch.finfo(attention_scores.dtype).min,
             )
-            print("attn_weights.shape:", attn_weights.shape)
-            print("attn_weights:", attn_weights)
+            # print("attn_weights.shape:", attn_weights.shape)
+            # print("attn_weights:", attn_weights)
             attention_probs = F.softmax(attn_weights, dim=-1).to(
                 input_dtype
             )  ##dtype = torch.float32
-            print("attention_probs.shape:", attention_probs.shape)
-            print("attention_probs:", attention_probs)
+            # print("attention_probs.shape:", attention_probs.shape)
+            # print("attention_probs:", attention_probs)
             attention_probs = self.attention_dropout(attention_probs)
             attention_probs_reshaped = attention_probs.view(
                 bz * self.num_heads, s_query, s_key
             )
 
             value_layer = value_layer.reshape(s_key, bz * self.num_heads, dim)
-            print("value_layer.shape:", value_layer.shape)
-            print("value_layer:", value_layer)
+            # print("value_layer.shape:", value_layer.shape)
+            # print("value_layer:", value_layer)
             context_layer = torch.bmm(
                 attention_probs_reshaped, value_layer.transpose(0, 1)
             )
@@ -396,6 +399,8 @@ class TelechatAttention(nn.Module):
             context_layer = self._merge_heads(context_layer)
 
         output_tensor = self.dense(context_layer)
+        print("linearD.shape:", output_tensor.shape)
+        print("linearD:", output_tensor)
 
         output_tensor = dropout_add(
             output_tensor, residual, self.hidden_dropout, self.training
@@ -416,8 +421,8 @@ def dump_model_bin(model: TelechatAttention):
 
 
 def calc_model(model: TelechatAttention):
-    if not os.path.exists("attention_model.bin"):
-        dump_model_bin(model)
+    # if not os.path.exists("attention_model.bin"):
+    dump_model_bin(model)
     model.load_state_dict(torch.load("attention_model.bin"))
     hidden_states = torch.ones([1, 5, 5120], dtype=torch.float16)
     residual = torch.ones([1, 5, 5120], dtype=torch.float16)
