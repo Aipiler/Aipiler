@@ -129,7 +129,7 @@ void registerLowerCompositePass();
 void registerLowerPrimaryToTosaPass();
 
 // 模型参数定义
-const int max_seq_len = 40;
+const int max_seq_len = 5;
 const int hidden_size = 5120;
 const int ffn_hidden_size = 12288;
 const int n_head = 32;
@@ -138,7 +138,7 @@ const int key_value_projection_size = hidden_size * 2;
 const int key_value_projection_head_dim = key_value_projection_size / n_head;
 const int vocab_size = 120000;
 const int batch_size = 1;
-const int n_layer = 38;
+const int n_layer = 2; //  38
 
 std::string getOpName(std::string_view prefix, int idx, std::string_view name) {
   return std::string(prefix) + std::to_string(idx) + std::string(name);
@@ -181,6 +181,7 @@ auto genMLP(mlir::OpBuilder &builder, mlir::Location loc,
 std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
                                            mlir::OpBuilder &builder,
                                            Location loc) {
+  printf("genRotaryEmbedding\n");
   /* 定义一些可重用的信息 */
 
   // types:
@@ -323,27 +324,10 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
                  Location loc, Value hidden_states, Value residual,
                  Value attention_mask, int idx) {
   printf("genSelfAttn\n");
-  auto hidden_states_type =
-      mlir::dyn_cast<RankedTensorType>(hidden_states.getType());
-
-  // hidden_states dims
-  auto hidden_states_shape = hidden_states_type.getShape();
-  auto batch_size = hidden_states_shape[0];
-  // auto seq_length = hidden_states_shape[1];
-  auto hidden_size = hidden_states_shape[2];
-  auto n_head = 32;
-  auto head_dim = hidden_size / n_head;
-  auto key_value_projection_size = hidden_size * 2;
-  auto key_value_projection_head_dim = key_value_projection_size / n_head;
   /* 定义一些可重用的信息 */
 
   // types:
-  auto type_i16 = builder.getI16Type();
-  auto type_i32 = builder.getI32Type();
-  auto type_i64 = builder.getI64Type();
   auto type_f16 = builder.getF16Type();
-  auto type_f32 = builder.getF32Type();
-  auto type_f64 = builder.getF64Type();
   auto type_query_weight =
       RankedTensorType::get({hidden_size, hidden_size}, type_f16);
   auto type_key_value_weight =
@@ -359,92 +343,37 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto attr_i32_2 = IntegerAttr::get(IntegerType::get(&context, 32), 2);
   auto attr_i32_3 = IntegerAttr::get(IntegerType::get(&context, 32), 3);
 
-  /* 定义算子 */
   const std::string common = "transformer.h.";
 
-  // %arg0
-  auto query_weight = builder.create<mix::WeightOp>(
-      loc, type_query_weight,
-      getOpName(common, idx, ".self_attention.query.weight"));
+  /* 定义算子 */
 
-  // %arg1
-  auto key_value_weight = builder.create<mix::WeightOp>(
-      loc, type_key_value_weight,
-      getOpName(common, idx, ".self_attention.key_value.weight"));
+  auto linearQ = builder.create<mix::LinearOp>(
+      loc, hidden_states, getOpName(common, idx, ".self_attention.query"),
+      hidden_size, hidden_size, false, type_f16);
 
-  // %arg2
-  auto dense_weight = builder.create<mix::WeightOp>(
-      loc, type_dense_weight,
-      getOpName(common, idx, ".self_attention.dense.weight"));
+  auto reshapeQ = builder.create<mix::ReshapeOp>(
+      loc, linearQ,
+      createIntArrayAttr(context, {max_seq_len, n_head, head_dim}));
 
-  // %arg3
-  auto dense_bias = builder.create<mix::WeightOp>(
-      loc, type_dense_bias,
-      getOpName(common, idx, ".self_attention.dense.bias"));
-
-  // line 14: torch.aten.transpose.int
-  auto transpose14 = builder.create<mix::TransposeOp>(loc, hidden_states,
-                                                      attr_i32_0, attr_i32_1);
-
-  // line 16: torch.aten.t
-  auto t16 = builder.create<mix::TransposeOp>(loc, query_weight, attr_i32_0,
-                                              attr_i32_1);
-
-  // line 21: torch.aten.view
-  auto reshape21 = builder.create<mix::ReshapeOp>(
-      loc, transpose14,
-      createIntArrayAttr(context, {max_seq_len, hidden_size}));
-
-  // line 23: torch.aten.mm
-  auto matmul23 = builder.create<mix::MatMulOp>(loc, reshape21, t16);
-
-  // line 29: torch.aten.view
-  auto reshape29 = builder.create<mix::ReshapeOp>(
-      loc, matmul23,
-      createIntArrayAttr(context, {max_seq_len, batch_size, hidden_size}));
-
-  // line 36: torch.aten.view
-  auto reshape36 = builder.create<mix::ReshapeOp>(
-      loc, reshape29,
-      createIntArrayAttr(context, {max_seq_len, batch_size, n_head, head_dim}));
-
-  // line 38: torch.aten.t
-  auto t38 = builder.create<mix::TransposeOp>(loc, key_value_weight, attr_i32_0,
-                                              attr_i32_1);
-
-  // line 43: torch.aten.view
-  auto reshape43 = builder.create<mix::ReshapeOp>(
-      loc, transpose14,
-      createIntArrayAttr(context, {max_seq_len, hidden_size}));
-
-  // line 45: torch.aten.mm
-  auto matmul45 = builder.create<mix::MatMulOp>(loc, reshape43, t38);
-
-  // line 51: torch.aten.view
-  auto reshape51 = builder.create<mix::ReshapeOp>(
-      loc, matmul45,
-      createIntArrayAttr(context,
-                         {max_seq_len, batch_size, key_value_projection_size}));
+  auto linearKV = builder.create<mix::LinearOp>(
+      loc, hidden_states, getOpName(common, idx, ".self_attention.key_value"),
+      hidden_size, key_value_projection_size, false, type_f16);
 
   // line 58: torch.aten.view
-  auto reshape58 = builder.create<mix::ReshapeOp>(
-      loc, reshape51,
-      createIntArrayAttr(context, {max_seq_len, batch_size, n_head,
-                                   key_value_projection_head_dim}));
+  auto reshapeKV = builder.create<mix::ReshapeOp>(
+      loc, linearKV,
+      createIntArrayAttr(context,
+                         {max_seq_len, n_head, key_value_projection_head_dim}));
 
   // line 64: torch.aten.slice.Tensor
-  auto slice64 = builder.create<mix::SliceOp>(loc, reshape58, 3, 0, 160, 1);
+  auto sliceK = builder.create<mix::SliceOp>(loc, reshapeKV, 2, 0, 160, 1);
+
+  //   auto reshapeK = builder.create<mix::ReshapeOp>(
+  //       loc, sliceK, createIntArrayAttr(context, {max_seq_len,
+  //       hidden_size}));
 
   // line 70: torch.aten.slice.Tensor
-  auto slice70 = builder.create<mix::SliceOp>(loc, reshape58, 3, 160, 320, 1);
-
-  // line 76: torch.aten.view
-  auto reshape76 = builder.create<mix::ReshapeOp>(
-      loc, reshape36, createIntArrayAttr(context, {max_seq_len, n_head, -1}));
-
-  // line 82: torch.aten.view
-  auto reshape82 = builder.create<mix::ReshapeOp>(
-      loc, slice64, createIntArrayAttr(context, {max_seq_len, n_head, -1}));
+  auto sliceV = builder.create<mix::SliceOp>(loc, reshapeKV, 2, 160, 320, 1);
 
   // 下面是RotaryEmbedding 的代码
 
@@ -452,21 +381,14 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
 
   /* 下面是apply_rotary_pos_emb_torch中的代码 */
 
-  // line 201: torch.aten.slice.Tensor
-  auto slice201 = builder.create<mix::SliceOp>(loc, cos, 0, 0, max_seq_len, 1);
-
-  // line 207: torch.aten.slice.Tensor
-  auto slice207 = builder.create<mix::SliceOp>(loc, sin, 0, 0, max_seq_len, 1);
-
   // line 209: torch.aten.mul.Tensor
-  auto mul209 = builder.create<mix::MulOp>(loc, reshape76, slice201);
+  auto mul209 = builder.create<mix::MulOp>(loc, reshapeQ, cos);
 
   // line 215: torch.aten.slice.Tensor
-  auto slice215 = builder.create<mix::SliceOp>(loc, reshape76, 2, 0, 80, 1);
+  auto slice215 = builder.create<mix::SliceOp>(loc, reshapeQ, 2, 0, 80, 1);
 
   // line 221: torch.aten.slice.Tensor
-  auto slice221 =
-      builder.create<mix::SliceOp>(loc, reshape76, 2, 80, INT32_MAX, 1);
+  auto slice221 = builder.create<mix::SliceOp>(loc, reshapeQ, 2, 80, 160, 1);
 
   // line 223: torch.aten.neg
   auto neg223 = builder.create<mix::NegOp>(loc, slice221);
@@ -477,20 +399,23 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, tmp227, IntegerAttr::get(IntegerType::get(&context, 64), 2));
 
   // line 229: torch.aten.mul.Tensor
-  auto mul229 = builder.create<mix::MulOp>(loc, cat227, slice207);
+  auto mul229 = builder.create<mix::MulOp>(loc, cat227, reshapeQ);
 
   // line 232: torch.aten.add.Tensor
   auto add232 = builder.create<mix::AddOp>(loc, mul209, mul229);
 
+  // 以上是：(q * cos) + (rotate_half(q) * sin)
+
+  // 下面是：(k * cos) + (rotate_half(k) * sin)
+
   // line 234: torch.aten.mul.Tensor
-  auto mul234 = builder.create<mix::MulOp>(loc, reshape82, slice201);
+  auto mul234 = builder.create<mix::MulOp>(loc, sliceK, cos);
 
   // line 240: torch.aten.slice.Tensor
-  auto slice240 = builder.create<mix::SliceOp>(loc, reshape82, 2, 0, 80, 1);
+  auto slice240 = builder.create<mix::SliceOp>(loc, sliceK, 2, 0, 80, 1);
 
   // line 246: torch.aten.slice.Tensor
-  auto slice246 =
-      builder.create<mix::SliceOp>(loc, reshape82, 2, 80, INT32_MAX, 1);
+  auto slice246 = builder.create<mix::SliceOp>(loc, sliceK, 2, 80, 160, 1);
 
   // line 248: torch.aten.neg
   auto neg248 = builder.create<mix::NegOp>(loc, slice246);
@@ -501,160 +426,109 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, tmp252, IntegerAttr::get(IntegerType::get(&context, 64), 2));
 
   // line 254: torch.aten.mul.Tensor
-  auto mul254 = builder.create<mix::MulOp>(loc, cat252, slice207);
+  auto mul254 = builder.create<mix::MulOp>(loc, cat252, sliceK);
 
   // line 257: torch.aten.add.Tensor
   auto add257 = builder.create<mix::AddOp>(loc, mul234, mul254);
 
   /* 上面是apply_rotary_pos_emb_torch中的代码 */
 
-  // line 267: torch.aten.view
-  auto reshape267 = builder.create<mix::ReshapeOp>(
-      loc, add232, createIntArrayAttr(context, {max_seq_len, 1, n_head, 160}));
+  auto MNHQ = builder.create<mix::ReshapeOp>(
+      loc, add232,
+      createIntArrayAttr(context, {max_seq_len, n_head, head_dim}));
 
-  // line 274: torch.aten.view
-  auto reshape274 = builder.create<mix::ReshapeOp>(
-      loc, add257, createIntArrayAttr(context, {max_seq_len, 1, n_head, 160}));
-
-  // line 280: torch.aten.view
-  auto reshape280 = builder.create<mix::ReshapeOp>(
-      loc, reshape267, createIntArrayAttr(context, {max_seq_len, n_head, 160}));
-
-  // line 286: torch.aten.view
-  auto reshape286 = builder.create<mix::ReshapeOp>(
-      loc, reshape274, createIntArrayAttr(context, {max_seq_len, n_head, 160}));
+  auto MNHK = builder.create<mix::ReshapeOp>(
+      loc, add257,
+      createIntArrayAttr(context, {max_seq_len, n_head, head_dim}));
 
   // line 290: torch.aten.transpose.int
   auto transpose290 =
-      builder.create<mix::TransposeOp>(loc, reshape280, attr_i32_0, attr_i32_1);
+      builder.create<mix::TransposeOp>(loc, MNHQ, attr_i32_0, attr_i32_1);
 
   // line 294: torch.aten.transpose.int
   auto transpose294 =
-      builder.create<mix::TransposeOp>(loc, reshape286, attr_i32_0, attr_i32_1);
+      builder.create<mix::TransposeOp>(loc, MNHK, attr_i32_0, attr_i32_1);
 
   // line 298: torch.aten.transpose.int
   auto transpose298 = builder.create<mix::TransposeOp>(loc, transpose294,
                                                        attr_i32_1, attr_i32_2);
 
-  // line 301: torch.aten.unsqueeze
-  auto unsqueeze301 =
-      builder.create<mix::UnsqueezeOp>(loc, transpose290, attr_i32_3);
-
-  // line 308: torch.aten.permute
-  auto permute308 = builder.create<mix::PermuteOp>(
-      loc, unsqueeze301, createIntArrayAttr(context, {0, 1, 3, 2}));
-
-  // line 311: torch.aten.unsqueeze
-  auto unsqueeze311 =
-      builder.create<mix::UnsqueezeOp>(loc, transpose298, attr_i32_3);
-
-  // line 318: torch.aten.permute
-  auto permute318 = builder.create<mix::PermuteOp>(
-      loc, unsqueeze311, createIntArrayAttr(context, {0, 3, 2, 1}));
-
-  // line 325: torch.aten.permute
-  auto permute325 = builder.create<mix::PermuteOp>(
-      loc, permute308, createIntArrayAttr(context, {0, 1, 3, 2}));
-
-  // line 331: torch.aten.view
-  auto reshape331 = builder.create<mix::ReshapeOp>(
-      loc, permute325, createIntArrayAttr(context, {n_head, max_seq_len, 160}));
-
-  // line 338: torch.aten.permute
-  auto permute338 = builder.create<mix::PermuteOp>(
-      loc, permute318, createIntArrayAttr(context, {0, 3, 2, 1}));
-
-  // line 344: torch.aten.view
-  auto reshape344 = builder.create<mix::ReshapeOp>(
-      loc, permute338, createIntArrayAttr(context, {n_head, 160, max_seq_len}));
-
   // line 346: torch.aten.bmm
-  auto bmm346 = builder.create<mix::BatchMatMulOp>(loc, reshape331, reshape344);
-
-  // line 353: torch.aten.view
-  auto reshape353 = builder.create<mix::ReshapeOp>(
-      loc, bmm346,
-      createIntArrayAttr(context, {n_head, max_seq_len, 1, max_seq_len}));
-
-  // line 360: torch.aten.permute
-  auto permute360 = builder.create<mix::PermuteOp>(
-      loc, reshape353, createIntArrayAttr(context, {0, 1, 3, 2}));
-
-  // line 366: torch.aten.view
-  auto reshape366 = builder.create<mix::ReshapeOp>(
-      loc, permute360,
-      createIntArrayAttr(context, {n_head, max_seq_len, max_seq_len}));
+  auto bmm346 =
+      builder.create<mix::BatchMatMulOp>(loc, transpose290, transpose298);
 
   // line 368: torch.constant.float
   auto scalar368 = FloatAttr::get(type_f16, 0.079056941504209485);
   auto constant368 = builder.create<mix::ConstantOp>(loc, scalar368);
 
   // line 370: torch.aten.mul.Scalar
-  auto mul370 = builder.create<mix::MulOp>(loc, reshape366, constant368);
-
-  // line 377: torch.aten.view
-  auto reshape377 = builder.create<mix::ReshapeOp>(
-      loc, mul370,
-      createIntArrayAttr(context, {1, n_head, max_seq_len, max_seq_len}));
+  auto mul370 = builder.create<mix::MulOp>(loc, bmm346, constant368);
 
   // line 380: torch.aten.masked_fill.Scalar
   auto constant380 = builder.create<mix::ConstantOp>(
-      loc, builder.getFloatAttr(type_f16, -3.4028234663852886E+38));
+      loc,
+      builder.getFloatAttr(type_f16, llvm::getAPFloatFromSize(-65504.0f, 16)));
   auto masked_fill380 = builder.create<mix::MaskedFillOp>(
-      loc, reshape377, attention_mask, constant380);
+      loc, mul370, attention_mask, constant380);
 
   // line 384: torch.aten._softmax
   auto softmax384 =
       builder.create<mix::SoftmaxOp>(loc, masked_fill380, attr_i32_n1);
 
-  // line 393: torch.aten.view
-  auto reshape393 = builder.create<mix::ReshapeOp>(
-      loc, softmax384,
-      createIntArrayAttr(context, {n_head, max_seq_len, max_seq_len}));
-
-  // line 399: torch.aten.view
-  auto reshape399 = builder.create<mix::ReshapeOp>(
-      loc, slice70, createIntArrayAttr(context, {max_seq_len, n_head, 160}));
+  // auto cast_masked_fill380 = builder.create<tensor::CastOp>(
+  //     loc, UnrankedTensorType::get(type_f16), masked_fill380);
+  // builder.create<func::CallOp>(loc, printMemRefFunc,
+  //                              ValueRange{cast_masked_fill380});
 
   // line 403: torch.aten.transpose.int
   auto transpose403 =
-      builder.create<mix::TransposeOp>(loc, reshape399, attr_i32_0, attr_i32_1);
+      builder.create<mix::TransposeOp>(loc, sliceV, attr_i32_0, attr_i32_1);
+
+  // auto cast_sliceV = builder.create<tensor::CastOp>(
+  //     loc, UnrankedTensorType::get(type_f16), sliceV);
+  // builder.create<func::CallOp>(loc, printMemRefFunc,
+  // ValueRange{cast_sliceV});
 
   // line 405: torch.aten.bmm
   auto bmm405 =
-      builder.create<mix::BatchMatMulOp>(loc, reshape393, transpose403);
+      builder.create<mix::BatchMatMulOp>(loc, softmax384, transpose403);
 
-  // line 412: torch.aten.view
-  auto reshape412 = builder.create<mix::ReshapeOp>(
-      loc, bmm405, createIntArrayAttr(context, {1, n_head, max_seq_len, 160}));
+  // auto cast_softmax384 = builder.create<tensor::CastOp>(
+  //     loc, UnrankedTensorType::get(type_f16), softmax384);
+  // builder.create<func::CallOp>(loc, printMemRefFunc,
+  //                              ValueRange{cast_softmax384});
+
+  // 下面是merge_heads
+
+  //   auto cast_reshape399 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(type_f16), reshape399);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //                                ValueRange{cast_reshape399});
 
   // line 419: torch.aten.permute
   auto permute419 = builder.create<mix::PermuteOp>(
-      loc, reshape412, createIntArrayAttr(context, {0, 2, 1, 3}));
+      loc, bmm405, createIntArrayAttr(context, {1, 0, 2}));
+
+  // auto cast_bmm405 = builder.create<tensor::CastOp>(
+  //     loc, UnrankedTensorType::get(type_f16), bmm405);
+  // builder.create<func::CallOp>(loc, printMemRefFunc,
+  // ValueRange{cast_bmm405});
 
   // line 428: torch.aten.view
   auto reshape428 = builder.create<mix::ReshapeOp>(
-      loc, permute419,
-      createIntArrayAttr(context, {1, max_seq_len, hidden_size}));
+      loc, permute419, createIntArrayAttr(context, {max_seq_len, hidden_size}));
 
-  // line 433: torch.aten.view
-  auto reshape433 = builder.create<mix::ReshapeOp>(
-      loc, reshape428, createIntArrayAttr(context, {max_seq_len, hidden_size}));
-
-  // line 435: torch.aten.transpose.int
-  auto transpose435 = builder.create<mix::TransposeOp>(loc, dense_weight,
-                                                       attr_i32_0, attr_i32_1);
-
-  // line 439: torch.aten.addmm
-  auto matmul439 = builder.create<mix::MatMulOp>(loc, reshape433, transpose435);
-  auto add439 = builder.create<mix::AddOp>(loc, matmul439, dense_bias);
-
-  // line 445: torch.aten.view
-  auto reshape445 = builder.create<mix::ReshapeOp>(
-      loc, add439, createIntArrayAttr(context, {1, max_seq_len, hidden_size}));
+  auto linearD = builder.create<mix::LinearOp>(
+      loc, reshape428, getOpName(common, idx, ".self_attention.dense"),
+      hidden_size, hidden_size, true, type_f16);
 
   // line 451: torch.aten.add.Tensor
-  auto add451 = builder.create<mix::MulOp>(loc, residual, reshape445);
+  auto add451 = builder.create<mix::AddOp>(loc, residual, linearD);
+
+  // auto cast_linearD = builder.create<tensor::CastOp>(
+  //     loc, UnrankedTensorType::get(type_f16), linearD);
+  // builder.create<func::CallOp>(loc, printMemRefFunc,
+  // ValueRange{cast_linearD});
 
   return add451;
 }
@@ -803,10 +677,10 @@ auto genMask(MLIRContext &context, OpBuilder &builder, Location loc,
 
   auto unsqueeze81 = builder.create<mix::UnsqueezeOp>(loc, cat3, attr_i32_0);
 
-  auto unsqueeze84 =
-      builder.create<mix::UnsqueezeOp>(loc, unsqueeze81, attr_i32_0);
+  //   auto unsqueeze84 =
+  //       builder.create<mix::UnsqueezeOp>(loc, unsqueeze81, attr_i32_0);
 
-  return unsqueeze84;
+  return unsqueeze81;
 }
 
 auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
@@ -815,11 +689,9 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   /* Types */
   auto F16Type = builder.getF16Type();
   auto I32Type = builder.getI32Type();
-  auto BoolType = builder.getI1Type();
-  auto input_ids_type = RankedTensorType::get({1, max_seq_len}, I32Type);
+  auto input_ids_type = RankedTensorType::get({max_seq_len}, I32Type);
 
-  auto output_type =
-      RankedTensorType::get({1, max_seq_len, vocab_size}, F16Type);
+  auto output_type = RankedTensorType::get({max_seq_len, vocab_size}, F16Type);
   auto functionTy = builder.getFunctionType({input_ids_type}, {output_type});
 
   // 创建func.func
@@ -862,8 +734,6 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   builder.setInsertionPointToEnd(theModule.getBody());
   auto loc = theModule.getLoc();
   auto elementType = builder.getF16Type();
-  auto input_ids_type = RankedTensorType::get({1, max_seq_len}, elementType);
-  auto output_type = RankedTensorType::get({1, max_seq_len}, elementType);
 
   // printMemrefF16
   auto printInputType = UnrankedTensorType::get(elementType);
@@ -884,18 +754,17 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   builder.setInsertionPointToEnd(mainbody);
 
   auto dense94 = DenseElementsAttr::get(
-      RankedTensorType::get({1, max_seq_len}, builder.getI32Type()),
-      {int32_t(1)});
+      RankedTensorType::get({max_seq_len}, builder.getI32Type()), {int32_t(1)});
   auto input_ids = builder.create<mix::ConstantOp>(loc, dense94);
 
   auto res = builder.create<func::CallOp>(loc, telechat, ValueRange{input_ids});
 
-  auto castCos =
+  auto castResult =
       builder.create<tensor::CastOp>(loc, printInputType, res->getResult(0));
   //   auto castSin =
   //       builder.create<tensor::CastOp>(loc, printInputType,
   //       res->getResult(1));
-  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castCos});
+  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castResult});
   //   builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castSin});
   builder.create<func::ReturnOp>(loc);
 }
@@ -1026,11 +895,12 @@ int main() {
   auto theModule = mlir::ModuleOp::create(loc);
   generateCode(theModule, builder, context);
 
-  mix::utils::load_model(std::vector<std::string>{"./pytorch_model_00001-of-00004.bin",
-                                      "./pytorch_model_00002-of-00004.bin",
-                                      "./pytorch_model_00003-of-00004.bin",
-                                      "./pytorch_model_00004-of-00004.bin"},
-             theModule, builder, builder.getF16Type());
+  mix::utils::load_model(
+      std::vector<std::string>{"./pytorch_model_00001-of-00004.bin",
+                               "./pytorch_model_00002-of-00004.bin",
+                               "./pytorch_model_00003-of-00004.bin",
+                               "./pytorch_model_00004-of-00004.bin"},
+      theModule, builder, builder.getF16Type());
 
   mutil::log(mutil::LogLevel::INFO, "Start pass.");
 

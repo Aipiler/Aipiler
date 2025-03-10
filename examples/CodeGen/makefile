@@ -28,7 +28,7 @@ print.o: print.cpp
 run_Telechat: Telechat print.o
 	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./Telechat
 
-# LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:../../thirdparty/llvm/build/lib ./RotaryEmbedding
+# LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:../../thirdparty/llvm/build/lib ./Telechat
 
 Telechat-run:
 	@${MIX_OPT}  ./telechat.mlir \
