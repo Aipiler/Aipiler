@@ -138,8 +138,8 @@ ArrayAttr createIntArrayAttr(MLIRContext &context,
 
 std::pair<Value, Value> genRotaryEmbedding(mlir::MLIRContext &context,
                                            mlir::OpBuilder &builder,
-                                           Location loc,
-                                           mlir::func::FuncOp printMemRefFunc) {
+                                           Location loc) {
+  printf("genRotaryEmbedding\n");
   /* 定义一些可重用的信息 */
 
   // types:
@@ -302,8 +302,7 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   auto body = graph0.addEntryBlock();
   builder.setInsertionPointToEnd(body);
   auto loc = graph0->getLoc();
-  auto [cos, sin] =
-      genRotaryEmbedding(context, builder, graph0->getLoc(), printMemRefFunc);
+  auto [cos, sin] = genRotaryEmbedding(context, builder, graph0->getLoc());
 
   builder.create<func::ReturnOp>(graph0->getLoc(), ValueRange{cos, sin});
 
