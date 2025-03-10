@@ -7,7 +7,9 @@
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -183,22 +185,44 @@ public:
     auto data_loc = op.getParamLoc();
     auto loc = op->getLoc();
     std::vector<double> result;
-    auto theModule = op->getParentOfType<ModuleOp>();
     auto data_loc_str = data_loc.str();
     std::replace(data_loc_str.begin(), data_loc_str.end(), '.', '_');
+    auto theModule = op->getParentOfType<ModuleOp>();
+    // add global external symbol
     auto record = rewriter.saveInsertionPoint();
     rewriter.setInsertionPointToStart(theModule.getBody());
-    auto globalVarType =
-        bufferization::getMemRefTypeWithStaticIdentityLayout(returnType);
-    rewriter.create<memref::GlobalOp>(
-        loc, data_loc_str, rewriter.getStringAttr("public"),
-        cast<MemRefType>(globalVarType), nullptr, false, IntegerAttr{});
+    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+    auto global_data = rewriter.create<LLVM::GlobalOp>(
+        loc, ptrType, false, LLVM::linkage::Linkage::External, data_loc_str,
+        Attribute{});
+
     rewriter.restoreInsertionPoint(record);
-    auto globalVarMemref =
-        rewriter.create<memref::GetGlobalOp>(loc, globalVarType, data_loc_str);
-    auto globalVarTensor = rewriter.create<bufferization::ToTensorOp>(
-        loc, returnType, globalVarMemref, true);
-    rewriter.replaceOp(op, globalVarTensor);
+
+    // get pointer of global memref pointer
+    auto p_p_data = rewriter.create<LLVM::AddressOfOp>(loc, global_data);
+    auto p_data = rewriter.create<LLVM::LoadOp>(loc, ptrType, p_p_data);
+
+    // get memref from memref pointer
+    auto i64ty = rewriter.getI64Type();
+    auto i64ArrayType =
+        LLVM::LLVMArrayType::get(i64ty, returnType.getShape().size());
+    // types needs tobe modified by returnType
+    auto memrefStructType = LLVM::LLVMStructType::getLiteral(
+        rewriter.getContext(),
+        ArrayRef<Type>{ptrType, ptrType, i64ty, i64ArrayType, i64ArrayType});
+    // ptr --> llvm.struct
+    auto struct_data =
+        rewriter.create<LLVM::LoadOp>(loc, memrefStructType, p_data);
+    auto memrefType =
+        MemRefType::get(returnType.getShape(), returnType.getElementType(),
+                        MemRefLayoutAttrInterface{}, nullptr);
+    // llvm.struct --> memref
+    auto memref_data = rewriter.create<UnrealizedConversionCastOp>(
+        loc, TypeRange{memrefType}, ValueRange{struct_data});
+    // memref --> tensor
+    auto tensor_data = rewriter.create<bufferization::ToTensorOp>(
+        loc, returnType, memref_data->getResult(0), true);
+    rewriter.replaceOp(op, tensor_data);
     return success();
   }
 };
@@ -236,9 +260,9 @@ public:
   void runOnOperation() override;
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry
-        .insert<func::FuncDialect, arith::ArithDialect, index::IndexDialect,
-                memref::MemRefDialect, bufferization::BufferizationDialect>();
+    registry.insert<func::FuncDialect, arith::ArithDialect, index::IndexDialect,
+                    memref::MemRefDialect, bufferization::BufferizationDialect,
+                    LLVM::LLVMDialect>();
   }
 };
 } // namespace
@@ -251,12 +275,12 @@ void LowerCompositePass::runOnOperation() {
                << (dynamicLoadWeight ? "true" : "false") << "\n";
 
   ConversionTarget target(context);
-  target.addLegalDialect<arith::ArithDialect, mix::MIXDialect,
-                         memref::MemRefDialect,
-                         bufferization::BufferizationDialect>();
+  target.addLegalDialect<
+      arith::ArithDialect, mix::MIXDialect, memref::MemRefDialect,
+      bufferization::BufferizationDialect, LLVM::LLVMDialect>();
   target.addIllegalOp<mix::SiLUOp, mix::SigmoidOp, mix::MeanOp,
                       mix::WeightOp>(); //
-  target.addLegalOp<ModuleOp>();
+  target.addLegalOp<ModuleOp, UnrealizedConversionCastOp>();
   RewritePatternSet patterns(&context);
 
   populateLowerCompositeOpPatterns(patterns);

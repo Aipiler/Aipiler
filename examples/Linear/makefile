@@ -17,7 +17,7 @@ linear: launch.o linear.o
 # 	python linear.py
 # 	PYTHONPATH=${AIPILER_PY_PATH} ../../build/bin/genLinear
 
-run_linear: linear
+run_linear: 
 	PYTHONPATH=${AIPILER_PY_PATH}:${PYTHONPATH} LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB}:${AIPILER_LIB} ./linear
 
 clean:

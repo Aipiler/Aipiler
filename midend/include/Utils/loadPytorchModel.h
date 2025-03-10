@@ -48,6 +48,13 @@ void load_model(const std::vector<std::string> model_paths,
                 mlir::Type dtype);
 
 // load model weight from weight and initialize pointer
+// used for load dynamicly
+/*
+pseudo:
+for loc, memory_block in param_and_loc:
+  data = model_path.load(loc)
+  memory_block.write(data)
+*/
 template <typename T>
 void load_model(const std::vector<std::string> model_paths,
                 std::map<std::string, T *> param_and_loc);

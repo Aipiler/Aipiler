@@ -97,7 +97,7 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   printfunc.setPrivate();
 
   // Graph0
-  auto inputType = RankedTensorType::get({1, 5120}, builder.getF16Type());
+  auto inputType = RankedTensorType::get({1, 512}, builder.getF16Type());
   //   auto resultType
   auto functionTy = builder.getFunctionType({inputType}, {});
   auto graph0 = builder.create<func::FuncOp>(loc, "graph0", functionTy);
@@ -106,7 +106,7 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   builder.setInsertionPointToEnd(body);
 
   auto input = graph0.getArgument(0);
-  auto linear0 = builder.create<mix::LinearOp>(loc, input, "linear", 5120, 5120,
+  auto linear0 = builder.create<mix::LinearOp>(loc, input, "linear", 512, 512,
                                                true, builder.getF16Type());
 
   auto returnType = linear0.getType();
@@ -114,34 +114,39 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
   builder.create<func::ReturnOp>(loc, ValueRange{linear0});
 
   // Main
-  builder.setInsertionPointToEnd(theModule.getBody());
-  auto mainfunc = builder.create<func::FuncOp>(loc, "call_graph0",
-                                               builder.getFunctionType({}, {}));
-  mainfunc.setPrivate();
-  auto mainbody = mainfunc.addEntryBlock();
-  builder.setInsertionPointToEnd(mainbody);
+  // builder.setInsertionPointToEnd(theModule.getBody());
+  // auto mainfunc = builder.create<func::FuncOp>(
+  //     loc, "main", builder.getFunctionType({}, {builder.getI32Type()}));
+  // mainfunc.setPrivate();
+  // auto mainbody = mainfunc.addEntryBlock();
+  // builder.setInsertionPointToEnd(mainbody);
 
-  SmallVector<Attribute> inputdata;
-  for (int i = 0; i < 5120; i++) {
-    inputdata.push_back(mlir::FloatAttr::get(builder.getF16Type(), float(1)));
-  }
+  // SmallVector<Attribute> inputdata;
+  // for (int i = 0; i < 512; i++) {
+  //   inputdata.push_back(mlir::FloatAttr::get(builder.getF16Type(),
+  //   float(1)));
+  // }
 
-  auto argAttr = DenseElementsAttr::get(inputType, inputdata);
+  // auto argAttr = DenseElementsAttr::get(inputType, inputdata);
 
-  auto arg0 = builder.create<arith::ConstantOp>(loc, argAttr);
-  auto call0 = builder.create<func::CallOp>(loc, graph0, ValueRange{arg0});
-  auto cast =
-      builder.create<tensor::CastOp>(loc, printInputType, call0->getResult(0));
-  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
-  // print bias
-  // auto biasType = MemRefType::get(ArrayRef<int64_t>{5},
-  // builder.getF32Type()); auto bias = builder.create<memref::GetGlobalOp>(loc,
-  // biasType, "linear_bias"); auto biasTensor =
-  //     builder.create<bufferization::ToTensorOp>(loc, biasType, bias, true);
-  // auto cast1 = builder.create<tensor::CastOp>(loc, printInputType,
-  //                                             biasTensor->getResult(0));
-  // builder.create<func::CallOp>(loc, printfunc, ValueRange{cast1});
-  builder.create<func::ReturnOp>(loc);
+  // auto arg0 = builder.create<arith::ConstantOp>(loc, argAttr);
+  // auto call0 = builder.create<func::CallOp>(loc, graph0, ValueRange{arg0});
+  // auto cast =
+  //     builder.create<tensor::CastOp>(loc, printInputType,
+  //     call0->getResult(0));
+  // builder.create<func::CallOp>(loc, printfunc, ValueRange{cast});
+  // // print bias
+  // // auto biasType = MemRefType::get(ArrayRef<int64_t>{5},
+  // // builder.getF32Type()); auto bias =
+  // builder.create<memref::GetGlobalOp>(loc,
+  // // biasType, "linear_bias"); auto biasTensor =
+  // //     builder.create<bufferization::ToTensorOp>(loc, biasType, bias,
+  // true);
+  // // auto cast1 = builder.create<tensor::CastOp>(loc, printInputType,
+  // //                                             biasTensor->getResult(0));
+  // // builder.create<func::CallOp>(loc, printfunc, ValueRange{cast1});
+  // auto c0 = builder.create<arith::ConstantIntOp>(loc, 0, 32);
+  // builder.create<func::ReturnOp>(loc, mlir::ValueRange{c0});
 }
 
 int main() {
@@ -175,35 +180,14 @@ int main() {
 
   if (!DynamicLoadWeight)
     mix::utils::load_model("./linear_model.bin", theModule, builder,
-                           builder.getF32Type());
+                           builder.getF16Type());
 
   mlir::PassManager pm(&context);
-
-  // "builtin.module( \
-// 	lower-mix-module, \
-// 	lower-mix-composite, \
-// 	lower-mix-primary-to-tosa, \
-// 	func.func( \
-// 		tosa-to-linalg-named, \
-// 		tosa-to-linalg, \
-// 		tosa-to-tensor \
-// 	), \
-// 	empty-tensor-to-alloc-tensor, \
-// 	one-shot-bufferize{bufferize-function-boundaries}, \
-// 	convert-linalg-to-loops, \
-// 	buffer-deallocation-pipeline, \
-// 	expand-strided-metadata, \
-// 	lower-affine, \
-// 	finalize-memref-to-llvm, \
-// 	convert-math-to-llvm, \
-// 	convert-scf-to-cf, \
-// 	convert-cf-to-llvm, \
-// 	convert-func-to-llvm, \
-// 	reconcile-unrealized-casts)"
 
   pm.addPass(createLowerModulePass());
   pm.addPass(createLowerCompositePass(DynamicLoadWeight));
   pm.addPass(createLowerPrimaryToTosa());
+
   pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToLinalgNamed());
   pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToLinalg());
   pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToTensor());
@@ -229,10 +213,11 @@ int main() {
     return 4;
   }
 
-  mix::utils::CompileUtils util(theModule, "linear",
-                                {mix::utils::CompileUtils::TARGET::MLIR,
-                                 mix::utils::CompileUtils::TARGET::LLVMIR,
-                                 mix::utils::CompileUtils::TARGET::OBJECT});
+  mix::utils::CompileUtils util(
+      theModule, "linear",
+      std::set{mix::utils::CompileUtils::TARGET::MLIR,
+               mix::utils::CompileUtils::TARGET::LLVMIR,
+               mix::utils::CompileUtils::TARGET::OBJECT});
   util.compile();
   return 0;
 }
