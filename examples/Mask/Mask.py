@@ -66,12 +66,12 @@ def _prepare_attn_mask(
 def compute_mask():
 
     # 创建attention_mask
-    attention_mask = torch.ones((1, 40))
+    attention_mask = torch.ones((1, 10), dtype=torch.bool)
 
     causal_mask = _prepare_attn_mask(
         attention_mask,
-        input_shape=(1, 4),
-        past_key_values_length=0,
+        input_shape=(1, 7),
+        past_key_values_length=3,
     )
     return causal_mask
 
