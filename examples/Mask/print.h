@@ -1,0 +1,1 @@
+extern "C" void _mlir_ciface_printMemrefI1(RankedMemRefType<bool, 3> *in);

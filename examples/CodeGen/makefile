@@ -19,14 +19,14 @@ MTRIPLE := x86_64-apple-darwin
 endif
 
 # cd ../../build && ninja
-Telechat: print.o
+Telechat: print.o ../../build/bin/genTelechat
 	PYTHONPATH=${AIPILER_PY_PATH} ../../build/bin/genTelechat
 
 print.o: print.cpp
 	g++ $^ -c -o $@
 
 run_Telechat: Telechat print.o
-	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./Telechat
+	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./Telechat > mlir.log
 
 # LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:../../thirdparty/llvm/build/lib ./Telechat
 

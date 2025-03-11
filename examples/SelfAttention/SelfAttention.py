@@ -344,6 +344,11 @@ class TelechatAttention(nn.Module):
         query_layer = query_layer.reshape((s_query, bz, head, dim))
         key_layer = key_layer.reshape((s_key, bz, head, dim))
 
+        print("MNHQ.shape:", query_layer.shape)
+        print("MNHQ:", query_layer)
+        print("MNHK.shape:", key_layer.shape)
+        print("MNHK:", key_layer)
+
         if self.config.flash_attn:
             q, k, v = [
                 rearrange(x, "s b ... -> b s ...").contiguous()
@@ -358,13 +363,16 @@ class TelechatAttention(nn.Module):
             query_layer = query_layer.reshape(s_query, bz * self.num_heads, dim)
             # [sk, b, np, hn] -> [sk, b * np, hn]
             key_layer = key_layer.reshape(s_key, bz * self.num_heads, dim)
-            matmul_result = self.inv_norm_factor * torch.einsum(
+            matmul_result = torch.einsum(
                 "bik,bkj->bij",
                 query_layer.transpose(0, 1),
                 key_layer.transpose(0, 1).transpose(1, 2),
             )
-            # print("matmul_result.shape:", matmul_result.shape)
-            # print("matmul_result:", matmul_result)
+            print("bmm346.shape:", matmul_result.shape)
+            print("bmm346:", matmul_result)
+            matmul_result = self.inv_norm_factor * matmul_result
+            print("mul370.shape:", matmul_result.shape)
+            print("mul370:", matmul_result)
 
             attention_scores = matmul_result.view(bz, self.num_heads, s_query, s_key)
 
@@ -376,13 +384,13 @@ class TelechatAttention(nn.Module):
                 attention_mask,
                 torch.finfo(attention_scores.dtype).min,
             )
-            # print("attn_weights.shape:", attn_weights.shape)
-            # print("attn_weights:", attn_weights)
+            print("masked_fill.shape:", attn_weights.shape)
+            print("masked_fill:", attn_weights)
             attention_probs = F.softmax(attn_weights, dim=-1).to(
                 input_dtype
             )  ##dtype = torch.float32
-            # print("attention_probs.shape:", attention_probs.shape)
-            # print("attention_probs:", attention_probs)
+            print("softmax.shape:", attention_probs.shape)
+            print("softmax:", attention_probs)
             attention_probs = self.attention_dropout(attention_probs)
             attention_probs_reshaped = attention_probs.view(
                 bz * self.num_heads, s_query, s_key
@@ -426,7 +434,7 @@ def calc_model(model: TelechatAttention):
     model.load_state_dict(torch.load("attention_model.bin"))
     hidden_states = torch.ones([1, 5, 5120], dtype=torch.float16)
     residual = torch.ones([1, 5, 5120], dtype=torch.float16)
-    attention_mask = torch.ones([1, 1, 5, 5], dtype=torch.bool)
+    attention_mask = torch.zeros([1, 1, 5, 5], dtype=torch.bool)
     model = model.half()
     model(hidden_states, residual, attention_mask)
     # print("output:", model(hidden_states, residual, attention_mask))

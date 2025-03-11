@@ -1,12 +1,16 @@
-MIX_OPT := ../../build/bin/mix-opt
-MLIR_OPT := ../../thirdparty/llvm/build/bin/mlir-opt
+.PHONY: clean Mask
+MLIR_LIB := ../../thirdparty/llvm/build/lib
+AIPILER_PY_PATH := ../../python
 
+print.o: print.cpp
+	g++ $^ -c -o $@
 
-# TODO: add lower pass for self-attention op
-lower-self-attention:
-	@${MIX_OPT} ./self_attention.mlir -o ./log.mlir
+Mask: ../../build/bin/genMask print.o
+	python Mask.py > log
+	PYTHONPATH=../../python ../../build/bin/genMask
 
-.PHONY: clean
+run: Mask
+	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:"../../thirdparty/llvm/build/lib" ./Mask > mlir.log
 
 clean:
-	rm log.mlir
+	rm -rf *.mlir *.ll Mask *.bin
