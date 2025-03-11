@@ -312,13 +312,6 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
 
   // types:
   auto type_f16 = builder.getF16Type();
-  auto type_query_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, type_f16);
-  auto type_key_value_weight =
-      RankedTensorType::get({hidden_size * 2, hidden_size}, type_f16);
-  auto type_dense_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, type_f16);
-  auto type_dense_bias = RankedTensorType::get({hidden_size}, type_f16);
 
   // attrs:
   auto attr_i32_n1 = builder.getSI32IntegerAttr(-1);
@@ -379,7 +372,7 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, tmp227, IntegerAttr::get(IntegerType::get(&context, 64), 2));
 
   // line 229: torch.aten.mul.Tensor
-  auto mul229 = builder.create<mix::MulOp>(loc, cat227, reshapeQ);
+  auto mul229 = builder.create<mix::MulOp>(loc, cat227, sin);
 
   // line 232: torch.aten.add.Tensor
   auto add232 = builder.create<mix::AddOp>(loc, mul209, mul229);
@@ -406,7 +399,7 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, tmp252, IntegerAttr::get(IntegerType::get(&context, 64), 2));
 
   // line 254: torch.aten.mul.Tensor
-  auto mul254 = builder.create<mix::MulOp>(loc, cat252, sliceK);
+  auto mul254 = builder.create<mix::MulOp>(loc, cat252, sin);
 
   // line 257: torch.aten.add.Tensor
   auto add257 = builder.create<mix::AddOp>(loc, mul234, mul254);
@@ -429,6 +422,14 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto transpose294 =
       builder.create<mix::TransposeOp>(loc, MNHK, attr_i32_0, attr_i32_1);
 
+  auto cast_MNHQ = builder.create<tensor::CastOp>(
+      loc, UnrankedTensorType::get(type_f16), MNHQ);
+  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{cast_MNHQ});
+
+  auto cast_MNHK = builder.create<tensor::CastOp>(
+      loc, UnrankedTensorType::get(type_f16), MNHK);
+  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{cast_MNHK});
+
   // line 298: torch.aten.transpose.int
   auto transpose298 = builder.create<mix::TransposeOp>(loc, transpose294,
                                                        attr_i32_1, attr_i32_2);
@@ -444,6 +445,10 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   // line 370: torch.aten.mul.Scalar
   auto mul370 = builder.create<mix::MulOp>(loc, bmm346, constant368);
 
+  auto cast_bmm346 = builder.create<tensor::CastOp>(
+      loc, UnrankedTensorType::get(type_f16), bmm346);
+  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{cast_bmm346});
+
   // line 380: torch.aten.masked_fill.Scalar
   auto constant380 = builder.create<mix::ConstantOp>(
       loc,
@@ -451,14 +456,18 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto masked_fill380 = builder.create<mix::MaskedFillOp>(
       loc, mul370, attention_mask, constant380);
 
+  auto cast_mul370 = builder.create<tensor::CastOp>(
+      loc, UnrankedTensorType::get(type_f16), mul370);
+  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{cast_mul370});
+
   // line 384: torch.aten._softmax
   auto softmax384 =
       builder.create<mix::SoftmaxOp>(loc, masked_fill380, attr_i32_n1);
 
-  // auto cast_masked_fill380 = builder.create<tensor::CastOp>(
-  //     loc, UnrankedTensorType::get(type_f16), masked_fill380);
-  // builder.create<func::CallOp>(loc, printMemRefFunc,
-  //                              ValueRange{cast_masked_fill380});
+  auto cast_masked_fill380 = builder.create<tensor::CastOp>(
+      loc, UnrankedTensorType::get(type_f16), masked_fill380);
+  builder.create<func::CallOp>(loc, printMemRefFunc,
+                               ValueRange{cast_masked_fill380});
 
   // line 403: torch.aten.transpose.int
   auto transpose403 =
@@ -473,10 +482,10 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto bmm405 =
       builder.create<mix::BatchMatMulOp>(loc, softmax384, transpose403);
 
-  // auto cast_softmax384 = builder.create<tensor::CastOp>(
-  //     loc, UnrankedTensorType::get(type_f16), softmax384);
-  // builder.create<func::CallOp>(loc, printMemRefFunc,
-  //                              ValueRange{cast_softmax384});
+  auto cast_softmax384 = builder.create<tensor::CastOp>(
+      loc, UnrankedTensorType::get(type_f16), softmax384);
+  builder.create<func::CallOp>(loc, printMemRefFunc,
+                               ValueRange{cast_softmax384});
 
   // 下面是merge_heads
 
@@ -575,15 +584,15 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
 
   // attention_mask constant
   auto attention_mask_attr =
-      DenseElementsAttr::get(attention_mask_type, {true});
+      DenseElementsAttr::get(attention_mask_type, {false});
   auto attention_mask =
       builder.create<arith::ConstantOp>(loc, attention_mask_attr);
   auto res = builder.create<func::CallOp>(
       loc, graph0, ValueRange{hidden_states, residual, attention_mask});
 
-  // auto castResult =
-  //     builder.create<tensor::CastOp>(loc, printInputType, res->getResult(0));
-  // builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castResult});
+  auto castResult =
+      builder.create<tensor::CastOp>(loc, printInputType, res->getResult(0));
+  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castResult});
   builder.create<func::ReturnOp>(loc);
 }
 

@@ -129,7 +129,8 @@ void registerLowerCompositePass();
 void registerLowerPrimaryToTosaPass();
 
 // 模型参数定义
-const int max_seq_len = 5;
+const int max_seq_len = 10;
+const int seq_len = 3;
 const int hidden_size = 5120;
 const int ffn_hidden_size = 12288;
 const int n_head = 32;
@@ -138,7 +139,7 @@ const int key_value_projection_size = hidden_size * 2;
 const int key_value_projection_head_dim = key_value_projection_size / n_head;
 const int vocab_size = 120000;
 const int batch_size = 1;
-const int n_layer = 2; //  38
+const int n_layer = 1; //  38
 
 std::string getOpName(std::string_view prefix, int idx, std::string_view name) {
   return std::string(prefix) + std::to_string(idx) + std::string(name);
@@ -328,13 +329,6 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
 
   // types:
   auto type_f16 = builder.getF16Type();
-  auto type_query_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, type_f16);
-  auto type_key_value_weight =
-      RankedTensorType::get({hidden_size * 2, hidden_size}, type_f16);
-  auto type_dense_weight =
-      RankedTensorType::get({hidden_size, hidden_size}, type_f16);
-  auto type_dense_bias = RankedTensorType::get({hidden_size}, type_f16);
 
   // attrs:
   auto attr_i32_n1 = builder.getSI32IntegerAttr(-1);
@@ -368,10 +362,6 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   // line 64: torch.aten.slice.Tensor
   auto sliceK = builder.create<mix::SliceOp>(loc, reshapeKV, 2, 0, 160, 1);
 
-  //   auto reshapeK = builder.create<mix::ReshapeOp>(
-  //       loc, sliceK, createIntArrayAttr(context, {max_seq_len,
-  //       hidden_size}));
-
   // line 70: torch.aten.slice.Tensor
   auto sliceV = builder.create<mix::SliceOp>(loc, reshapeKV, 2, 160, 320, 1);
 
@@ -399,7 +389,7 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, tmp227, IntegerAttr::get(IntegerType::get(&context, 64), 2));
 
   // line 229: torch.aten.mul.Tensor
-  auto mul229 = builder.create<mix::MulOp>(loc, cat227, reshapeQ);
+  auto mul229 = builder.create<mix::MulOp>(loc, cat227, sin);
 
   // line 232: torch.aten.add.Tensor
   auto add232 = builder.create<mix::AddOp>(loc, mul209, mul229);
@@ -426,7 +416,7 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       loc, tmp252, IntegerAttr::get(IntegerType::get(&context, 64), 2));
 
   // line 254: torch.aten.mul.Tensor
-  auto mul254 = builder.create<mix::MulOp>(loc, cat252, sliceK);
+  auto mul254 = builder.create<mix::MulOp>(loc, cat252, sin);
 
   // line 257: torch.aten.add.Tensor
   auto add257 = builder.create<mix::AddOp>(loc, mul234, mul254);
@@ -475,44 +465,19 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto softmax384 =
       builder.create<mix::SoftmaxOp>(loc, masked_fill380, attr_i32_n1);
 
-  // auto cast_masked_fill380 = builder.create<tensor::CastOp>(
-  //     loc, UnrankedTensorType::get(type_f16), masked_fill380);
-  // builder.create<func::CallOp>(loc, printMemRefFunc,
-  //                              ValueRange{cast_masked_fill380});
-
   // line 403: torch.aten.transpose.int
   auto transpose403 =
       builder.create<mix::TransposeOp>(loc, sliceV, attr_i32_0, attr_i32_1);
-
-  // auto cast_sliceV = builder.create<tensor::CastOp>(
-  //     loc, UnrankedTensorType::get(type_f16), sliceV);
-  // builder.create<func::CallOp>(loc, printMemRefFunc,
-  // ValueRange{cast_sliceV});
 
   // line 405: torch.aten.bmm
   auto bmm405 =
       builder.create<mix::BatchMatMulOp>(loc, softmax384, transpose403);
 
-  // auto cast_softmax384 = builder.create<tensor::CastOp>(
-  //     loc, UnrankedTensorType::get(type_f16), softmax384);
-  // builder.create<func::CallOp>(loc, printMemRefFunc,
-  //                              ValueRange{cast_softmax384});
-
   // 下面是merge_heads
-
-  //   auto cast_reshape399 = builder.create<tensor::CastOp>(
-  //       loc, UnrankedTensorType::get(type_f16), reshape399);
-  //   builder.create<func::CallOp>(loc, printMemRefFunc,
-  //                                ValueRange{cast_reshape399});
 
   // line 419: torch.aten.permute
   auto permute419 = builder.create<mix::PermuteOp>(
       loc, bmm405, createIntArrayAttr(context, {1, 0, 2}));
-
-  // auto cast_bmm405 = builder.create<tensor::CastOp>(
-  //     loc, UnrankedTensorType::get(type_f16), bmm405);
-  // builder.create<func::CallOp>(loc, printMemRefFunc,
-  // ValueRange{cast_bmm405});
 
   // line 428: torch.aten.view
   auto reshape428 = builder.create<mix::ReshapeOp>(
@@ -524,11 +489,6 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
 
   // line 451: torch.aten.add.Tensor
   auto add451 = builder.create<mix::AddOp>(loc, residual, linearD);
-
-  // auto cast_linearD = builder.create<tensor::CastOp>(
-  //     loc, UnrankedTensorType::get(type_f16), linearD);
-  // builder.create<func::CallOp>(loc, printMemRefFunc,
-  // ValueRange{cast_linearD});
 
   return add451;
 }
@@ -701,7 +661,7 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   builder.setInsertionPointToEnd(body);
 
   auto input_ids = graph.getArgument(0);
-  int seq_len = max_seq_len;
+
   /* 逻辑 */
   Value hidden_states = genEmbedding(builder, graph->getLoc(), input_ids,
                                      "transformer.word_embeddings", vocab_size,
