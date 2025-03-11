@@ -3,11 +3,11 @@ MLIR_LIB := ../../thirdparty/llvm/build/lib
 AIPILER_PY_PATH := ../../python
 
 rms: 
-	python mixedFusedRMSNorm.py
+	python mixedFusedRMSNorm.py > py.log
 	PYTHONPATH=${AIPILER_PY_PATH} ../../build/bin/genMixedFusedRMSNorm
 
 run_rms: rms
-	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./rms
+	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${MLIR_LIB} ./rms > mlir.log
 
 clean:
 	rm -rf *.mlir *.ll rms *.bin

@@ -2,3 +2,4 @@ log*
 *.mlir
 *.ll
 rms
+*log

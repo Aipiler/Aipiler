@@ -115,6 +115,7 @@ public:
         resShape.erase(resShape.begin() + axisNum);
       }
     }
+
     if (!keepDim) {
       auto resType = RankedTensorType::get(resShape, elementTy);
       res = rewriter.create<mix::ReshapeOp>(loc, resType, res,
@@ -125,8 +126,19 @@ public:
         scaleType, llvm::getAPFloatFromSize(1.0 / scale,
                                             elementTy.getIntOrFloatBitWidth()));
     auto scaleValue = rewriter.create<arith::ConstantOp>(loc, scaleAttr);
-    res = rewriter.create<mix::MulOp>(loc, res, scaleValue);
-    rewriter.replaceOp(op, res);
+    auto mul = rewriter.create<mix::MulOp>(loc, res, scaleValue);
+
+    auto m = op->getParentOfType<ModuleOp>();
+    auto existingFunc = m.lookupSymbol<func::FuncOp>("printMemrefF16");
+    if (existingFunc) {
+      auto castRes = rewriter.create<tensor::CastOp>(
+          loc, UnrankedTensorType::get(elementTy), res);
+      rewriter.create<func::CallOp>(loc, existingFunc, ValueRange{castRes});
+    } else {
+      llvm::errs() << "Cannot find printMemrefF16 function\n";
+    }
+
+    rewriter.replaceOp(op, mul);
     return success();
   }
 };
@@ -262,7 +274,7 @@ public:
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<func::FuncDialect, arith::ArithDialect, index::IndexDialect,
                     memref::MemRefDialect, bufferization::BufferizationDialect,
-                    LLVM::LLVMDialect>();
+                    LLVM::LLVMDialect, tensor::TensorDialect>();
   }
 };
 } // namespace
@@ -275,9 +287,10 @@ void LowerCompositePass::runOnOperation() {
                << (dynamicLoadWeight ? "true" : "false") << "\n";
 
   ConversionTarget target(context);
-  target.addLegalDialect<
-      arith::ArithDialect, mix::MIXDialect, memref::MemRefDialect,
-      bufferization::BufferizationDialect, LLVM::LLVMDialect>();
+  target.addLegalDialect<arith::ArithDialect, mix::MIXDialect,
+                         memref::MemRefDialect,
+                         bufferization::BufferizationDialect, LLVM::LLVMDialect,
+                         tensor::TensorDialect, func::FuncDialect>();
   target.addIllegalOp<mix::SiLUOp, mix::SigmoidOp, mix::MeanOp,
                       mix::WeightOp>(); //
   target.addLegalOp<ModuleOp, UnrealizedConversionCastOp>();
