@@ -7,7 +7,7 @@ class MixedFusedRMSNorm(nn.Module):
     # Extracted from https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
     def __init__(self, hidden_size=16, eps=1e-6):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size, dtype=torch.float16))
+        self.weight = nn.Parameter(torch.ones(hidden_size, dtype=torch.float32))
         self.variance_epsilon = eps
 
     def forward(self, hidden_states: torch.Tensor):
@@ -18,7 +18,7 @@ class MixedFusedRMSNorm(nn.Module):
 class TestModule(nn.Module):
     def __init__(self):
         super().__init__()
-        self.rms = MixedFusedRMSNorm()
+        self.rms = MixedFusedRMSNorm(5120)
     def forward(self, hidden_states: torch.Tensor):
         return self.rms(hidden_states)
 
@@ -32,9 +32,9 @@ def calc_model(model: TestModule):
     if not os.path.exists("rms_model.bin"):
         dump_model_bin(model)
     model.load_state_dict(torch.load("rms_model.bin"))
-    input = torch.ones([4, 16], dtype=torch.float16) 
+    inp = torch.ones([1, 10, 5120], dtype=torch.float16)
     print("weight: ", model.rms.weight)
-    print("output:", model(input))
+    print("output:", model(inp))
 
 
 if __name__ == "__main__":

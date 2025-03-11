@@ -1,6 +1,7 @@
 #include "Utils/loadPytorchModel.h"
 #include "Utils/logger.h"
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -12,6 +13,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <set>
 #include <sstream>
 #include <string.h>
 #include <sys/types.h>
@@ -168,6 +170,62 @@ load_model<int32_t>(const std::vector<std::string> model_paths,
 template void
 load_model<int64_t>(const std::vector<std::string> model_paths,
                     std::map<std::string, int64_t *> param_and_loc);
+
+void load_model_f16(const std::vector<std::string> &model_paths,
+                    std::map<std::string, int16_t *> &param_and_loc) {
+  try {
+    log(LogLevel::INFO, "Initializing Python interpreter");
+    py::scoped_interpreter guard{};
+    log(LogLevel::INFO, "Importing Python module: Aipiler");
+    py::module load_model_module = py::module::import("Aipiler");
+    log(LogLevel::INFO, "Start Loadding model bin.");
+    py::dict model_weights =
+        load_model_module.attr("load_model_weights")(model_paths);
+    log(LogLevel::INFO, "Successfully loaded model weights");
+
+    if (param_and_loc.empty()) {
+      log(LogLevel::ERROR, "param_and_loc is empty. Load No Params");
+      throw "Load No Params";
+    }
+    std::set<std::string> model_weight_names;
+    bool flag = false;
+    for (auto item : model_weights) {
+      std::string key = item.first.cast<std::string>();
+      model_weight_names.insert(key);
+    }
+
+    for (auto p : param_and_loc) {
+      auto param = p.first;
+      if (model_weight_names.find(param) == model_weight_names.end()) {
+        log(LogLevel::ERROR, "Cannot find parameter: " + param);
+        flag = true;
+        continue;
+      }
+    }
+    if (flag) {
+      throw "Can not find parameter";
+    }
+
+    for (auto item : model_weights) {
+      std::string key = item.first.cast<std::string>();
+      py::array value = item.second.cast<py::array>();
+      const void *raw_data = value.data();
+      const int16_t *casted_data = static_cast<const int16_t *>(raw_data);
+      size_t size = value.size();
+      int16_t *data = param_and_loc[key];
+      memcpy(data, casted_data, size * sizeof(int16_t));
+    }
+  } catch (const py::error_already_set &e) {
+    log(LogLevel::ERROR, "Python exception: " + std::string(e.what()));
+    throw;
+  } catch (const std::exception &e) {
+    log(LogLevel::ERROR, "Standard exception: " + std::string(e.what()));
+    throw;
+  } catch (...) {
+    log(LogLevel::ERROR, "Unknown exception occurred");
+    throw;
+  }
+}
 
 } // namespace utils
 } // namespace mix

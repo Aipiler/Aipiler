@@ -58,6 +58,9 @@ for loc, memory_block in param_and_loc:
 template <typename T>
 void load_model(const std::vector<std::string> model_paths,
                 std::map<std::string, T *> param_and_loc);
+
+void load_model_f16(const std::vector<std::string> *model_paths,
+                    std::map<std::string, int16_t *> *param_and_loc);
 } // namespace utils
 } // namespace mix
 
