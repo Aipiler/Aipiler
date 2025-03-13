@@ -13,6 +13,7 @@
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Conversion/TosaToLinalg/TosaToLinalg.h"
 #include "mlir/Conversion/TosaToTensor/TosaToTensor.h"
+#include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
 #include "mlir/Dialect/Bufferization/Pipelines/Passes.h"
@@ -464,10 +465,10 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto softmax384 =
       builder.create<mix::SoftmaxOp>(loc, masked_fill380, attr_i32_n1);
 
-  auto cast_masked_fill380 = builder.create<tensor::CastOp>(
-      loc, UnrankedTensorType::get(type_f16), masked_fill380);
-  builder.create<func::CallOp>(loc, printMemRefFunc,
-                               ValueRange{cast_masked_fill380});
+  //   auto cast_masked_fill380 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(type_f16), masked_fill380);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //                                ValueRange{cast_masked_fill380});
 
   // line 403: torch.aten.transpose.int
   auto transpose403 =
@@ -482,10 +483,10 @@ auto genSelfAttn(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto bmm405 =
       builder.create<mix::BatchMatMulOp>(loc, softmax384, transpose403);
 
-  auto cast_softmax384 = builder.create<tensor::CastOp>(
-      loc, UnrankedTensorType::get(type_f16), softmax384);
-  builder.create<func::CallOp>(loc, printMemRefFunc,
-                               ValueRange{cast_softmax384});
+  //   auto cast_softmax384 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(type_f16), softmax384);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //                                ValueRange{cast_softmax384});
 
   // 下面是merge_heads
 
@@ -590,9 +591,11 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   auto res = builder.create<func::CallOp>(
       loc, graph0, ValueRange{hidden_states, residual, attention_mask});
 
-  auto castResult =
-      builder.create<tensor::CastOp>(loc, printInputType, res->getResult(0));
-  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castResult});
+  //   auto castResult =
+  //       builder.create<tensor::CastOp>(loc, printInputType,
+  //       res->getResult(0));
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //   ValueRange{castResult});
   builder.create<func::ReturnOp>(loc);
 }
 
@@ -738,14 +741,18 @@ int main() {
   mlir::bufferization::OneShotBufferizationOptions opt;
   opt.bufferizeFunctionBoundaries = true;
   pm.addPass(mlir::bufferization::createOneShotBufferizePass(opt));
-  pm.addPass(mlir::createConvertLinalgToLoopsPass());
+  pm.addPass(mlir::createConvertLinalgToAffineLoopsPass());
+  //   pm.addNestedPass<func::FuncOp>(mlir::affine::createAffineLoopNormalizePass());
   mlir::bufferization::BufferDeallocationPipelineOptions deallocopt;
   mlir::bufferization::buildBufferDeallocationPipeline(pm.nest<ModuleOp>(),
                                                        deallocopt);
   pm.addPass(mlir::memref::createExpandStridedMetadataPass());
   pm.addPass(mlir::createLowerAffinePass());
-  pm.nest<func::FuncOp>().addPass(mlir::LLVM::createRequestCWrappersPass());
+  pm.addNestedPass<func::FuncOp>(mlir::LLVM::createRequestCWrappersPass());
+  //   pm.addPass(mlir::createConvertSCFToOpenMPPass());
+  //   pm.addPass(mlir::createConvertOpenMPToLLVMPass());
   pm.addPass(mlir::createConvertSCFToCFPass());
+  //   pm.addPass(mlir::createConvertCFToLLVMPass());
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());
   pm.addPass(mlir::createConvertMathToLLVMPass());
   pm.addPass(mlir::createConvertMathToLibmPass());

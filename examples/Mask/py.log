@@ -1,0 +1,22 @@
+combined_attention_mask shape: torch.Size([1, 1, 10, 10])
+combined_attention_mask: tensor([[[[False,  True,  True,  True,  True,  True,  True,  True,  True,  True],
+          [False, False,  True,  True,  True,  True,  True,  True,  True,  True],
+          [False, False, False,  True,  True,  True,  True,  True,  True,  True],
+          [False, False, False, False,  True,  True,  True,  True,  True,  True],
+          [False, False, False, False, False,  True,  True,  True,  True,  True],
+          [False, False, False, False, False, False,  True,  True,  True,  True],
+          [False, False, False, False, False, False, False,  True,  True,  True],
+          [False, False, False, False, False, False, False, False,  True,  True],
+          [False, False, False, False, False, False, False, False, False,  True],
+          [False, False, False, False, False, False, False, False, False, False]]]])
+mask shape: torch.Size([1, 1, 10, 10])
+mask: tensor([[[[False,  True,  True,  True,  True,  True,  True,  True,  True,  True],
+          [False, False,  True,  True,  True,  True,  True,  True,  True,  True],
+          [False, False, False,  True,  True,  True,  True,  True,  True,  True],
+          [False, False, False, False,  True,  True,  True,  True,  True,  True],
+          [False, False, False, False, False,  True,  True,  True,  True,  True],
+          [False, False, False, False, False, False,  True,  True,  True,  True],
+          [False, False, False, False, False, False, False,  True,  True,  True],
+          [False, False, False, False, False, False, False, False,  True,  True],
+          [False, False, False, False, False, False, False, False, False,  True],
+          [False, False, False, False, False, False, False, False, False, False]]]])

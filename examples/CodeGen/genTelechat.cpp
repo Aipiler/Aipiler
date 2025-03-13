@@ -27,6 +27,7 @@
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -53,6 +54,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm-c/lto.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
@@ -130,7 +132,7 @@ void registerLowerPrimaryToTosaPass();
 
 // 模型参数定义
 const int max_seq_len = 10;
-const int seq_len = 3;
+int seq_len = 0;
 const int hidden_size = 5120;
 const int ffn_hidden_size = 12288;
 const int n_head = 32;
@@ -509,7 +511,7 @@ auto genFusedRMSNorm(mlir::OpBuilder &builder, mlir::Location loc,
 
   auto _weight3 = builder.create<mix::WeightOp>(loc, weightTensorType, name);
 
-  llvm::SmallVector<mlir::Attribute> tmp{mlir::FloatAttr::get(elementType, 1)};
+  llvm::SmallVector<mlir::Attribute> tmp{mlir::FloatAttr::get(elementType, 2)};
   auto constantTensorType = RankedTensorType::get({1}, elementType);
   auto constantTensor = DenseElementsAttr::get(constantTensorType, tmp);
   auto c2Tensor = builder.create<mix::ConstantOp>(loc, constantTensor);
@@ -594,22 +596,23 @@ auto genMask(MLIRContext &context, OpBuilder &builder, Location loc,
   auto constant94 = builder.create<mix::ConstantOp>(loc, dense19);
 
   // line 25: torch.aten.slice.Tensor
-  auto slice25 =
-      builder.create<mix::SliceOp>(loc, constant94, 0, 0, INT64_MAX, 1);
+  //   auto slice25 =
+  //       builder.create<mix::SliceOp>(loc, constant94, 0, 0, INT64_MAX, 1);
 
   // line 28: torch.aten.unsqueeze
-  auto unsqueeze28 = builder.create<mix::UnsqueezeOp>(loc, slice25, attr_i32_1);
+  auto unsqueeze28 =
+      builder.create<mix::UnsqueezeOp>(loc, constant94, attr_i32_1);
 
   // line 31: torch.aten.unsqueeze
   auto unsqueeze31 =
       builder.create<mix::UnsqueezeOp>(loc, constant94, attr_i32_0);
 
   // line 37: torch.aten.slice.Tensor
-  auto slice37 =
-      builder.create<mix::SliceOp>(loc, unsqueeze31, 1, 0, INT64_MAX, 1);
+  //   auto slice37 =
+  //       builder.create<mix::SliceOp>(loc, unsqueeze31, 1, 0, INT64_MAX, 1);
 
   // line 39: torch.aten.lt.Tensor
-  auto lt39 = builder.create<mix::LtOp>(loc, unsqueeze28, slice37);
+  auto lt39 = builder.create<mix::LtOp>(loc, unsqueeze28, unsqueeze31);
 
   auto dense1 = DenseElementsAttr::get(
       RankedTensorType::get({seq_len, max_seq_len - seq_len}, type_i1), {true});
@@ -637,14 +640,11 @@ auto genMask(MLIRContext &context, OpBuilder &builder, Location loc,
 
   auto unsqueeze81 = builder.create<mix::UnsqueezeOp>(loc, cat3, attr_i32_0);
 
-  //   auto unsqueeze84 =
-  //       builder.create<mix::UnsqueezeOp>(loc, unsqueeze81, attr_i32_0);
-
   return unsqueeze81;
 }
 
 auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
-                      Location loc) {
+                      Location loc, mlir::func::FuncOp printMemRefFunc) {
   printf("genTelechatModel\n");
   /* Types */
   auto F16Type = builder.getF16Type();
@@ -652,7 +652,10 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   auto input_ids_type = RankedTensorType::get({max_seq_len}, I32Type);
 
   auto output_type = RankedTensorType::get({max_seq_len, vocab_size}, F16Type);
+  auto token_ids_type = RankedTensorType::get({1}, builder.getI32Type());
   auto functionTy = builder.getFunctionType({input_ids_type}, {output_type});
+  auto printInputType = UnrankedTensorType::get(builder.getF16Type());
+  auto slice_type = RankedTensorType::get({vocab_size}, F16Type);
 
   // 创建func.func
   auto graph = builder.create<func::FuncOp>(loc, "Telechat", functionTy);
@@ -662,12 +665,31 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
 
   auto input_ids = graph.getArgument(0);
 
-  /* 逻辑 */
-  Value hidden_states = genEmbedding(builder, graph->getLoc(), input_ids,
-                                     "transformer.word_embeddings", vocab_size,
-                                     hidden_size, F16Type);
+  Value hidden_states;
 
-  auto attention_mask = genMask(context, builder, loc, seq_len);
+  /* 逻辑 */
+  Value embedding = genEmbedding(builder, graph->getLoc(), input_ids,
+                                 "transformer.word_embeddings", vocab_size,
+                                 hidden_size, F16Type);
+
+  hidden_states = embedding;
+
+  //   auto attention_mask = genMask(context, builder, loc, seq_len);
+
+  //   SmallVector<bool> attention_mask_tmp(max_seq_len * max_seq_len);
+  //   for (int i = 0; i < max_seq_len; i++) {
+  //     for (int j = 0; j < max_seq_len; j++) {
+  //       if (i < seq_len && j < seq_len) {
+  //         attention_mask_tmp[i * max_seq_len + j] = i <= j ? false : true;
+  //       } else
+  //         attention_mask_tmp[i * max_seq_len + j] = true;
+  //     }
+  //   }
+  auto attention_mask_dense = DenseElementsAttr::get(
+      RankedTensorType::get({1, max_seq_len, max_seq_len}, builder.getI1Type()),
+      {false});
+  auto attention_mask =
+      builder.create<mix::ConstantOp>(loc, attention_mask_dense);
 
   // 循环创建N个Block
   for (int i = 0; i < n_layer; ++i) {
@@ -677,15 +699,38 @@ auto genTelechatModel(mlir::MLIRContext &context, mlir::OpBuilder &builder,
   }
 
   // RMSNorm
-  hidden_states = genFusedRMSNorm(builder, graph->getLoc(), hidden_states,
-                                  "transformer.ln_f.weight");
+  auto RMSNorm = genFusedRMSNorm(builder, graph->getLoc(), hidden_states,
+                                 "transformer.ln_f.weight");
 
   // Linear:将hidden_states映射到vocab_size上
   auto lm_head =
-      builder.create<mix::LinearOp>(graph->getLoc(), hidden_states, "lm_head",
+      builder.create<mix::LinearOp>(graph->getLoc(), RMSNorm, "lm_head",
                                     hidden_size, vocab_size, false, F16Type);
+  //   // Slice:取最后一个位置的输出
+  //   auto slice = builder.create<tosa::SliceOp>(
+  //       loc, slice_type, lm_head, llvm::ArrayRef<int64_t>{seq_len - 1, 0},
+  //       llvm::ArrayRef<int64_t>{1, vocab_size});
+
+  //   // ArgMax:取最大值的位置
+  //   auto token_ids =
+  //       builder.create<tosa::ArgMaxOp>(loc, token_ids_type, slice, 0);
+
+  //   auto castEmbedding =
+  //       builder.create<tensor::CastOp>(loc, printInputType, embedding);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //   ValueRange{castEmbedding});
+
+  //   auto casthidden_states =
+  //       builder.create<tensor::CastOp>(loc, printInputType, hidden_states);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //                                ValueRange{casthidden_states});
+
+  //   auto castRMSNorm =
+  //       builder.create<tensor::CastOp>(loc, printInputType, RMSNorm);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //   ValueRange{castRMSNorm});
+
   builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{lm_head});
-  // builder.create<func::ReturnOp>(graph->getLoc(), ValueRange{hidden_states});
   return graph;
 }
 
@@ -696,14 +741,15 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   auto elementType = builder.getF16Type();
 
   // printMemrefF16
-  auto printInputType = UnrankedTensorType::get(elementType);
+  auto printInputType = UnrankedTensorType::get(builder.getF16Type());
   auto printFunTy =
       builder.getFunctionType(TypeRange{printInputType}, TypeRange{});
   auto printMemRefFunc = builder.create<func::FuncOp>(
       theModule->getLoc(), "printMemrefF16", printFunTy);
   printMemRefFunc.setPrivate();
 
-  auto telechat = genTelechatModel(context, builder, theModule->getLoc());
+  auto telechat =
+      genTelechatModel(context, builder, theModule->getLoc(), printMemRefFunc);
 
   // main
   builder.setInsertionPointToEnd(theModule.getBody());
@@ -713,19 +759,28 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
   auto mainbody = mainfunc.addEntryBlock();
   builder.setInsertionPointToEnd(mainbody);
 
-  auto dense94 = DenseElementsAttr::get(
-      RankedTensorType::get({max_seq_len}, builder.getI32Type()), {int32_t(1)});
-  auto input_ids = builder.create<mix::ConstantOp>(loc, dense94);
+  // 输入：请你说你好。
+  std::vector<int32_t> input_ids_tmp_vec{20, 7808, 14812, 22685, 111959, 21};
+  seq_len = input_ids_tmp_vec.size();
+
+  // input_ids
+  SmallVector<int32_t> input_ids_tmp(max_seq_len);
+  for (int i = 0; i < max_seq_len; i++) {
+    if (i < seq_len)
+      input_ids_tmp[i] = input_ids_tmp_vec[i];
+    else
+      input_ids_tmp[i] = 0;
+  }
+  auto input_ids_dense = DenseElementsAttr::get(
+      RankedTensorType::get({max_seq_len}, builder.getI32Type()),
+      ArrayRef<int32_t>(input_ids_tmp));
+  auto input_ids = builder.create<mix::ConstantOp>(loc, input_ids_dense);
 
   auto res = builder.create<func::CallOp>(loc, telechat, ValueRange{input_ids});
 
   auto castResult =
       builder.create<tensor::CastOp>(loc, printInputType, res->getResult(0));
-  //   auto castSin =
-  //       builder.create<tensor::CastOp>(loc, printInputType,
-  //       res->getResult(1));
   builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castResult});
-  //   builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castSin});
   builder.create<func::ReturnOp>(loc);
 }
 
@@ -848,6 +903,7 @@ int main() {
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::func::FuncDialect>();
   context.getOrLoadDialect<mlir::tensor::TensorDialect>();
+  context.getOrLoadDialect<mlir::tosa::TosaDialect>();
 
   mlir::OpBuilder builder(&context);
 
@@ -876,7 +932,8 @@ int main() {
   mlir::bufferization::OneShotBufferizationOptions opt;
   opt.bufferizeFunctionBoundaries = true;
   pm.addPass(mlir::bufferization::createOneShotBufferizePass(opt));
-  pm.addPass(mlir::createConvertLinalgToLoopsPass());
+  pm.addPass(mlir::createConvertLinalgToAffineLoopsPass());
+  //   pm.addNestedPass<func::FuncOp>(mlir::affine::createAffineLoopNormalizePass());
   mlir::bufferization::BufferDeallocationPipelineOptions deallocopt;
   mlir::bufferization::buildBufferDeallocationPipeline(pm.nest<ModuleOp>(),
                                                        deallocopt);

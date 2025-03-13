@@ -7,7 +7,7 @@ Self_attention:
 	PYTHONPATH=../../python ../../build/bin/genSelfAttention
 
 run: Self_attention
-	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:"../../thirdparty/llvm/build/lib" ./Self_attention
+	LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:"../../thirdparty/llvm/build/lib" ./Self_attention > mlir.log
 
 clean:
 	rm -rf *.mlir *.ll Self_attention *.bin

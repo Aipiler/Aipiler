@@ -400,11 +400,58 @@ public:
                                 PatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     auto input = op.getInput();
-    auto axis = op.getAxis();
+    auto inputType = input.getType();
+    auto inputShape = inputType.getShape();
+    auto inputElementType = inputType.getElementType();
+    auto outputShape = op.getType().cast<RankedTensorType>().getShape();
 
-    auto newop = rewriter.create<tosa::ReduceSumOp>(
-        loc, input, rewriter.getI32IntegerAttr(axis));
-    rewriter.replaceOp(op, newop);
+    Value realInput = input;
+    auto realElementType = inputElementType;
+    if (inputElementType == rewriter.getF16Type()) {
+      realInput = rewriter.create<tosa::CastOp>(
+          loc, RankedTensorType::get(inputShape, rewriter.getF32Type()), input);
+      realElementType = rewriter.getF32Type();
+    }
+
+    auto axis = int(op.getAxis());
+
+    SmallVector<int64_t> reduceShape;
+    SmallVector<Value> dynDims;
+    for (unsigned i = 0; i < inputType.getRank(); i++) {
+      if (axis != i) {
+        reduceShape.push_back(inputType.getDimSize(i));
+      }
+    }
+
+    // 创建全 0 的 init 张量
+    auto zeroAttr = rewriter.getZeroAttr(realElementType);
+    auto initType = RankedTensorType::get(reduceShape, realElementType);
+    auto initAttr = DenseElementsAttr::get(initType, zeroAttr);
+    auto init = rewriter.create<arith::ConstantOp>(loc, initType, initAttr);
+
+    auto newop = rewriter.create<linalg::ReduceOp>(
+        loc,                     // 操作位置
+        ValueRange{realInput},   // 输入张量
+        ValueRange{init},        // 初始值
+        ArrayRef<int64_t>{axis}, // 归约维度
+        [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange args) {
+          // args[0] 是累加器 (accumulator)，args[1] 是当前输入元素
+          Value sum = nestedBuilder.create<mlir::arith::AddFOp>(
+              nestedLoc, args[0], args[1]); // 创建浮点加法操作
+          nestedBuilder.create<linalg::YieldOp>(nestedLoc, sum); // 返回求和结果
+        });
+
+    auto reshape0 = rewriter.create<tosa::ReshapeOp>(
+        loc, newop.getResult(0), rewriter.getDenseI64ArrayAttr(outputShape));
+
+    Value res;
+    if (inputElementType == rewriter.getF16Type()) {
+      res = rewriter.create<tosa::CastOp>(
+          loc, RankedTensorType::get(outputShape, inputElementType), reshape0);
+    } else {
+      res = reshape0;
+    }
+    rewriter.replaceOp(op, res);
     return success();
   }
 };
