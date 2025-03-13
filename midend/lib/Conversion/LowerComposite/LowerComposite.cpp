@@ -128,15 +128,15 @@ public:
     auto scaleValue = rewriter.create<arith::ConstantOp>(loc, scaleAttr);
     auto mul = rewriter.create<mix::MulOp>(loc, res, scaleValue);
 
-    auto m = op->getParentOfType<ModuleOp>();
-    auto existingFunc = m.lookupSymbol<func::FuncOp>("printMemrefF16");
-    if (existingFunc) {
-      auto castRes = rewriter.create<tensor::CastOp>(
-          loc, UnrankedTensorType::get(elementTy), res);
-      rewriter.create<func::CallOp>(loc, existingFunc, ValueRange{castRes});
-    } else {
-      llvm::errs() << "Cannot find printMemrefF16 function\n";
-    }
+    // auto m = op->getParentOfType<ModuleOp>();
+    // auto existingFunc = m.lookupSymbol<func::FuncOp>("printMemrefF16");
+    // if (existingFunc) {
+    //   auto castRes = rewriter.create<tensor::CastOp>(
+    //       loc, UnrankedTensorType::get(elementTy), res);
+    //   rewriter.create<func::CallOp>(loc, existingFunc, ValueRange{castRes});
+    // } else {
+    //   llvm::errs() << "Cannot find printMemrefF16 function\n";
+    // }
 
     rewriter.replaceOp(op, mul);
     return success();

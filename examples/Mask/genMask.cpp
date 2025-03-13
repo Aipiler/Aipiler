@@ -27,6 +27,7 @@
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -232,9 +233,6 @@ auto genMask(MLIRContext &context, OpBuilder &builder, Location loc,
 
   auto unsqueeze81 = builder.create<mix::UnsqueezeOp>(loc, cat3, attr_i32_0);
 
-  // auto unsqueeze84 =
-  //     builder.create<mix::UnsqueezeOp>(loc, unsqueeze81, attr_i32_0);
-
   return unsqueeze81;
 }
 
@@ -269,18 +267,21 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
 
   // main
   builder.setInsertionPointToEnd(theModule.getBody());
-  auto mainfunc = builder.create<func::FuncOp>(loc, "main",
-                                               builder.getFunctionType({}, {}));
+  auto mainfunc = builder.create<func::FuncOp>(
+      loc, "main", builder.getFunctionType({}, {builder.getI32Type()}));
   mainfunc.setPrivate();
   auto mainbody = mainfunc.addEntryBlock();
   builder.setInsertionPointToEnd(mainbody);
 
   auto res = builder.create<func::CallOp>(loc, graph0, ValueRange{});
 
-  auto castResult =
-      builder.create<tensor::CastOp>(loc, printInputType, res->getResult(0));
-  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castResult});
-  builder.create<func::ReturnOp>(loc);
+  // auto costRes = builder.create<tosa::CastOp>(loc, builder.getI32Type(),
+  //                                             res->getResult(0));
+  // auto castResult =
+  //     builder.create<tensor::CastOp>(loc, printInputType, res->getResult(0));
+  // builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castResult});
+  auto c0 = builder.create<arith::ConstantIntOp>(loc, 0, 32);
+  builder.create<func::ReturnOp>(loc, ValueRange{c0});
 }
 
 void generateExecutable(llvm::Module &module, llvm::StringRef outputFilename) {
@@ -404,6 +405,7 @@ int main() {
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::func::FuncDialect>();
   context.getOrLoadDialect<mlir::tensor::TensorDialect>();
+  context.getOrLoadDialect<mlir::tosa::TosaDialect>();
 
   mlir::OpBuilder builder(&context);
 

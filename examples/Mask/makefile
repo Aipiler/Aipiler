@@ -6,7 +6,7 @@ print.o: print.cpp
 	g++ $^ -c -o $@
 
 Mask: ../../build/bin/genMask print.o
-	python Mask.py > log
+	python Mask.py > py.log
 	PYTHONPATH=../../python ../../build/bin/genMask
 
 run: Mask

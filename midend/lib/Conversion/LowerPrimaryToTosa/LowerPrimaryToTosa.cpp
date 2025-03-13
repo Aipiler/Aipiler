@@ -402,7 +402,17 @@ public:
     auto input = op.getInput();
     auto inputType = input.getType();
     auto inputShape = inputType.getShape();
-    auto elementType = inputType.getElementType();
+    auto inputElementType = inputType.getElementType();
+    auto outputShape = op.getType().cast<RankedTensorType>().getShape();
+
+    Value realInput = input;
+    auto realElementType = inputElementType;
+    if (inputElementType == rewriter.getF16Type()) {
+      realInput = rewriter.create<tosa::CastOp>(
+          loc, RankedTensorType::get(inputShape, rewriter.getF32Type()), input);
+      realElementType = rewriter.getF32Type();
+    }
+
     auto axis = int(op.getAxis());
 
     SmallVector<int64_t> reduceShape;
@@ -414,14 +424,14 @@ public:
     }
 
     // 创建全 0 的 init 张量
-    auto zeroAttr = rewriter.getZeroAttr(elementType);
-    auto initType = RankedTensorType::get(reduceShape, elementType);
+    auto zeroAttr = rewriter.getZeroAttr(realElementType);
+    auto initType = RankedTensorType::get(reduceShape, realElementType);
     auto initAttr = DenseElementsAttr::get(initType, zeroAttr);
     auto init = rewriter.create<arith::ConstantOp>(loc, initType, initAttr);
 
     auto newop = rewriter.create<linalg::ReduceOp>(
         loc,                     // 操作位置
-        ValueRange{input},       // 输入张量
+        ValueRange{realInput},   // 输入张量
         ValueRange{init},        // 初始值
         ArrayRef<int64_t>{axis}, // 归约维度
         [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange args) {
@@ -432,10 +442,16 @@ public:
         });
 
     auto reshape0 = rewriter.create<tosa::ReshapeOp>(
-        loc, newop.getResult(0),
-        rewriter.getDenseI64ArrayAttr(
-            op.getType().cast<RankedTensorType>().getShape()));
-    rewriter.replaceOp(op, reshape0);
+        loc, newop.getResult(0), rewriter.getDenseI64ArrayAttr(outputShape));
+
+    Value res;
+    if (inputElementType == rewriter.getF16Type()) {
+      res = rewriter.create<tosa::CastOp>(
+          loc, RankedTensorType::get(outputShape, inputElementType), reshape0);
+    } else {
+      res = reshape0;
+    }
+    rewriter.replaceOp(op, res);
     return success();
   }
 };

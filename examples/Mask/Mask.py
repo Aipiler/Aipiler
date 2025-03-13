@@ -70,8 +70,8 @@ def compute_mask():
 
     causal_mask = _prepare_attn_mask(
         attention_mask,
-        input_shape=(1, 7),
-        past_key_values_length=3,
+        input_shape=(1, 10),
+        past_key_values_length=0,
     )
     return causal_mask
 

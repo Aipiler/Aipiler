@@ -526,21 +526,23 @@ auto genFusedRMSNorm(mlir::OpBuilder &builder, mlir::Location loc,
   auto mul0 = builder.create<mix::MulOp>(loc, hidden_states, rsqrt0);
   auto mul1 = builder.create<mix::MulOp>(loc, _weight3, mul0);
 
-  auto castpow0 = builder.create<tensor::CastOp>(
-      loc, UnrankedTensorType::get(elementType), pow0);
-  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castpow0});
+  //   auto castpow0 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(elementType), pow0);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castpow0});
 
-  auto castmean0 = builder.create<tensor::CastOp>(
-      loc, UnrankedTensorType::get(elementType), mean0);
-  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castmean0});
+  //   auto castmean0 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(elementType), mean0);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //   ValueRange{castmean0});
 
-  auto castadd0 = builder.create<tensor::CastOp>(
-      loc, UnrankedTensorType::get(elementType), add0);
-  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castadd0});
+  //   auto castadd0 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(elementType), add0);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castadd0});
 
-  auto castrsqrt0 = builder.create<tensor::CastOp>(
-      loc, UnrankedTensorType::get(elementType), rsqrt0);
-  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castrsqrt0});
+  //   auto castrsqrt0 = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(elementType), rsqrt0);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //   ValueRange{castrsqrt0});
 
   return mul1;
 }
@@ -562,15 +564,16 @@ auto genTransformerBlock(mlir::MLIRContext &context, mlir::OpBuilder &builder,
       genSelfAttn(context, builder, input_RMSNorm->getLoc(), input_RMSNorm,
                   hidden_states, attention_mask, idx);
 
-  auto castResult = builder.create<tensor::CastOp>(
-      loc, UnrankedTensorType::get(F16Type), input_RMSNorm);
-  builder.create<func::CallOp>(loc, printMemRefFunc, ValueRange{castResult});
-
   // RMSNorm
   auto post_RMSNorm = genFusedRMSNorm(
       builder, self_attn->getLoc(), self_attn,
       getOpName("transformer.h.", idx, ".post_attention_layernorm.weight"),
       printMemRefFunc);
+
+  //   auto castResult = builder.create<tensor::CastOp>(
+  //       loc, UnrankedTensorType::get(F16Type), self_attn);
+  //   builder.create<func::CallOp>(loc, printMemRefFunc,
+  //   ValueRange{castResult});
 
   // MLP
   auto FFNoutput =
@@ -750,7 +753,7 @@ void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder,
 
   // attention_mask constant
   auto attention_mask_attr =
-      DenseElementsAttr::get(attention_mask_type, {false});
+      DenseElementsAttr::get(attention_mask_type, {true});
   auto attention_mask =
       builder.create<arith::ConstantOp>(loc, attention_mask_attr);
 
