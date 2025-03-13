@@ -1,41 +1,30 @@
+add_executable(LoadWeight
+    main.cpp
+)
 
-find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development)
+get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
+get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 
-# 添加 C++ 源文件
-add_executable(loadWeight main.cpp)
-
-# 链接 pybind11 和 Python 库
-target_link_libraries(loadWeight PRIVATE 
-    pybind11::embed 
-    Python3::Python
-    MLIRAnalysis
-    MLIRCallInterfaces
-    MLIRCastInterfaces
-    MLIRExecutionEngine
-    MLIRIR
-    MLIRAffineDialect
-    MLIRFuncDialect
-    MLIRSCFDialect
-    MLIRLLVMToLLVMIRTranslation
-    MLIRMemRefDialect
-    MLIRParser
-    MLIRPass
-    MLIRSideEffectInterfaces
-    MLIRTargetLLVMIRExport
-    MLIRTransforms
-    MLIRSupport
-    MLIRLLVMCommonConversion
-    MLIRLLVMToLLVMIRTranslation
-    MLIRTargetLLVMIRExport
-    MLIRControlFlowToLLVM
-    MLIRFuncToLLVM
-    MLIRMemRefToLLVM
-    MLIRSCFToControlFlow
-    MLIRAffineToStandard
+target_link_libraries(LoadWeight
+    PUBLIC
+    LLVMSupport
+    MLIRToLLVMIRTranslationRegistration
+    MLIRFromLLVMIRTranslationRegistration
+    LLVMX86Info
+    # LLVMX86TargetMCA
+    LLVMX86Disassembler
+    LLVMX86Desc
+    LLVMX86CodeGen
+    LLVMX86AsmParser
+    MLIRTargetCpp
+    MLIRFuncAllExtensions
+    MLIRSPIRVTranslateRegistration
+    MLIRLLVMIRToLLVMTranslation
     ${dialect_libs}
-    ${conversion_libs})
-    
-target_include_directories(loadWeight PRIVATE ${Python3_INCLUDE_DIRS})
-
-# 设置 Python 模块路径
-# set(PYTHON_MODULE_PATH ${Aipiler_PYTHON_PACKAGES_DIR}/Aipiler/utils)
+    ${conversion_libs}
+    MLIRMIX
+    LowerModule
+    LowerComposite
+    LowerPrimaryToTosa
+    loadPytorchModel
+)

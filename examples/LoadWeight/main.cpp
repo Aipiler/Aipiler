@@ -1,11 +1,31 @@
+#include "Utils/loadPytorchModel.h"
+#include "mix/mixDialect.h"
+#include "mix/mixOps.h"
+#include "mix/mixTypes.h"
+#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
+#include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
+#include "mlir/Conversion/TosaToLinalg/TosaToLinalg.h"
+#include "mlir/Conversion/TosaToTensor/TosaToTensor.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+#include "mlir/Dialect/Bufferization/Pipelines/Passes.h"
+#include "mlir/Dialect/Bufferization/Transforms/OneShotAnalysis.h"
+#include "mlir/Dialect/Bufferization/Transforms/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/Dialect/LLVMIR/Transforms/RequestCWrappers.h"
+#include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/MemRef/Transforms/Passes.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -19,126 +39,287 @@
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/InitAllDialects.h"
+#include "mlir/InitAllExtensions.h"
+#include "mlir/InitAllPasses.h"
+#include "mlir/InitAllTranslations.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/PassRegistry.h"
+#include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Target/LLVMIR/Dialect/All.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
+
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
+#include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
+#include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
+#include "llvm/DebugInfo/DWARF/DWARFUnit.h"
+#include "llvm/MC/MCAssembler.h"
+#include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCDisassembler/MCDisassembler.h"
+#include "llvm/MC/MCInstPrinter.h"
+#include "llvm/MC/MCObjectStreamer.h"
+#include "llvm/MC/MCObjectWriter.h"
+#include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCSectionELF.h"
+#include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/MC/MCSymbol.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/CodeGen.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/Regex.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
-
+#include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
 #include <chrono>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
-#include <pybind11/embed.h>
-#include <pybind11/numpy.h>
-#include <sstream>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Target/TargetMachine.h>
+#include <optional>
 #include <sys/types.h>
 
-namespace py = pybind11;
+using namespace mlir;
+std::unique_ptr<Pass> createLowerModulePass();
+std::unique_ptr<Pass> createLowerCompositePass();
+std::unique_ptr<Pass> createLowerPrimaryToTosa();
 
-// 日志级别枚举
-enum class LogLevel { INFO, WARNING, ERROR };
+void registerLowerModulePass();
+void registerLowerCompositePass();
+void registerLowerPrimaryToTosaPass();
 
-// 日志输出函数
-void log(LogLevel level, const std::string &message) {
-  auto now = std::chrono::system_clock::now();
-  auto time = std::chrono::system_clock::to_time_t(now);
-  std::stringstream ss;
-  ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+void generateCode(mlir::ModuleOp &theModule, mlir::OpBuilder &builder) {
+  auto loc = theModule->getLoc();
+  builder.setInsertionPointToEnd(theModule.getBody());
 
-  const char *level_str;
-  switch (level) {
-  case LogLevel::INFO:
-    level_str = "INFO";
-    break;
-  case LogLevel::WARNING:
-    level_str = "WARNING";
-    break;
-  case LogLevel::ERROR:
-    level_str = "ERROR";
-    break;
-  }
+  auto elementType = builder.getF16Type();
+  auto printInputType = UnrankedTensorType::get(elementType);
+  auto printFunTy =
+      builder.getFunctionType(TypeRange{printInputType}, TypeRange{});
+  auto printfunc =
+      builder.create<func::FuncOp>(loc, "printMemrefF16", printFunTy);
+  printfunc.setPrivate();
+  // function main
 
-  std::cout << "[" << ss.str() << "][" << level_str << "] " << message
-            << std::endl;
+  builder.setInsertionPointToEnd(theModule.getBody());
+  auto mainfunc = builder.create<func::FuncOp>(loc, "main",
+                                               builder.getFunctionType({}, {}));
+  mainfunc.setPrivate();
+  auto mainbody = mainfunc.addEntryBlock();
+  builder.setInsertionPointToEnd(mainbody);
+
+  auto weightType = RankedTensorType::get(llvm::ArrayRef<int64_t>{2049},
+                                          builder.getF16Type());
+  // auto ct = builder.create<arith::ConstantOp>(
+  //     loc, weightType, builder.getOneAttr(builder.getF16Type()));
+
+  // auto w = builder.create<mix::WeightOp>(loc, weightType, "test.weight");
+
+  // auto rs = builder.create<tosa::ReduceSumOp>(loc, w, 0);
+
+  auto c100 = builder.create<arith::ConstantOp>(
+      loc,
+      DenseElementsAttr::get(
+          RankedTensorType::get(ArrayRef<int64_t>{1}, builder.getF16Type()),
+          SmallVector<Attribute>{builder.getF16FloatAttr(100)}));
+  auto c240 = builder.create<arith::ConstantOp>(
+      loc,
+      DenseElementsAttr::get(
+          RankedTensorType::get(ArrayRef<int64_t>{1}, builder.getF16Type()),
+          SmallVector<Attribute>{builder.getF16FloatAttr(240)}));
+  auto mul = builder.create<arith::MulFOp>(loc, c100, c240);
+  auto cast2 = builder.create<tensor::CastOp>(loc, printInputType, mul);
+  builder.create<func::CallOp>(loc, printfunc, ValueRange{cast2});
+  builder.create<func::ReturnOp>(loc);
 }
 
-void load_model(const std::string &model_path, mlir::ModuleOp &theModule,
-                mlir::OpBuilder &builder) {
-  try {
-    log(LogLevel::INFO, "Initializing Python interpreter");
-    py::scoped_interpreter guard{};
+void generateExecutable(llvm::Module &module, llvm::StringRef outputFilename) {
+  // llvm::InitializeAllTargetInfos();
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmParser();
+  llvm::InitializeNativeTargetAsmPrinter();
+  std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+  module.setTargetTriple(targetTriple);
 
-    log(LogLevel::INFO, "Importing Python module: load_model");
-    py::module load_model_module = py::module::import("load_model");
+  std::string error;
+  const llvm::Target *target =
+      llvm::TargetRegistry::lookupTarget(targetTriple, error);
+  if (!target) {
+    llvm::errs() << "Error: " << error << "\n";
+    return;
+  }
 
-    log(LogLevel::INFO, "Loading model weights from: " + model_path);
-    py::dict model_weights =
-        load_model_module.attr("load_model_weights")(model_path);
-    log(LogLevel::INFO, "Successfully loaded model weights");
+  llvm::TargetOptions opt;
+  llvm::TargetMachine *targetMachine = target->createTargetMachine(
+      targetTriple, "generic", "", opt, llvm::Reloc::PIC_);
 
-    for (auto item : model_weights) {
-      std::string key = item.first.cast<std::string>();
-      py::array value = item.second.cast<py::array>();
-      auto value_shape = value.shape();
-      auto rank = value.ndim();
-      llvm::SmallVector<int64_t> shape;
-      for (int i = 0; i < rank; i++) {
-        shape.push_back(value_shape[i]);
-      }
-      auto value_dtype = value.dtype();
-      // TODO: change dtype according to  value_dtype
-      auto dtype = builder.getF16Type();
-      auto tensorTy = mlir::RankedTensorType::get(shape, dtype);
-      const void *data = value.data();
-      const char *raw_data = static_cast<const char *>(data);
-      auto size = value.size();
-      auto raw_data_byte_len =
-          size * (dtype.getIntOrFloatBitWidth() / 8) / sizeof(char);
+  module.setDataLayout(targetMachine->createDataLayout());
 
-      auto tensorAttr = mlir::DenseElementsAttr::getFromRawBuffer(
-          tensorTy, llvm::ArrayRef<char>(raw_data, raw_data_byte_len));
-      theModule->setAttr(key, tensorAttr);
-    }
-  } catch (const py::error_already_set &e) {
-    log(LogLevel::ERROR, "Python exception: " + std::string(e.what()));
-    throw;
-  } catch (const std::exception &e) {
-    log(LogLevel::ERROR, "Standard exception: " + std::string(e.what()));
-    throw;
-  } catch (...) {
-    log(LogLevel::ERROR, "Unknown exception occurred");
-    throw;
+  std::string objFilename = "tmp.o";
+  std::error_code EC;
+  llvm::raw_fd_ostream dest(objFilename, EC, llvm::sys::fs::OF_None);
+  if (EC) {
+    llvm::errs() << "Could not open file: " << EC.message() << "\n";
+    return;
+  }
+
+  llvm::legacy::PassManager pass;
+  if (targetMachine->addPassesToEmitFile(pass, dest, nullptr,
+                                         llvm::CodeGenFileType::ObjectFile)) {
+    llvm::errs() << "TargetMachine can't emit a file of this type\n";
+    return;
+  }
+
+  pass.run(module);
+  dest.flush();
+
+  // 调用系统链接器生成可执行文件
+  llvm::SmallVector<llvm::StringRef, 8> args;
+  args.push_back("/usr/bin/cc");
+  args.push_back(objFilename);
+  args.push_back("-fPIE");
+  args.push_back("-L../../thirdparty/llvm/build/lib");
+  args.push_back("-lmlir_runner_utils");
+  args.push_back("-lmlir_c_runner_utils");
+  // for powf op
+  args.push_back("-lm");
+  args.push_back("-o");
+  args.push_back(outputFilename);
+  std::string errormsg;
+  int retCode = llvm::sys::ExecuteAndWait(
+      "/usr/bin/cc", args, llvm::ArrayRef<llvm::StringRef>{"PATH=/usr/bin/"},
+      {}, 0, 0, &errormsg);
+  if (retCode != 0) {
+    llvm::errs() << "Linking failed: " << errormsg << "\n";
+  }
+
+  // 删除临时目标文件
+  if (auto ec = llvm::sys::fs::remove(objFilename)) {
+    llvm::errs() << ec.message() << "\n";
   }
 }
 
 int main() {
-  // 输入模型文件路径
-  std::string model_path = "pytorch_model_00001-of-00004.bin";
+  // Register all MLIR passes.
 
-  mlir::MLIRContext context;
+  mlir::registerAllPasses();
+  mlir::registerAllTranslations();
+  mlir::DialectRegistry registry;
+  mlir::registerLLVMDialectTranslation(registry);
+  mlir::registerAllDialects(registry);
+  mlir::registerAllExtensions(registry);
+  mlir::registerAllFromLLVMIRTranslations(registry);
+  mlir::registerBuiltinDialectTranslation(registry);
+
+  MLIRContext context(registry);
+
+  registerLowerModulePass();
+  registerLowerCompositePass();
+  registerLowerPrimaryToTosaPass();
+
+  context.getOrLoadDialect<mix::MIXDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::func::FuncDialect>();
+  context.getOrLoadDialect<mlir::tosa::TosaDialect>();
   context.getOrLoadDialect<mlir::tensor::TensorDialect>();
-
   mlir::OpBuilder builder(&context);
   auto loc = builder.getUnknownLoc();
   auto theModule = mlir::ModuleOp::create(loc);
-  builder.setInsertionPointToEnd(theModule.getBody());
-  // theModule->setAttr("abc", builder.getI32TensorAttr({1, 2, 3, 4}));
-  // auto abc = theModule->getAttr("abcd");
-  // if (abc) {
-  //   abc.dump();
 
-  // } else {
-  //   std::cout << "abccccc" << std::endl;
-  // }
-  // // 加载模型权重
-  load_model(model_path, theModule, builder);
-  theModule->dump();
+  generateCode(theModule, builder);
+
+  mix::utils::load_model("./weight_model.bin", theModule, builder,
+                         builder.getF16Type());
+
+  theModule.dump();
+
+  mlir::PassManager pm(&context);
+
+  // "builtin.module( \
+// 	lower-mix-module, \
+// 	lower-mix-composite, \
+// 	lower-mix-primary-to-tosa, \
+// 	func.func( \
+// 		tosa-to-linalg-named, \
+// 		tosa-to-linalg, \
+// 		tosa-to-tensor \
+// 	), \
+// 	empty-tensor-to-alloc-tensor, \
+// 	one-shot-bufferize{bufferize-function-boundaries}, \
+// 	convert-linalg-to-loops, \
+// 	buffer-deallocation-pipeline, \
+// 	expand-strided-metadata, \
+// 	lower-affine, \
+// 	finalize-memref-to-llvm, \
+// 	convert-math-to-llvm, \
+// 	convert-scf-to-cf, \
+// 	convert-cf-to-llvm, \
+// 	convert-func-to-llvm, \
+// 	reconcile-unrealized-casts)"
+
+  pm.addPass(createLowerModulePass());
+  pm.addPass(createLowerCompositePass());
+  pm.addPass(createLowerPrimaryToTosa());
+  pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToLinalgNamed());
+  pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToLinalg());
+  pm.addNestedPass<func::FuncOp>(mlir::tosa::createTosaToTensor());
+  pm.addPass(mlir::bufferization::createEmptyTensorToAllocTensorPass());
+  mlir::bufferization::OneShotBufferizationOptions opt;
+  opt.bufferizeFunctionBoundaries = true;
+  pm.addPass(mlir::bufferization::createOneShotBufferizePass(opt));
+  pm.addPass(mlir::createConvertLinalgToLoopsPass());
+  mlir::bufferization::BufferDeallocationPipelineOptions deallocopt;
+  mlir::bufferization::buildBufferDeallocationPipeline(pm.nest<ModuleOp>(),
+                                                       deallocopt);
+  pm.addPass(mlir::memref::createExpandStridedMetadataPass());
+  pm.addPass(mlir::createLowerAffinePass());
+  pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());
+  pm.addPass(mlir::createConvertMathToLLVMPass());
+  pm.addNestedPass<func::FuncOp>(mlir::LLVM::createRequestCWrappersPass());
+  pm.addPass(mlir::createConvertSCFToCFPass());
+  pm.addPass(mlir::createConvertFuncToLLVMPass());
+  pm.addPass(mlir::createReconcileUnrealizedCastsPass());
+
+  if (mlir::failed(pm.run(theModule))) {
+    return 4;
+  }
+  // translate to llvm ir
+  llvm::LLVMContext LLVMContext;
+  auto llvmModule = mlir::translateModuleToLLVMIR(theModule, LLVMContext);
+  if (!llvmModule) {
+    theModule->dump();
+    llvm::errs() << "Failed to emit LLVM IR\n";
+    return -1;
+  }
+
+  generateExecutable(*llvmModule.get(), "rms");
+
   return 0;
 }

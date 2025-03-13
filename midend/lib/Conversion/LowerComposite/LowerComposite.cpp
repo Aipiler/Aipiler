@@ -271,8 +271,8 @@ void LowerCompositePass::runOnOperation() {
   MLIRContext &context = this->getContext();
   ModuleOp module = this->getOperation();
 
-  llvm::outs() << "dynamic-load-weight: "
-               << (dynamicLoadWeight ? "true" : "false") << "\n";
+  // llvm::outs() << "dynamic-load-weight: "
+  //              << (dynamicLoadWeight ? "true" : "false") << "\n";
 
   ConversionTarget target(context);
   target.addLegalDialect<

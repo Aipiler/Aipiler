@@ -117,7 +117,7 @@ bool DynamicLoadWeight = true;
 
 // 模型参数定义
 const int max_seq_len = 5;
-const int hidden_size = 5120;
+const int hidden_size = 10;
 const int ffn_hidden_size = 12288;
 const int n_head = 32;
 const int head_dim = hidden_size / n_head;
