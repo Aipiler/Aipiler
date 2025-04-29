@@ -1,4 +1,3 @@
-from .operators import ComputeOperator, MergeOperator, CoordinateOperator
 from .rank import (
     RankVariable,
     RankExpression,
@@ -12,8 +11,6 @@ from .rank import RankMap
 from .constraint import Constraint, StaticConstraint, DynamicConstraint
 from typing import List, Optional, Tuple, Dict, Any, Set, Callable, Union
 from abc import ABC, abstractmethod
-from enum import Enum, auto
-import operator
 
 
 class EinsumExpression(ABC):
@@ -159,7 +156,26 @@ class PopulateEquation(EinsumEquation):
         pass
 
 
-class EinsumIteration(EinsumExpression):
+class EinsumCascade(EinsumExpression):
+    """Represents a cascade of Einsum equations."""
+
+    def __init__(
+        self,
+        output_tensor: Tensor,
+        input_tensors: List[Tensor],
+        equations: List[EinsumEquation],
+    ):
+        super().__init__(
+            output_tensor=output_tensor,
+            input_tensors=input_tensors,
+        )
+        self.equations = equations
+
+    def __repr__(self):
+        pass
+
+
+class EinsumIteration(EinsumCascade):
     """Represents an iteration in the Einsum expression."""
 
     def __init__(
@@ -172,8 +188,8 @@ class EinsumIteration(EinsumExpression):
         super().__init__(
             output_tensor=output_tensor,
             input_tensors=input_tensors,
+            equations=equations,
         )
-        self.equations = equations
         self.generative_rank = generative_rank
 
     def __repr__(self):

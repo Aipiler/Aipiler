@@ -1,19 +1,16 @@
-from compute import EinsumExpression
 from data import Data
 from typing import List, Dict, Any, Optional, Set, Tuple
 import uuid
 from abc import ABC, abstractmethod
+from .Eoperator import Operator
 
 
 class Node(ABC):
     """统一的计算节点抽象类"""
 
-    def __init__(
-        self, einsum: Optional[EinsumExpression] = None, name: Optional[str] = None
-    ):
+    def __init__(self, name: Optional[str] = None):
         self.id = str(uuid.uuid4())  # 添加唯一ID
         self.name = name if name is not None else f"Node-{self.id[:8]}"
-        self.einsum = einsum
         self.input_edges = []  # 输入边列表
         self.output_edges = []  # 输出边列表
         self.status = "initialized"  # 节点状态: "initialized", "ready", "running", "completed", "error"
@@ -115,30 +112,10 @@ class PlaceholderNode(Node):
 class ComputeNode(Node):
     """计算节点，表示一个计算操作"""
 
-    def __init__(self, einsum: EinsumExpression, name: Optional[str] = None):
-        if einsum is None:
-            raise ValueError("ComputeNode must have a non-null compute instance")
-        super().__init__(einsum=einsum, name=name)
-        self.output_shape = None  # 存储推断的输出数据形状
+    def __init__(self, operator: Operator, name: Optional[str] = None):
 
-    def verify(self) -> Tuple[bool, Optional[str]]:
-        """验证计算节点的输入是否符合要求
-
-        返回:
-            Tuple[bool, Optional[str]]: (验证是否通过, 错误信息)
-        """
-        if self.einsum is None:
-            return False, "没有设置计算操作"
-
-        pass
-
-    def infer_return_shape(self) -> Optional[Tuple]:
-        """推断计算节点输出数据的形状
-
-        返回:
-            Optional[Tuple]: 推断的输出数据形状
-        """
-        pass
+        super().__init__(name=name)
+        self.operator = operator
 
 
 class OutputNode(Node):
