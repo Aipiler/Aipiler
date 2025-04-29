@@ -71,7 +71,7 @@ class PyTorchGraphConverter:
 
             else:
                 # 创建计算节点
-                handler = self.op_mapper.get_handler(node.target)
+                handler = self.op_mapper.get_handler(str(node.target))
                 einsum_expr = handler(node)
                 custom_node = ComputeNode(einsum=einsum, name=f"{node.name}")
                 self.logger.debug(f"创建计算节点: {custom_node.name}")

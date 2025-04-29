@@ -31,7 +31,7 @@ einsum_mapper = PyTorchOpMapper()
 # --- 注册具体的处理函数 ---
 
 
-@einsum_mapper.register("aten::add.Tensor")  # 注册 Add 算子的处理器
+@einsum_mapper.register("aten.max_pool2d.default")  # 注册 Add 算子的处理器
 def handle_add(pytorch_node: torch.fx.Node) -> Operator:
     # 从 pytorch_node (例如 torch.fx.Node) 提取信息
     # 注意：实际中需要准确解析 args 和 kwargs 来确定输入和属性
@@ -42,7 +42,15 @@ def handle_add(pytorch_node: torch.fx.Node) -> Operator:
     return EinsumOperator(einsum_expr=einsum_expr)
 
 
-@einsum_mapper.register("aten::matmul")  # 注册 MatMul 算子的处理器
+@einsum_mapper.register("aten.relu.default")  # 注册 MatMul 算子的处理器
+def handle_matmul(pytorch_node: torch.fx.Node) -> Operator:
+    print(f"Handling aten::matmul from node: {pytorch_node.name}")
+    # 可能需要检查 pytorch_node.args 来确定是否有转置等情况
+    # 调用你的 MatMul 工厂函数
+    return MatMul()  # 返回配置好的自定义 MatMul 算子实例
+
+
+@einsum_mapper.register("aten.conv2d.default")  # 注册 MatMul 算子的处理器
 def handle_matmul(pytorch_node: torch.fx.Node) -> Operator:
     print(f"Handling aten::matmul from node: {pytorch_node.name}")
     # 可能需要检查 pytorch_node.args 来确定是否有转置等情况

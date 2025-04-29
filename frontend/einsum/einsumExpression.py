@@ -4,6 +4,10 @@ from .rank import (
     SimpleRankExpression,
     AffineMappedRankExpression,
 )
+from .operators.compute import ComputeOperator
+from .operators.unary import UnaryOperator
+from .operators.coordinate import CoordinateOperator
+from .operators.merge import MergeOperator
 from .tensor import Tensor, TensorRank, Dtype
 from .action import Action, MapAction, ReduceAction, PopulateAction
 from .range import Range, CompoundRange
@@ -98,6 +102,7 @@ class MapEquation(EinsumEquation):
         second_tensor: Tensor,
         rankMap: RankMap,
         target_ranks: List[RankVariable],
+        computeOp: ComputeOperator,
     ):
         super().__init__(
             output_tensor=output_tensor,
@@ -107,6 +112,7 @@ class MapEquation(EinsumEquation):
         self.first_tensor = first_tensor
         self.second_tensor = second_tensor
         self.target_ranks = target_ranks
+        self.computeOp = computeOp
 
     def __repr__(self):
         pass
@@ -121,6 +127,7 @@ class ReduceEquation(EinsumEquation):
         input_tensor: Tensor,
         rankMap: RankMap,
         target_ranks: List[RankVariable],
+        computeOp: ComputeOperator,
     ):
         super().__init__(
             output_tensor=output_tensor,
@@ -129,6 +136,7 @@ class ReduceEquation(EinsumEquation):
         )
         self.input_tensor = input_tensor
         self.target_ranks = target_ranks
+        self.computeOp = computeOp
 
     def __repr__(self):
         pass
@@ -143,6 +151,8 @@ class PopulateEquation(EinsumEquation):
         input_tensor: Tensor,
         rankMap: RankMap,
         target_ranks: List[RankVariable],
+        computeOp: ComputeOperator,
+        coordinateOp: CoordinateOperator,
     ):
         super().__init__(
             output_tensor=output_tensor,
@@ -151,6 +161,29 @@ class PopulateEquation(EinsumEquation):
         )
         self.input_tensor = input_tensor
         self.target_ranks = target_ranks
+        self.computeOp = computeOp
+        self.coordinateOp = coordinateOp
+
+    def __repr__(self):
+        pass
+
+
+class UnaryEquation(EinsumEquation):
+    """Represents a Unary equation in the Einsum expression."""
+
+    def __init__(
+        self,
+        output_tensor: Tensor,
+        input_tensor: Tensor,
+        unaryOp: UnaryOperator,
+    ):
+        super().__init__(
+            output_tensor=output_tensor,
+            input_tensors=[input_tensor],
+            rankMap=None,
+        )
+        self.input_tensor = input_tensor
+        self.unaryOp = unaryOp
 
     def __repr__(self):
         pass

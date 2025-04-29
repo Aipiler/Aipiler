@@ -44,18 +44,101 @@ class RankVariable:
         return self.name
 
 
+# --- Term classes ---
+
+
+class VarTerm:
+    """Represents a variable term with a coefficient (e.g., 2s)."""
+
+    def __init__(self, variable: RankVariable, coefficient: int = 1):
+        self.variable = variable
+        self.coefficient = coefficient
+
+    def get_variable(self) -> RankVariable:
+        """Get the variable associated with this term."""
+        return self.variable
+
+    def get_coefficient(self) -> int:
+        """Get the coefficient of this term."""
+        return self.coefficient
+
+    def __repr__(self):
+        if self.coefficient == 1:
+            return f"{self.variable}"
+        elif self.coefficient == -1:
+            return f"-{self.variable}"
+        else:
+            return f"{self.coefficient}{self.variable}"
+
+
+class AffineTerm:
+    """Represents a term in an affine expression."""
+
+    def __init__(self, constTerm: int = 0, *varTerms: VarTerm):
+        """
+        Initialize an affine term with a constant and variable terms.
+
+        Args:
+            constTerm: The constant term (default: 0)
+            *varTerms: Variable number of VarTerm objects
+        """
+        self.varTerms = list(varTerms)  # 将元组转换为列表以便后续修改
+        self.constTerm = constTerm
+
+    def get_var_terms(self) -> List[VarTerm]:
+        """Get all variable terms."""
+        return self.varTerms
+
+    def get_const_term(self) -> int:
+        """Get the constant term."""
+        return self.constTerm
+
+    def get_variables(self) -> List[RankVariable]:
+        """Get all variables in the affine expression."""
+        return [varTerm.get_variable() for varTerm in self.varTerms]
+
+    def add_var_term(self, varTerm: VarTerm):
+        """Add a variable term to the affine expression."""
+        self.varTerms.append(varTerm)
+
+    def __repr__(self):
+        """String representation of the affine term."""
+        result = ""
+
+        # Add variable terms
+        if self.varTerms:
+            result = str(self.varTerms[0])
+            for term in self.varTerms[1:]:
+                if term.get_coefficient() >= 0:
+                    result += f" + {term}"
+                else:
+                    # For negative coefficients, the minus sign is already included in the term's string representation
+                    result += f" {term}"
+
+        # Add constant term if non-zero
+        if self.constTerm != 0:
+            if self.constTerm > 0:
+                prefix = " + " if result else ""
+                result += f"{prefix}{self.constTerm}"
+            else:
+                result += f" - {abs(self.constTerm)}"
+
+        # Return "0" if the expression is empty
+        return result if result else "0"
+
+
 # --- Rank Expressions ---
 
 
 class RankExpression(ABC):
     """Base class for all forms of rank specifications in tensor subscripts."""
 
-    def __init__(self, variable: RankVariable):
-        self.variable = variable  # The core variable (e.g., 's' in 's:s<d' or 's+5')
+    def __init__(self, variables: List[RankVariable]):
+        self.variables = variables  # The core variable (e.g., 's' in 's:s<d' or 's+5')
 
-    def get_rank_variables(self) -> RankVariable:
+    def get_rank_variables(self) -> List[RankVariable]:
         """Get the core rank variable."""
-        return self.variable
+        return self.variables
 
     @abstractmethod
     def __repr__(self):
@@ -68,41 +151,40 @@ class RankExpression(ABC):
 
 
 class SimpleRankExpression(RankExpression):
-    """Represents a simple rank (e.g., 's', 'd')."""
+    """Represents a simple rank expression (e.g., 's', 'd')."""
 
-    def __init__(self, variable: RankVariable):
-        super().__init__(variable)
+    def __init__(self, rankVariable: RankVariable):
+        """Initialize a simple rank expression."""
+        super().__init__([rankVariable])
+        self.rankVariable = rankVariable
 
-    def __repr__(self):
-        return f"{self.variable}"
-
-
-class AffineMap:
-    """Represents an affine mapping (e.g., 's+5')."""
-
-    def __init__(self, factor: int, offset: int):
-        self.factor = factor
-        self.offset = offset  # e.g., 5
-
-
-class AffineMappedRankExpression(RankExpression):
-    """A rank expression that uses an affine mapping (e.g., 's+5')."""
-
-    def __init__(self, variable: RankVariable, affine_map: AffineMap):
-        super().__init__(variable)
-        self.affine_map = affine_map  # e.g., AffineMap(1, 5)
+    def get_rank_variable(self) -> RankVariable:
+        """Get the rank variable."""
+        return self.rankVariable
 
     def __repr__(self):
-        pass
+        """String representation of the simple rank expression."""
+        return str(self.rankVariable)
 
 
-# TODO: 暂时不支持非affine映射
-class NonAffineMap:
-    pass
+# --- Affine Expressions ---
+
+
+class AffineRankExpression(RankExpression):
+    """Base class for affine expressions."""
+
+    def __init__(self, affineTerm: AffineTerm):
+        """Initialize an affine rank expression."""
+        super().__init__(affineTerm.get_variables())
+        self.affineTerm = affineTerm
+
+    def get_affine_term(self) -> AffineTerm:
+        """Get the affine term."""
+        return self.affineTerm
 
 
 # TODO: 暂时不支持非affine映射rank
-class NonAffineMappedRank(RankExpression):
+class NonAffineRankRank(RankExpression):
     pass
 
 
@@ -157,5 +239,5 @@ if __name__ == "__main__":
 
     print(rankMap)
 
-    # TODO: 测试AffineMappedRankExpression
+    # TODO: 测试AffineRankExpression
     # Example: Convolution

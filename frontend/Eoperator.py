@@ -1,5 +1,5 @@
 import abc
-from einsum.expression import EinsumExpression
+from frontend.einsum.einsumExpression import EinsumExpression
 
 
 # 基础 Operator 接口 (或抽象基类)
