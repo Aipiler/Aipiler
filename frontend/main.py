@@ -50,6 +50,9 @@ def main():
         elif node.op == "call_function":
             print(f"  函数: {node.target}")
             print(f"  参数: {node.args}")
+            for arg in node.args:
+                print(f"    - {arg}, type: {type(arg)}")
+
             if hasattr(node, "meta") and "val" in node.meta:
                 print(f"  输出形状: {node.meta['val']}")
         elif node.op == "output":

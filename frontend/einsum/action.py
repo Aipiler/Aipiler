@@ -1,5 +1,5 @@
 from .operators import ComputeOperator, MergeOperator, CoordinateOperator
-from .rank import RankVariable
+from .rankVariable import RankVariable
 from typing import List
 
 

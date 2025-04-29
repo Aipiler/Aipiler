@@ -4,16 +4,18 @@ from abc import ABC, abstractmethod
 from enum import Enum, auto
 import operator
 from typing import TYPE_CHECKING
-from .rank import (
-    RankVariable,
-    RankExpression,
-    SimpleRankExpression,
-    AffineMappedRankExpression,
-)
+from .rankVariable import RankVariable
 
 
-class ComparisonOperator:
+class ComparisonOperator(Enum):
     """表示Python中所有比较运算符的枚举类"""
+
+    EQUAL = (operator.eq, "==")
+    NOT_EQUAL = (operator.ne, "!=")
+    LESS_THAN = (operator.lt, "<")
+    LESS_THAN_OR_EQUAL = (operator.le, "<=")
+    GREATER_THAN = (operator.gt, ">")
+    GREATER_THAN_OR_EQUAL = (operator.ge, ">=")
 
     def __init__(self, func: Callable, symbol: str):
         self.func = func  # 操作符对应的函数
@@ -21,14 +23,6 @@ class ComparisonOperator:
 
     def __str__(self):
         return self.symbol
-
-
-EQUAL = ComparisonOperator(operator.eq, "==")
-NOT_EQUAL = ComparisonOperator(operator.ne, "!=")
-LESS_THAN = ComparisonOperator(operator.lt, "<")
-LESS_THAN_OR_EQUAL = ComparisonOperator(operator.le, "<=")
-GREATER_THAN = ComparisonOperator(operator.gt, ">")
-GREATER_THAN_OR_EQUAL = ComparisonOperator(operator.ge, ">=")
 
 
 class Constraint(ABC):
@@ -65,20 +59,20 @@ class StaticConstraint(Constraint):
         """生成约束对应的范围"""
         result = CompoundRange()
 
-        if self.operator == EQUAL:
+        if self.operator == ComparisonOperator.EQUAL:
             result.add_range(Range(self.value, self.value + 1))
-        elif self.operator == NOT_EQUAL:
+        elif self.operator == ComparisonOperator.NOT_EQUAL:
             # 不等于约束返回两个范围: [0, value) 和 (value, ∞)
             if self.value > 0:
                 result.add_range(Range(0, self.value))
             result.add_range(Range(self.value + 1, Range.INFINITY))
-        elif self.operator == LESS_THAN:
+        elif self.operator == ComparisonOperator.LESS_THAN:
             result.add_range(Range(0, self.value))
-        elif self.operator == LESS_THAN_OR_EQUAL:
+        elif self.operator == ComparisonOperator.LESS_THAN_OR_EQUAL:
             result.add_range(Range(0, self.value + 1))
-        elif self.operator == GREATER_THAN:
+        elif self.operator == ComparisonOperator.GREATER_THAN:
             result.add_range(Range(self.value + 1, Range.INFINITY))
-        elif self.operator == GREATER_THAN_OR_EQUAL:
+        elif self.operator == ComparisonOperator.GREATER_THAN_OR_EQUAL:
             result.add_range(Range(self.value, Range.INFINITY))
 
         return result

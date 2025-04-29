@@ -26,6 +26,7 @@ class PyTorchGraphConverter:
         self.graph = Graph("PyTorchConverted")
         self.op_mapper = einsum_mapper
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.node_map = {}
 
     def convert(self, exported_program: torch.export.ExportedProgram) -> Graph:
         """转换PyTorch导出的程序到自定义图结构"""
@@ -72,8 +73,10 @@ class PyTorchGraphConverter:
             else:
                 # 创建计算节点
                 handler = self.op_mapper.get_handler(str(node.target))
-                einsum_expr = handler(node)
-                custom_node = ComputeNode(einsum=einsum, name=f"{node.name}")
+                operator = handler(node)
+                custom_node = ComputeNode(
+                    operator=operator, name=f"Einsum: {node.name}"
+                )
                 self.logger.debug(f"创建计算节点: {custom_node.name}")
 
             # 添加节点到图中并保存映射

@@ -1,29 +1,31 @@
 import operator
-
-
-class ComputeOperator:
-
-    def __init__(self, func, name: str):
-        self.func = func  # The actual function for the operator
-        self.name = name
-
-    def __repr__(self):
-        return self.name
+from enum import Enum
+from typing import Callable
 
 
 # Predefined compute operators
-ADD = ComputeOperator(operator.add, "add")
-MUL = ComputeOperator(operator.mul, "mul")
-SUB = ComputeOperator(operator.sub, "sub")
-DIV = ComputeOperator(operator.floordiv, "div")
-MIN = ComputeOperator(operator.lt, "min")
-MAX = ComputeOperator(operator.ge, "max")
 
 
 def pass_through(x):
     return x
 
 
-PASS_THROUGH = ComputeOperator(
-    pass_through, "PassThrough"
-)  # For TopK/Gather like cases
+class ComputeOperator(Enum):
+
+    ADD = (operator.add, "add")
+    MUL = (operator.mul, "mul")
+    SUB = (operator.sub, "sub")
+    DIV = (operator.floordiv, "div")
+    MIN = (operator.lt, "min")
+    MAX = (operator.ge, "max")
+    PASS_THROUGH = (pass_through, "pass_through")
+
+    def __init__(self, func: Callable, name: str):
+        self.func = func  # The actual function for the operator
+        self.name = name
+
+    def __repr__(self) -> str:
+        return f"ComparisonOperator.{self.name}"
+
+    def __str__(self) -> str:
+        return self.symbol
