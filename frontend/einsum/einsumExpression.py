@@ -5,13 +5,12 @@ from .rankExpression import (
     NonAffineRankRank,
 )
 from .rankVariable import RankVariable
-from .term import AffineTerm, VarTerm
+from .term import AffineTerm, VarTerm, ConstTerm
 from .operators.compute import ComputeOperator
 from .operators.unary import UnaryOperator
 from .operators.coordinate import CoordinateOperator
 from .operators.merge import MergeOperator
 from .tensor import Tensor, TensorRank, Dtype
-from .action import Action, MapAction, ReduceAction, PopulateAction
 from .range import Range, CompoundRange
 from .rankExpression import RankMap
 from .constraint import (
@@ -374,10 +373,7 @@ class EinsumIteration(EinsumCascade):
         )
 
 
-if __name__ == "__main__":
-    # Example usage
-
-    # maxPooling 2d
+def maxPooling2D():
     pooling_size = 2
     stride = 2
     tensor_input = Tensor("A", (10, 10))
@@ -392,28 +388,114 @@ if __name__ == "__main__":
     rankMap.add_mapping(
         tensor_input.get_i_rank(0),
         AffineRankExpression(
-            affineTerm=AffineTerm(pooling_size, VarTerm(varM, stride), VarTerm(varK))
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM, stride), VarTerm(varK))
         ),
     )
     rankMap.add_mapping(
         tensor_input.get_i_rank(1),
         AffineRankExpression(
-            affineTerm=AffineTerm(pooling_size, VarTerm(varN, stride), VarTerm(varK))
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN, stride), VarTerm(varK))
         ),
     )
     rankMap.add_mapping(
         tensor_output.get_i_rank(0),
         AffineRankExpression(
-            affineTerm=AffineTerm(pooling_size, VarTerm(varM, stride))
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM, stride))
         ),
     )
     rankMap.add_mapping(
         tensor_output.get_i_rank(1),
         AffineRankExpression(
-            affineTerm=AffineTerm(pooling_size, VarTerm(varM, stride))
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM, stride))
         ),
     )
     maxPooling = ReduceEquation(
         tensor_output, tensor_input, rankMap, [varK], ComputeOperator.MAX
     )
     print(maxPooling)
+
+
+def matmul():
+    tensorA = Tensor("A", (3, 4))
+    tensorB = Tensor("B", (4, 5))
+    tensrTmp = Tensor("tmp", (3, 4, 5))
+    tensorC = Tensor("C", (3, 5))
+    varM = RankVariable("m")
+    varN = RankVariable("n")
+    varK = RankVariable("k")
+    rankMap1 = RankMap()
+    rankMap1.add_mapping(
+        tensorA.get_i_rank(0),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM))),
+    )
+    rankMap1.add_mapping(
+        tensorA.get_i_rank(1),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK))),
+    )
+    rankMap1.add_mapping(
+        tensorB.get_i_rank(0),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK))),
+    )
+    rankMap1.add_mapping(
+        tensorB.get_i_rank(1),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN))),
+    )
+    rankMap1.add_mapping(
+        tensrTmp.get_i_rank(0),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM))),
+    )
+    rankMap1.add_mapping(
+        tensrTmp.get_i_rank(1),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK))),
+    )
+    rankMap1.add_mapping(
+        tensrTmp.get_i_rank(2),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN))),
+    )
+    einsum1 = MapEquation(
+        tensrTmp, tensorA, tensorB, rankMap1, [varK], ComputeOperator.MUL
+    )
+
+    rankMap2 = RankMap()
+    rankMap2.add_mapping(
+        tensrTmp.get_i_rank(0),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM))),
+    )
+    rankMap2.add_mapping(
+        tensrTmp.get_i_rank(1),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK))),
+    )
+    rankMap2.add_mapping(
+        tensrTmp.get_i_rank(2),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN))),
+    )
+    rankMap2.add_mapping(
+        tensorC.get_i_rank(0),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM))),
+    )
+    rankMap2.add_mapping(
+        tensorC.get_i_rank(1),
+        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN))),
+    )
+    einsum2 = ReduceEquation(tensorC, tensrTmp, rankMap2, [varK], ComputeOperator.ADD)
+
+
+def conv2d():
+    pass
+
+
+def relu():
+    pass
+
+
+def softmax():
+    pass
+
+
+def RMSNorm():
+    pass
+
+
+if __name__ == "__main__":
+    # Example usage
+    maxPooling2D()

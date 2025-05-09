@@ -4,6 +4,20 @@ from typing import List, Optional, Union, Callable, Dict, Any, Tuple, Set
 # --- Term classes ---
 
 
+class ConstTerm:
+    """Represents a constant term (e.g., 2)."""
+
+    def __init__(self, value: int):
+        self.value = value
+
+    def get_value(self) -> int:
+        """Get the value of the constant term."""
+        return self.value
+
+    def __repr__(self):
+        return str(self.value)
+
+
 class VarTerm:
     """Represents a variable term with a coefficient (e.g., 2s)."""
 
@@ -31,7 +45,7 @@ class VarTerm:
 class AffineTerm:
     """Represents a term in an affine expression."""
 
-    def __init__(self, constTerm: int = 0, *varTerms: VarTerm):
+    def __init__(self, constTerm: ConstTerm, *varTerms: VarTerm):
         """
         Initialize an affine term with a constant and variable terms.
 
@@ -46,7 +60,7 @@ class AffineTerm:
         """Get all variable terms."""
         return self.varTerms
 
-    def get_const_term(self) -> int:
+    def get_const_term(self) -> ConstTerm:
         """Get the constant term."""
         return self.constTerm
 
@@ -73,12 +87,13 @@ class AffineTerm:
                     result += f" {term}"
 
         # Add constant term if non-zero
-        if self.constTerm != 0:
-            if self.constTerm > 0:
+        constant = self.constTerm.get_value()
+        if constant != 0:
+            if constant > 0:
                 prefix = " + " if result else ""
-                result += f"{prefix}{self.constTerm}"
+                result += f"{prefix}{constant}"
             else:
-                result += f" - {abs(self.constTerm)}"
+                result += f" - {abs(constant)}"
 
         # Return "0" if the expression is empty
         return result if result else "0"

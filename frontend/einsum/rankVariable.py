@@ -20,7 +20,7 @@ class RankVariable:
         """Initialize a rank variable with a name."""
         self.name = name
         self.static_ranges = CompoundRange()
-        self.constraints: List[Constraint] = []
+        self.constraints: List["Constraint"] = []
 
     def add_static_range(self, range: Range):
         """添加静态范围"""
@@ -30,7 +30,7 @@ class RankVariable:
         """获取基于静态约束的范围"""
         return self.static_ranges
 
-    def add_constraint(self, constraint: Constraint):
+    def add_constraint(self, constraint: "Constraint"):
         """添加约束"""
         self.constraints.append(constraint)
 

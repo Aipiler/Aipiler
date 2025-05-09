@@ -68,7 +68,8 @@ class Tensor:
         return TensorRank(self, i)
 
     def __repr__(self):
-        pass
+        """String representation of the tensor."""
+        return f"{self.name}(size={self.shape})"
 
 
 # --- Tensor Rank ---

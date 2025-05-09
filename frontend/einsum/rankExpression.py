@@ -15,32 +15,26 @@ if TYPE_CHECKING:
 class RankExpression(ABC):
     """Base class for all forms of rank specifications in tensor subscripts."""
 
-    def __init__(self, variables: List[RankVariable]):
+    def __init__(self, variables: List["RankVariable"]):
         self.variables = variables  # The core variable (e.g., 's' in 's:s<d' or 's+5')
 
-    def get_rank_variables(self) -> List[RankVariable]:
+    def get_rank_variables(self) -> List["RankVariable"]:
         """Get the core rank variable."""
         return self.variables
 
-    @abstractmethod
     def __repr__(self):
         pass
-
-    def check_condition(self) -> bool:
-        """Check if the rank expression meets its conditions."""
-        # Placeholder for condition checking logic
-        return True
 
 
 class SimpleRankExpression(RankExpression):
     """Represents a simple rank expression (e.g., 's', 'd')."""
 
-    def __init__(self, rankVariable: RankVariable):
+    def __init__(self, rankVariable: "RankVariable"):
         """Initialize a simple rank expression."""
         super().__init__([rankVariable])
         self.rankVariable = rankVariable
 
-    def get_rank_variable(self) -> RankVariable:
+    def get_rank_variable(self) -> "RankVariable":
         """Get the rank variable."""
         return self.rankVariable
 
@@ -63,6 +57,10 @@ class AffineRankExpression(RankExpression):
     def get_affine_term(self) -> AffineTerm:
         """Get the affine term."""
         return self.affineTerm
+
+    def __repr__(self):
+        """String representation of the simple rank expression."""
+        return f"{self.affineTerm}"
 
 
 # TODO: 暂时不支持非affine映射rank
