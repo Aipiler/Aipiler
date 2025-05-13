@@ -45,7 +45,7 @@ class VarTerm:
 class AffineTerm:
     """Represents a term in an affine expression."""
 
-    def __init__(self, constTerm: ConstTerm, *varTerms: VarTerm):
+    def __init__(self, constTerm: ConstTerm, varTerms: List[VarTerm]):
         """
         Initialize an affine term with a constant and variable terms.
 
@@ -53,7 +53,7 @@ class AffineTerm:
             constTerm: The constant term (default: 0)
             *varTerms: Variable number of VarTerm objects
         """
-        self.varTerms = list(varTerms)  # 将元组转换为列表以便后续修改
+        self.varTerms = varTerms
         self.constTerm = constTerm
 
     def get_var_terms(self) -> List[VarTerm]:

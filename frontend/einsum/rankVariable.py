@@ -44,3 +44,23 @@ class RankVariable:
 
     def __repr__(self):
         return self.name
+
+
+class RankVariableSet:
+    def __init__(self):
+        self.rankVariables = []
+
+    def get_rankVariables(self) -> List[RankVariable]:
+        return self.rankVariables
+
+    def add_rankVariable(self, rankVariable: RankVariable):
+        self.rankVariables.append(rankVariable)
+
+    def __getitem__(self, key: int) -> RankVariable | None:
+        if key < self.num:
+            return self.rankVariables[key]
+        else:
+            return None
+
+    def __setitem__(self, key: int, value: RankVariable):
+        self.rankVariables[key] = value

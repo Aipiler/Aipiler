@@ -4,13 +4,13 @@ from .rankExpression import (
     AffineRankExpression,
     NonAffineRankRank,
 )
-from .rankVariable import RankVariable
+from .rankVariable import RankVariable, RankVariableSet
 from .term import AffineTerm, VarTerm, ConstTerm
 from .operators.compute import ComputeOperator
 from .operators.unary import UnaryOperator
 from .operators.coordinate import CoordinateOperator
 from .operators.merge import MergeOperator
-from .tensor import Tensor, TensorRank, Dtype
+from .tensor import RankSet, DataSpace
 from .range import Range, CompoundRange
 from .rankExpression import RankMap
 from .constraint import (
@@ -29,62 +29,34 @@ T = TypeVar("T", bound="EinsumExpression")
 class EinsumExpression(ABC):
     """Base class for all Einsum expressions."""
 
-    def __init__(self, output_tensor: Tensor, input_tensors: List[Tensor]):
-        self.output_tensor = output_tensor
-        self.input_tensors = input_tensors
-
-    @abstractmethod
-    def __repr__(self) -> str:
-        """Return a developer-friendly string representation of the expression."""
-        pass
-
-    def __str__(self) -> str:
-        """Return a user-friendly string representation of the expression."""
-        return self.__repr__()
-
-    @abstractmethod
-    def clone(self: T) -> T:
-        """Create a deep copy of this expression."""
-        pass
-
-    def format_tensor_list(self, tensors: List[Tensor]) -> str:
-        """Helper method to format a list of tensors."""
-        return ", ".join([str(tensor) for tensor in tensors])
+    def __init__(
+        self,
+        outputs_rank_set: List[RankSet],
+        inputs_rank_set: List[RankSet],
+    ):
+        self.output_rank_set = outputs_rank_set
+        self.inputs_rank_set = inputs_rank_set
 
 
 class EinsumEquation(EinsumExpression):
     """Represents an EDGE Einsum expression."""
 
     def __init__(
-        self, output_tensor: Tensor, input_tensors: List[Tensor], rankMap: RankMap
+        self,
+        output_rank_set: RankSet,
+        inputs_rank_set: List[RankSet],
+        rankVariable_set: RankVariableSet,
+        rankMap: RankMap,
+        target_ranks: List[RankVariable],
     ):
         # Extract the output tensor and input tensors from the mappings
         super().__init__(
-            output_tensor=output_tensor,
-            input_tensors=input_tensors,
+            outputs_rank_set=[output_rank_set],
+            inputs_rank_set=inputs_rank_set,
         )
         self.rankMap = rankMap
-
-        # Validate inputs
-        if not output_tensor:
-            raise ValueError("Output tensor cannot be None")
-        if not input_tensors:
-            raise ValueError("Input tensors list cannot be empty")
-
-    def __repr__(self) -> str:
-        input_tensors_str = self.format_tensor_list(self.input_tensors)
-        return f"{self.__class__.__name__}(output={self.output_tensor}, inputs=[{input_tensors_str}], rankMap={self.rankMap})"
-
-    def clone(self) -> "EinsumEquation":
-        """Create a deep copy of this equation."""
-        # This is a basic implementation. Subclasses should override with more specific logic.
-        return self.__class__(
-            output_tensor=self.output_tensor,  # Assuming tensors are immutable
-            input_tensors=list(self.input_tensors),
-            rankMap=(
-                self.rankMap.clone() if hasattr(self.rankMap, "clone") else self.rankMap
-            ),
-        )
+        self.rankVariable_set = rankVariable_set
+        self.target_ranks = target_ranks
 
     def gen_iteration_domain(self):
         """Generate the iteration domain for the Einsum equation.
@@ -95,93 +67,33 @@ class EinsumEquation(EinsumExpression):
         # TODO: 实现迭代域生成逻辑
         raise NotImplementedError("This method needs to be implemented")
 
-    # def gen_iteration_domain(self) -> IterationDomain:
-    #     """Generate the iteration domain for the Einsum equation."""
-    #     # 创建空的迭代域
-    #     iteration_domain = IterationDomain()
-
-    #     def add_variable_domain_to_iteration_domain(tensor_mapping: RankMapping):
-    #         """Add ranges for the tensor mapping to the iteration domain."""
-    #         tensor = tensor_mapping.get_tensor()
-    #         for i in range(tensor.get_rank()):
-    #             # Get the rank expression for the i-th dimension
-    #             rank_expr = tensor_mapping.get_rank_expression(i)
-    #             # Add the range for the i-th dimension
-    #             if isinstance(rank_expr, SimpleRankExpression):
-    #                 # Check if the rank expression is a simple rank expression
-    #                 var = rank_expr.get_rank_variables()
-    #                 if iteration_domain.has_variable(var):
-    #                     # TODO: check the existing variable domain with current range.
-    #                     continue
-    #                 # Create a new variable domain for the rank variable
-    #                 variable_domain = VariableDomain(var)
-    #                 variable_domain.add_static_range(
-    #                     Range(0, tensor.get_i_shape(i)),
-    #                 )
-    #             elif isinstance(rank_expr, AffineMappedRankExpression):
-    #                 # TODO: 处理仿射映射的情况, ax + b
-    #                 pass
-    #             else:
-    #                 # TODO: 处理类似卷积的情况, s + q
-    #                 pass
-    #             # Add the variable domain to the iteration domain
-    #             iteration_domain.add_variable_domain(variable_domain)
-
-    #     # Add the ranges for tensor mappings
-    #     all_tensor_mappings = self.input_tensor_mappings + [self.output_tensor_mapping]
-    #     for tensor_mapping in all_tensor_mappings:
-    #         add_variable_domain_to_iteration_domain(tensor_mapping)
-
-    #     # Add the ranges for the output tensor mapping
-    #     for constraint in self.constraint:
-    #         iteration_domain.add_constraint(constraint)
-
-    #     return iteration_domain
-
 
 class MapEquation(EinsumEquation):
     """Represents a Map equation in the Einsum expression."""
 
     def __init__(
         self,
-        output_tensor: Tensor,
-        first_tensor: Tensor,
-        second_tensor: Tensor,
+        output_rank_set: RankSet,
+        first_rank_set: RankSet,
+        second_rank_set: RankSet,
+        rankVariable_set: RankVariableSet,
         rankMap: RankMap,
         target_ranks: List[RankVariable],
         computeOp: ComputeOperator,
     ):
         super().__init__(
-            output_tensor=output_tensor,
-            input_tensors=[first_tensor, second_tensor],
+            output_rank_set=output_rank_set,
+            inputs_rank_set=[first_rank_set, second_rank_set],
+            rankVariable_set=rankVariable_set,
             rankMap=rankMap,
+            target_ranks=target_ranks,
         )
-        self.first_tensor = first_tensor
-        self.second_tensor = second_tensor
-        self.target_ranks = target_ranks
+        self.first_rank_set = first_rank_set
+        self.second_rank_set = second_rank_set
         self.computeOp = computeOp
 
     def __repr__(self) -> str:
-        target_ranks_str = ", ".join([str(rank) for rank in self.target_ranks])
-        return (
-            f"MapEquation(output={self.output_tensor}, "
-            f"first={self.first_tensor}, second={self.second_tensor}, "
-            f"targetRanks=[{target_ranks_str}], computeOp={self.computeOp}, "
-            f"rankMap={self.rankMap})"
-        )
-
-    def clone(self) -> "MapEquation":
-        """Create a deep copy of this equation."""
-        return MapEquation(
-            output_tensor=self.output_tensor,
-            first_tensor=self.first_tensor,
-            second_tensor=self.second_tensor,
-            rankMap=(
-                self.rankMap.clone() if hasattr(self.rankMap, "clone") else self.rankMap
-            ),
-            target_ranks=list(self.target_ranks),
-            computeOp=self.computeOp,
-        )
+        pass
 
 
 class ReduceEquation(EinsumEquation):
@@ -189,41 +101,22 @@ class ReduceEquation(EinsumEquation):
 
     def __init__(
         self,
-        output_tensor: Tensor,
-        input_tensor: Tensor,
+        output_rank_set: RankSet,
+        input_rank_set: RankSet,
+        rankVariable_set: RankVariableSet,
         rankMap: RankMap,
         target_ranks: List[RankVariable],
         computeOp: ComputeOperator,
     ):
         super().__init__(
-            output_tensor=output_tensor,
-            input_tensors=[input_tensor],
+            output_rank_set=output_rank_set,
+            input_rank_set=[input_rank_set],
+            rankVariable_set=rankVariable_set,
             rankMap=rankMap,
+            target_ranks=target_ranks,
         )
-        self.input_tensor = input_tensor
-        self.target_ranks = target_ranks
+        self.input_rank_set = input_rank_set
         self.computeOp = computeOp
-
-    def __repr__(self):
-        target_ranks_str = ", ".join([str(rank) for rank in self.target_ranks])
-        return (
-            f"ReduceEquation(output={self.output_tensor}, "
-            f"input={self.input_tensor}, "
-            f"targetRanks=[{target_ranks_str}], computeOp={self.computeOp}, "
-            f"rankMap={self.rankMap})"
-        )
-
-    def clone(self) -> "ReduceEquation":
-        """Create a deep copy of this equation."""
-        return ReduceEquation(
-            output_tensor=self.output_tensor,
-            input_tensor=self.input_tensor,
-            rankMap=(
-                self.rankMap.clone() if hasattr(self.rankMap, "clone") else self.rankMap
-            ),
-            target_ranks=list(self.target_ranks),
-            computeOp=self.computeOp,
-        )
 
 
 class PopulateEquation(EinsumEquation):
@@ -231,44 +124,24 @@ class PopulateEquation(EinsumEquation):
 
     def __init__(
         self,
-        output_tensor: Tensor,
-        input_tensor: Tensor,
+        output_rank_set: RankSet,
+        input_rank_set: RankSet,
+        rankVariable_set: RankVariableSet,
         rankMap: RankMap,
         target_ranks: List[RankVariable],
         computeOp: ComputeOperator,
         coordinateOp: CoordinateOperator,
     ):
         super().__init__(
-            output_tensor=output_tensor,
-            input_tensors=[input_tensor],
+            output_rank_set=output_rank_set,
+            input_rank_set=[input_rank_set],
+            rankVariable_set=rankVariable_set,
             rankMap=rankMap,
+            target_ranks=target_ranks,
         )
-        self.input_tensor = input_tensor
-        self.target_ranks = target_ranks
+        self.input_rank_set = input_rank_set
         self.computeOp = computeOp
         self.coordinateOp = coordinateOp
-
-    def __repr__(self):
-        target_ranks_str = ", ".join([str(rank) for rank in self.target_ranks])
-        return (
-            f"PopulateEquation(output={self.output_tensor}, "
-            f"input={self.input_tensor}, "
-            f"targetRanks=[{target_ranks_str}], computeOp={self.computeOp}, "
-            f"coordinateOp={self.coordinateOp}, rankMap={self.rankMap})"
-        )
-
-    def clone(self) -> "PopulateEquation":
-        """Create a deep copy of this equation."""
-        return PopulateEquation(
-            output_tensor=self.output_tensor,
-            input_tensor=self.input_tensor,
-            rankMap=(
-                self.rankMap.clone() if hasattr(self.rankMap, "clone") else self.rankMap
-            ),
-            target_ranks=list(self.target_ranks),
-            computeOp=self.computeOp,
-            coordinateOp=self.coordinateOp,
-        )
 
 
 class UnaryEquation(EinsumEquation):
@@ -276,31 +149,21 @@ class UnaryEquation(EinsumEquation):
 
     def __init__(
         self,
-        output_tensor: Tensor,
-        input_tensor: Tensor,
+        output_rank_set: RankSet,
+        input_rank_set: RankSet,
+        rankVariable_set: RankVariableSet,
+        rankMap: RankMap,
         unaryOp: UnaryOperator,
     ):
         super().__init__(
-            output_tensor=output_tensor,
-            input_tensors=[input_tensor],
-            rankMap=None,
+            output_rank_set=output_rank_set,
+            input_rank_set=[input_rank_set],
+            rankVariable_set=rankVariable_set,
+            rankMap=rankMap,
+            target_ranks=rankVariable_set.get_rankVariables(),
         )
-        self.input_tensor = input_tensor
+        self.input_rank_set = input_rank_set
         self.unaryOp = unaryOp
-
-    def __repr__(self) -> str:
-        return (
-            f"UnaryEquation(output={self.output_tensor}, "
-            f"input={self.input_tensor}, unaryOp={self.unaryOp})"
-        )
-
-    def clone(self) -> "UnaryEquation":
-        """Create a deep copy of this equation."""
-        return UnaryEquation(
-            output_tensor=self.output_tensor,
-            input_tensor=self.input_tensor,
-            unaryOp=self.unaryOp,
-        )
 
 
 class EinsumCascade(EinsumExpression):
@@ -308,32 +171,15 @@ class EinsumCascade(EinsumExpression):
 
     def __init__(
         self,
-        output_tensor: Tensor,
-        input_tensors: List[Tensor],
+        outputs_rank_set: List[RankSet],
+        inputs_rank_set: List[RankSet],
         equations: List[EinsumEquation],
     ):
         super().__init__(
-            output_tensor=output_tensor,
-            input_tensors=input_tensors,
+            outputs_rank_set=outputs_rank_set,
+            inputs_rank_set=inputs_rank_set,
         )
         self.equations = equations
-
-    def __repr__(self) -> str:
-        input_tensors_str = self.format_tensor_list(self.input_tensors)
-        equations_str = ", ".join([repr(eq) for eq in self.equations])
-        return (
-            f"EinsumCascade(output={self.output_tensor}, "
-            f"inputs=[{input_tensors_str}], "
-            f"equations=[{equations_str}])"
-        )
-
-    def clone(self) -> "EinsumCascade":
-        """Create a deep copy of this cascade."""
-        return EinsumCascade(
-            output_tensor=self.output_tensor,
-            input_tensors=list(self.input_tensors),
-            equations=[eq.clone() for eq in self.equations],
-        )
 
 
 class EinsumIteration(EinsumCascade):
@@ -341,143 +187,219 @@ class EinsumIteration(EinsumCascade):
 
     def __init__(
         self,
-        output_tensor: Tensor,
-        input_tensors: List[Tensor],
+        outputs_rank_set: List[RankSet],
+        inputs_rank_set: List[RankSet],
         equations: List[EinsumEquation],
         generative_rank: RankVariable,
     ):
         super().__init__(
-            output_tensor=output_tensor,
-            input_tensors=input_tensors,
+            outputs_rank_set=outputs_rank_set,
+            inputs_rank_set=inputs_rank_set,
             equations=equations,
         )
         self.generative_rank = generative_rank
-
-    def __repr__(self) -> str:
-        input_tensors_str = self.format_tensor_list(self.input_tensors)
-        equations_str = ", ".join([repr(eq) for eq in self.equations])
-        return (
-            f"EinsumIteration(output={self.output_tensor}, "
-            f"inputs=[{input_tensors_str}], "
-            f"equations=[{equations_str}], "
-            f"generative_rank={self.generative_rank})"
-        )
-
-    def clone(self) -> "EinsumIteration":
-        """Create a deep copy of this iteration."""
-        return EinsumIteration(
-            output_tensor=self.output_tensor,
-            input_tensors=list(self.input_tensors),
-            equations=[eq.clone() for eq in self.equations],
-            generative_rank=self.generative_rank,
-        )
 
 
 def maxPooling2D():
     pooling_size = 2
     stride = 2
-    tensor_input = Tensor("A", (10, 10))
-    tensor_output = Tensor("B", (5, 5))
-    rankMap = RankMap()
+    tensor_input = DataSpace()
+    input_rank_set = tensor_input.gen_rank_set_from_shape(shape=(10, 10))
+    tensor_output = DataSpace()
+    output_rank_set = tensor_output.gen_rank_set_from_shape(shape=(5, 5))
+
     varM = RankVariable("m")
     varN = RankVariable("n")
     varK = RankVariable("k")
     varK.add_constraint(
         StaticConstraint(varK, ComparisonOperator.LESS_THAN, pooling_size)
     )
+    rankVariable_set = RankVariableSet([varM, varN, varK])
+    rankMap = RankMap()
     rankMap.add_mapping(
-        tensor_input.get_i_rank(0),
+        input_rank_set[0],
         AffineRankExpression(
             affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM, stride), VarTerm(varK))
         ),
     )
     rankMap.add_mapping(
-        tensor_input.get_i_rank(1),
+        input_rank_set[1],
         AffineRankExpression(
             affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN, stride), VarTerm(varK))
         ),
     )
     rankMap.add_mapping(
-        tensor_output.get_i_rank(0),
+        output_rank_set[0],
         AffineRankExpression(
             affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM, stride))
         ),
     )
     rankMap.add_mapping(
-        tensor_output.get_i_rank(1),
+        output_rank_set[1],
         AffineRankExpression(
             affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM, stride))
         ),
     )
     maxPooling = ReduceEquation(
-        tensor_output, tensor_input, rankMap, [varK], ComputeOperator.MAX
+        output_rank_set,
+        input_rank_set,
+        rankVariable_set,
+        rankMap,
+        [varK],
+        ComputeOperator.MAX,
     )
     print(maxPooling)
 
 
 def matmul():
-    tensorA = Tensor("A", (3, 4))
-    tensorB = Tensor("B", (4, 5))
-    tensrTmp = Tensor("tmp", (3, 4, 5))
-    tensorC = Tensor("C", (3, 5))
-    varM = RankVariable("m")
-    varN = RankVariable("n")
-    varK = RankVariable("k")
-    rankMap1 = RankMap()
-    rankMap1.add_mapping(
-        tensorA.get_i_rank(0),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM))),
-    )
-    rankMap1.add_mapping(
-        tensorA.get_i_rank(1),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK))),
-    )
-    rankMap1.add_mapping(
-        tensorB.get_i_rank(0),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK))),
-    )
-    rankMap1.add_mapping(
-        tensorB.get_i_rank(1),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN))),
-    )
-    rankMap1.add_mapping(
-        tensrTmp.get_i_rank(0),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM))),
-    )
-    rankMap1.add_mapping(
-        tensrTmp.get_i_rank(1),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK))),
-    )
-    rankMap1.add_mapping(
-        tensrTmp.get_i_rank(2),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN))),
-    )
-    einsum1 = MapEquation(
-        tensrTmp, tensorA, tensorB, rankMap1, [varK], ComputeOperator.MUL
+    # map
+    tensorA = DataSpace()
+    rank_set_A = tensorA.gen_rank_set_from_shape(shape=(3, 4))
+    tensorB = DataSpace()
+    rank_set_B = tensorB.gen_rank_set_from_shape(shape=(4, 5))
+
+    tensorTmp = DataSpace()
+    rank_set_tmp = tensorTmp.init_from_other_rank_set(
+        RankSet([rank_set_A[0], rank_set_A[1], rank_set_B[1]])
     )
 
+    rank_var_set_map = RankVariableSet(num=3)
+    rankMap1 = RankMap()
+    rankMap1.add_mapping(
+        rank_set_A[0],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_map[0]))
+        ),
+    )
+    rankMap1.add_mapping(
+        rank_set_A[1],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_map[1]))
+        ),
+    )
+    rankMap1.add_mapping(
+        rank_set_B[0],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_map[1]))
+        ),
+    )
+    rankMap1.add_mapping(
+        rank_set_B[1],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_map[2]))
+        ),
+    )
+    rankMap1.add_mapping(
+        rank_set_tmp[0],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_map[0]))
+        ),
+    )
+    rankMap1.add_mapping(
+        rank_set_tmp[1],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_map[1]))
+        ),
+    )
+    rankMap1.add_mapping(
+        rank_set_tmp[2],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_map[2]))
+        ),
+    )
+    einsum1 = MapEquation(
+        rank_set_tmp,
+        rank_set_A,
+        rank_set_B,
+        rank_var_set_map,
+        rankMap1,
+        [rank_var_set_map[1]],
+        ComputeOperator.MUL,
+    )
+
+    # reduce
+    tensorC = DataSpace()
+    rank_set_C = tensorC.init_from_other_rank_set(
+        RankSet([rank_set_tmp[0], rank_set_tmp[1]])
+    )
+    rank_var_set_C = RankVariableSet(num=3)
     rankMap2 = RankMap()
     rankMap2.add_mapping(
-        tensrTmp.get_i_rank(0),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM))),
+        rank_set_tmp[0],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_C[0]))
+        ),
     )
     rankMap2.add_mapping(
-        tensrTmp.get_i_rank(1),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK))),
+        rank_set_tmp[1],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_C[1]))
+        ),
     )
     rankMap2.add_mapping(
-        tensrTmp.get_i_rank(2),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN))),
+        rank_set_tmp[2],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_C[2]))
+        ),
     )
     rankMap2.add_mapping(
-        tensorC.get_i_rank(0),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM))),
+        rank_set_C[0],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_C[0]))
+        ),
     )
     rankMap2.add_mapping(
-        tensorC.get_i_rank(1),
-        AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN))),
+        rank_set_C[1],
+        AffineRankExpression(
+            affineTerm=AffineTerm(ConstTerm(0), VarTerm(rank_var_set_C[2]))
+        ),
     )
-    einsum2 = ReduceEquation(tensorC, tensrTmp, rankMap2, [varK], ComputeOperator.ADD)
+    einsum2 = ReduceEquation(
+        rank_set_C,
+        rank_set_tmp,
+        rank_var_set_C,
+        rankMap2,
+        [rank_var_set_C[1]],
+        ComputeOperator.ADD,
+    )
+
+
+# def matmul_einsum():
+
+#     varM = RankVariable("m")
+#     varN = RankVariable("n")
+#     varK = RankVariable("k")
+
+#     expr_M = AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM)))
+#     expr_K = AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK)))
+#     expr_N = AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN)))
+
+#     input1_expr_list = [expr_M, expr_K]
+#     input2_expr_list = [expr_K, expr_N]
+#     output_expr_list = [expr_M, expr_K, expr_N]
+
+#     einsum1 = MapEquation(
+#         output_expr_list,
+#         input1_expr_list,
+#         input2_expr_list,
+#         [varK],
+#         ComputeOperator.MUL,
+#     )
+
+#     varM = RankVariable("m")
+#     varN = RankVariable("n")
+#     varK = RankVariable("k")
+
+#     expr_M = AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varM)))
+#     expr_K = AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varK)))
+#     expr_N = AffineRankExpression(affineTerm=AffineTerm(ConstTerm(0), VarTerm(varN)))
+
+#     input_expr_list = [expr_M, expr_K, expr_N]
+#     output_expr_list = [expr_M, expr_N]
+
+#     einsum2 = ReduceEquation(
+#         output_expr_list, input_expr_list, [varK], ComputeOperator.ADD
+#     )
 
 
 def conv2d():

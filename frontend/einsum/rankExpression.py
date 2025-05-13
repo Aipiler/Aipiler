@@ -1,5 +1,5 @@
 from typing import List, Optional, Union, Callable, Dict, Any, Tuple, Set
-from .tensor import Tensor, TensorRank
+from .tensor import RankSet, Rank
 from .range import Range, CompoundRange
 from typing import TYPE_CHECKING
 from abc import ABC, abstractmethod
@@ -75,17 +75,17 @@ class RankMap:
 
     def __init__(self):
         """Initialize a rank map."""
-        self.rank_map: Dict[TensorRank, RankExpression] = {}
+        self.rank_map: Dict[Rank, RankExpression] = {}
 
-    def add_mapping(self, tensor_rank: TensorRank, rank_expression: RankExpression):
+    def add_mapping(self, rank: Rank, rank_expression: RankExpression):
         """Add a mapping from a tensor rank to a rank expression."""
-        if tensor_rank in self.rank_map:
-            raise ValueError(f"Mapping for {tensor_rank} already exists.")
-        self.rank_map[tensor_rank] = rank_expression
+        if rank in self.rank_map:
+            raise ValueError(f"Mapping for {rank} already exists.")
+        self.rank_map[rank] = rank_expression
 
-    def get_mapping(self, tensor_rank: TensorRank) -> Optional[RankExpression]:
+    def get_mapping(self, rank: Rank) -> Optional[RankExpression]:
         """Get the rank expression for a given tensor rank."""
-        return self.rank_map.get(tensor_rank, None)
+        return self.rank_map.get(rank, None)
 
     def __repr__(self):
         """String representation of the rank map."""
