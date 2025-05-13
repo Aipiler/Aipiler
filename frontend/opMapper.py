@@ -60,13 +60,16 @@ einsum_mapper = PyTorchOpMapper()
 def handle_add(node: torch.fx.Node) -> Operator:
     # 从 node (例如 torch.fx.Node) 提取信息
     # 注意：实际中需要准确解析 args 和 kwargs 来确定输入和属性
-    print(f"Handling aten::add.Tensor from node: {node.name}")
+    print(f"Handling {node.target} from node: {node.name}")
     # TODO: 这里通过 node.args 和 node.kwargs 获取参数
-
+    input_FakeTensor = node.args[0].meta["val"]
+    input_size = input_FakeTensor.size()
+    output_FakeTensor = node.meta["val"]
+    output_size = output_FakeTensor.size()
     kernel_size = node.args[1][0]
     stride = node.args[2][0]
-    tensor_input = Tensor("A", (10, 10))
-    tensor_output = Tensor("B", (5, 5))
+    tensor_input = Tensor(f"{node.args[0].name}", tuple(input_size))
+    tensor_output = Tensor(f"{node.name}", tuple(output_size))
     rankMap = RankMap()
     varM = RankVariable("m")
     varN = RankVariable("n")

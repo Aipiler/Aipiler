@@ -30,7 +30,7 @@ def main():
 
     # 导出模型
     print("Step 1: 创建并导出PyTorch模型")
-    example_args = (torch.randn(1, 3, 256, 256),)
+    example_args = (torch.randn(3, 256, 256),)
     exported_program = export(M(), args=example_args)
 
     # 打印原始图信息
@@ -54,7 +54,10 @@ def main():
                 print(f"    - {arg}, type: {type(arg)}")
 
             if hasattr(node, "meta") and "val" in node.meta:
-                print(f"  输出形状: {node.meta['val']}")
+                output_fakeTensor = node.meta["val"]
+
+                print(f"  输出Tensor: {output_fakeTensor}")
+                print(f"  输出形状: {output_fakeTensor.size()}")
         elif node.op == "output":
             print(f"  参数: {node.args}")
             if hasattr(node, "meta") and "val" in node.meta:
