@@ -77,7 +77,7 @@ class RankSet:
                 raise TypeError("Rank must be an instance of Rank.")
 
         self.rank = len(ranks)
-        self.shape = [rank.get_size() for rank in ranks]
+        self.shape = () if self.rank == 0 else (rank.get_size() for rank in ranks)
         self.data_space = None
 
     def set_data_space(self, data_space: "DataSpace"):

@@ -33,7 +33,7 @@ class Context:
         self.einsum_list.append(einsum)
 
     def add_data(self, data: DataSpace):
-        self.data_list.appned(data)
+        self.data_list.append(data)
 
 
 class Builder:
@@ -48,15 +48,15 @@ class Builder:
         rankset = RankSet(ranks=ranks)
         return rankset
 
-    def gete_rank_variable(self) -> RankVariable:
+    def get_rank_variable(self) -> RankVariable:
         return RankVariable()
 
-    def get_rank_varaible_set(
+    def get_rank_variable_set(
         self, *rank_variable: tuple[RankVariable, ...]
     ) -> RankVariableSet:
         rkvs = RankVariableSet()
         for rv in rank_variable:
-            rkvs.add_rankVariable()
+            rkvs.add_rankVariable(rv)
         return rkvs
 
     def get_const_term(self, value: int) -> ConstTerm:
@@ -121,7 +121,7 @@ class Builder:
         self.context.add_data(new_data_space)
         return new_data_space
 
-    def create_Populate_equation(
+    def create_populate_equation(
         self,
         output_rank_set: RankSet,
         input_rank_set: RankSet,
@@ -151,7 +151,51 @@ class Builder:
         return new_data_space
 
 
-def attention():
+def einsum_map(
+    A: DataSpace,
+    B: DataSpace,
+    einsum_str: str,
+    target_rank: list[str],
+    computeOp: ComputeOperator,
+) -> DataSpace:
+    pass
+
+
+def example(builder: Builder):
+    """
+    C[k] = A[k] · B[k] :: map(k) compute(*)
+    X = C[k] :: reduce(k) compute(+)
+    Y = A[k] :: reduce(k) compute(+)
+    Z = X · Y :: map() compute(*)
+
+    ```
+    @einsum
+    def foo(A : DataSpace, B : DataSpace) -> DataSpace:
+        C = map(A, B, "k, k -> k", ["k"], "*")
+        X = reduce(C, "k -> _", ["k"], "+")
+        Y = reduce(A, "k -> _", ["k"], "+")
+        Z = map(X, Y, "_, _ -> _", ["_"], "*" )
+        return Z
+    ```
+
+    """
+    k = 10
+    c0 = builder.get_const_term(0)  # 获取constant expr
+    A_rank_set = builder.get_rank_set(shape=(k))  # 获取A的rank_set
+    B_rank_set = builder.get_rank_set(shape=(k))  # 获取B的rank_set
+    Y_rank_set = builder.get_rank_set(shape=())
+    k_var_expr = builder.get_affine_rank_expression(
+        c0, builder.get_var_term(builder.get_rank_variable())
+    )
+    rank_map_1 = builder.get_rank_map()
+    rank_map_1.add_mapping(A_rank_set[0], k_var_expr)
+    rank_map_1.add_mapping(B_rank_set[0], k_var_expr)
+    builder.create_reduce_equation(
+        Y_rank_set,
+    )
+
+
+def attention(builder: Builder):
     pass
 
 
@@ -160,4 +204,6 @@ def RMSNorm_Matmul():
 
 
 if __name__ == "__main__":
+    context = Context()
+    builder = Builder(context)
     attention()
