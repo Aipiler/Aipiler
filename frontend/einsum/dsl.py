@@ -550,12 +550,45 @@ def einsum(func, *, debug=False):
 # 使用示例
 """
 @einsum
-def foo(A: DataSpace, B: DataSpace) -> DataSpace:
+def foo(A: Tensor, B: Tensor) -> Tensor:
     C = map(A, B, "k, k -> k", ["k"], "*")
     X = reduce(C, "k -> _", ["k"], "+")
     Y = reduce(A, "k -> _", ["k"], "+")
     Z = map(X, Y, "_, _ -> _", ["_"], "*")
     return Z
+"""
+
+"""
+1. expression
+
+@einsum
+def foo()
+
+@einsum
+def matmul(A: Tensor, B: Tensor) -> Tensor:
+    X = map(A, B, "ik, kj -> ikj", ["k"], "*")
+    C = reduce(X, "abc -> ac", ["b"], "+")
+    return C
+    
+2. analyze & fusion: some passes
+
+@einsum
+def matmul(A: Tensor, B: Tensor) -> Tensor:
+    C = einsum.cascade(A, B, ["i", "j", "k"]){
+        X = map(A, B, "ik, kj -> ikj", ["k"], "*")
+        C = reduce(X, "ikj -> ij", ["k"], "+")
+    }
+    return C  
+     
+3. rewrite (some schedules? or some passes?)
+
+@einsum
+def matmul(A: Tensor, B: Tensor) -> Tensor:
+    C = einsum.fusion(A, B, ["i", "j", "k"]){
+        X = map(A, B, "ik, kj -> ikj", ["k"], "*")
+        C = reduce(X, "ikj -> ij", ["k"], "+")
+    }
+    return C  
 """
 
 

@@ -4,6 +4,7 @@ from enum import Enum, auto
 from abc import ABC, abstractmethod
 from .range import Range, CompoundRange
 from collections import defaultdict
+import torch
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -64,6 +65,18 @@ class Rank:
     def get_size(self) -> int:
         """Get the range of the tensor rank."""
         return self.size
+
+
+class Tensor:
+    def __init__(self):
+        self.shape = ()
+
+        # 由shape创建rank
+        self.ranks: List[Rank]
+
+    def from_torch_tensor(self, torch_tensor: torch.Tensor):
+        self.shape = torch_tensor.shape
+        self.dtype = torch_tensor.dtype
 
 
 class RankSet:
