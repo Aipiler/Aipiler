@@ -4,6 +4,7 @@ from enum import Enum, auto
 from abc import ABC, abstractmethod
 from .range import Range, CompoundRange
 from collections import defaultdict
+import torch
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -66,6 +67,18 @@ class Rank:
         return self.size
 
 
+class Tensor:
+    def __init__(self):
+        self.shape = ()
+
+        # 由shape创建rank
+        self.ranks: List[Rank]
+
+    def from_torch_tensor(self, torch_tensor: torch.Tensor):
+        self.shape = torch_tensor.shape
+        self.dtype = torch_tensor.dtype
+
+
 class RankSet:
     def __init__(self, ranks: List[Rank]):
         """Initialize a set of ranks."""
@@ -77,7 +90,7 @@ class RankSet:
                 raise TypeError("Rank must be an instance of Rank.")
 
         self.rank = len(ranks)
-        self.shape = [rank.get_size() for rank in ranks]
+        self.shape = () if self.rank == 0 else (rank.get_size() for rank in ranks)
         self.data_space = None
 
     def set_data_space(self, data_space: "DataSpace"):
