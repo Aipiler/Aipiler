@@ -1,6 +1,6 @@
 import re
 from typing import Tuple, List, Set, Dict
-# from aipiler.rank import *
+# from Aipiler.rank import *
 
 def parse_einsum_str(
     equation: str,

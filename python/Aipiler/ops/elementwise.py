@@ -1,6 +1,6 @@
-from aipiler.primitive import EinsumPrimitive, reduce, map
-from aipiler.tensor import Tensor
-from aipiler.basic_operator import BasicOperator
+from Aipiler.primitive import EinsumPrimitive, reduce, map
+from Aipiler.tensor import Tensor
+from Aipiler.basic_operator import BasicOperator
 
 
 def add(a: Tensor, b: Tensor)->Tensor:

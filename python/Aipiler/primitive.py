@@ -1,5 +1,5 @@
-from aipiler.tensor import Tensor
-from aipiler.basic_operator import BasicOperator
+from Aipiler.tensor import Tensor
+from Aipiler.basic_operator import BasicOperator
 from typing import List, Union
 
 
@@ -9,7 +9,7 @@ class EinsumPrimitive:
     def __init__(self, inputs: List[Tensor], einsum_str: str) -> None:
         self.inputs = inputs
         self.einsum_str = einsum_str
-        self.output: Tensor = self.run()
+        self.output: Tensor = None
         
     def run(self):
         raise NotImplementedError()
@@ -21,13 +21,14 @@ class Map(EinsumPrimitive):
         self.einsum_str = einsum_str
         self.rank_to_map = rank_to_map
         self.op = op
+        self.output = self.run()
     
     def run(self):
         """
         check inputs and einsum, generate symbolic outputs 
         """
         # TODO: get dim obj by einsum str
-        self.output = Tensor([], self)
+        return Tensor([], self)
 
 
 class Reduce(EinsumPrimitive):
@@ -35,13 +36,15 @@ class Reduce(EinsumPrimitive):
         super().__init__([x], einsum_str)
         self.reduce_rank = rank_to_reduce
         self.op = op
+        self.output = self.run()
+
 
     def run(self):
         """
         check inputs and einsum, generate symbolic outputs 
         """
         # TODO: get dim obj by einsum str
-        self.output = Tensor([], self)
+        return Tensor([], self)
         
 class Populate(EinsumPrimitive):
     pass

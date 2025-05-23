@@ -24,3 +24,5 @@ log
 
 # python cache
 __pycache__/
+
+*.egg-info

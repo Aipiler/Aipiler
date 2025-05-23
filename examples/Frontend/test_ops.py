@@ -1,6 +1,6 @@
-from aipiler.ops import *
-from aipiler.tensor import Tensor
-from aipiler.dim import Dim
+from Aipiler.ops import *
+from Aipiler.tensor import Tensor
+from Aipiler.dim import Dim
 
 a = Tensor([Dim(None), Dim(None)])
 b = Tensor([Dim(None), Dim(None)])

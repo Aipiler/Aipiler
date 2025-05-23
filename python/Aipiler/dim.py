@@ -27,5 +27,5 @@ class AffineMulExpr(AffineExpr):
 
 
 class Dim:
-    def __init__(self, affine_expr: AffineExpr):
+    def __init__(self, affine_expr: AffineExpr = None):
         self.affine_expr = affine_expr
