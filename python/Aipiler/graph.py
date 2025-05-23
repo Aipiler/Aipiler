@@ -24,6 +24,50 @@ class EinsumGraph:
                         self.inputs.append(i)
         return nodes
 
+    def __str__(self) -> str:
+        tensors = []
+        def nameof(t):
+            if t not in tensors:
+                assert False
+            return "t" + str(tensors.index(t))
+        
+        doc = "Graph("
+        tensors += self.inputs
+        param_doc = []
+        for inp in self.inputs:
+            n = nameof(inp)
+            param_doc.append(n)
+        doc += ", ".join(param_doc)
+        doc += ")\n"
+        
+        for prim in self.nodes:
+            if isinstance(prim, Map):
+                lhs = prim.inputs[0]
+                rhs = prim.inputs[1]
+                ret = prim.output
+                tensors.append(ret)
+                prim_doc = "{ret} = map({lhs}, {rhs}, {einsum_str}, [{map_dims}])".format(
+                    ret=nameof(ret), lhs=nameof(lhs), rhs=nameof(rhs), einsum_str=prim.einsum_str, map_dims=", ".join(prim.ranks_to_map)
+                )
+                doc += "\t"
+                doc += prim_doc
+            elif isinstance(prim, Reduce):
+                inp = prim.inputs[0]
+                ret = prim.output
+                tensors.append(ret)
+                prim_doc = "{ret} = reduce({inp}, {einsum_str}, [{reduce_dims}])".format(
+                    ret=nameof(ret), inp=nameof(inp), einsum_str=prim.einsum_str, reduce_dims=prim.reduce_rank
+                )
+                doc += "\t"
+                doc += prim_doc
+            else:
+                doc += prim.__str__
+            doc += "\n"
+        for out in self.outputs:
+            doc += "return "
+            doc += nameof(out)
+            doc += "\n"
+        return doc
 
 def trace_from(
     tensors: Optional[List[Tensor]], inputs: Optional[Union[Tensor, List[Tensor]]] = None

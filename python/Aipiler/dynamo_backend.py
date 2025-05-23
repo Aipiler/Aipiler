@@ -13,6 +13,7 @@ def aipiler_backend(graph_module, example_inputs, **kwargs):
     
     einsum_graph, inputs, outputs = get_einsum_graph(interpreter, example_inputs)
     del interpreter
+    print(str(einsum_graph))
     # TODO: compile and return Callable
     return graph_module.forward
 
