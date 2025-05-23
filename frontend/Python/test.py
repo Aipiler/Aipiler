@@ -1,0 +1,9 @@
+from aipiler.ops import *
+from aipiler.tensor import Tensor
+from aipiler.dim import Dim
+
+a = Tensor([Dim(None), Dim(None)])
+b = Tensor([Dim(None), Dim(None)])
+c = matmul(a, b)
+d = Tensor([Dim(None), Dim(None)])
+e = add(c, d)

@@ -1,24 +1,29 @@
-from compute import Compute
-from data import Data
-from typing import List, Dict, Any, Optional, Set, Tuple, Union, Type
-import uuid
-from collections import deque
-import logging
-from edge import Edge
-from node import Node, PlaceholderNode, ComputeNode, OutputNode
+from typing import List, Dict, Any, Optional, Set, Tuple, Union, Type, Sequence
+from aipiler.tensor import Tensor
+from aipiler.primitive import EinsumPrimitive
 
-
-class Graph:
+class EnisumGraph:
     """节点管理器，负责管理计算图中的所有节点"""
 
-    def __init__(self, name: Optional[str] = None):
-        self.id = str(uuid.uuid4())
-        self.name = name if name is not None else f"Graph-{self.id[:8]}"
-        self.nodes = {}  # 存储所有节点，key为节点ID，value为节点对象
-        self.edges = {}  # 存储所有边，key为边ID，value为边对象
-        self.logger = logging.getLogger(self.__class__.__name__)
+    def __init__(self, output: Tensor, inputs: Optional[Sequence[Tensor]] = None):
+        self.output = output
+        self.inputs: Optional[List[Tensor]] = list(inputs) if inputs else None
+        self.nodes: List[EinsumPrimitive] = self.update_nodes()
 
-    def add_node(self, node: Node) -> str:
+    def update_nodes(self):
+        nodes : List[EinsumPrimitive] = []
+        stack: List[EinsumPrimitive] = []
+        stack.append(self.output._trace)
+        while stack:
+            op = stack.pop()
+            nodes.insert(0, op)
+            for i in op.inputs:
+                if i._trace:
+                    stack.append(i._trace)
+        return nodes
+
+
+    def add_node(self, node: EinsumPrimitive) -> str:
         """添加节点到管理器
 
         Args:
@@ -453,3 +458,7 @@ class Graph:
 
         # 需要先创建所有节点，然后再创建边
         self.logger.warning("from_dict method is not fully implemented")
+
+
+
+def trace(tensor)
