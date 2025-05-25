@@ -73,64 +73,66 @@ class Tensor:
 
         # 由shape创建rank
         self.ranks: List[Rank]
+        self.
+        self.data_space: DataSpace
 
     def from_torch_tensor(self, torch_tensor: torch.Tensor):
         self.shape = torch_tensor.shape
         self.dtype = torch_tensor.dtype
 
 
-class RankSet:
-    def __init__(self, ranks: List[Rank]):
-        """Initialize a set of ranks."""
-        self.ranks: List[Rank] = []  # rank是存在顺序的
-        for rank in ranks:
-            if isinstance(rank, Rank):
-                self.add_rank(rank)
-            else:
-                raise TypeError("Rank must be an instance of Rank.")
+# class RankSet:
+#     def __init__(self, ranks: List[Rank]):
+#         """Initialize a set of ranks."""
+#         self.ranks: List[Rank] = []  # rank是存在顺序的
+#         for rank in ranks:
+#             if isinstance(rank, Rank):
+#                 self.add_rank(rank)
+#             else:
+#                 raise TypeError("Rank must be an instance of Rank.")
 
-        self.rank = len(ranks)
-        self.shape = () if self.rank == 0 else (rank.get_size() for rank in ranks)
-        self.data_space = None
+#         self.rank = len(ranks)
+#         self.shape = () if self.rank == 0 else (rank.get_size() for rank in ranks)
+#         self.data_space = None
 
-    def set_data_space(self, data_space: "DataSpace"):
-        self.data_space = data_space
+#     def set_data_space(self, data_space: "DataSpace"):
+#         self.data_space = data_space
 
-    def add_rank(self, rank: Rank):
-        """Add a rank to the rank set."""
-        rank.belong_to(self)
-        self.ranks.append(rank)
+#     def add_rank(self, rank: Rank):
+#         """Add a rank to the rank set."""
+#         rank.belong_to(self)
+#         self.ranks.append(rank)
 
-    def get_volume(self) -> int:
-        """Get the volume of the tensor rank set."""
-        volume = 1
-        for rank in self.ranks:
-            volume *= rank.get_size()
-        return volume
+#     def get_volume(self) -> int:
+#         """Get the volume of the tensor rank set."""
+#         volume = 1
+#         for rank in self.ranks:
+#             volume *= rank.get_size()
+#         return volume
 
-    # def gen_data_space(self, dtype: Dtype, empty: Empty) -> "DataSpace":
-    #     """Generate a data space from the rank set."""
-    #     data_space = DataSpace(self, dtype, empty)
-    #     self.set_data_space(data_space)
-    #     return data_space
+#     # def gen_data_space(self, dtype: Dtype, empty: Empty) -> "DataSpace":
+#     #     """Generate a data space from the rank set."""
+#     #     data_space = DataSpace(self, dtype, empty)
+#     #     self.set_data_space(data_space)
+#     #     return data_space
 
-    def __getitem__(self, key: int) -> Rank | None:
-        if key < self.rank:
-            return self.ranks[key]
-        else:
-            return None
+#     def __getitem__(self, key: int) -> Rank | None:
+#         if key < self.rank:
+#             return self.ranks[key]
+#         else:
+#             return None
 
-    def __iter__(self):
-        self.index = 0  # 记录当前索引
-        return self  # 返回迭代器对象
+#     def __iter__(self):
+#         self.index = 0  # 记录当前索引
+#         return self  # 返回迭代器对象
 
-    def __next__(self):
-        if self.index < self.rank:
-            result = self.ranks[self.index]
-            self.index += 1
-            return result
-        else:
-            raise StopIteration  # 当没有更多元素时，抛出 StopIteration
+#     def __next__(self):
+#         if self.index < self.rank:
+#             result = self.ranks[self.index]
+#             self.index += 1
+#             return result
+#         else:
+#             raise StopIteration  # 当没有更多元素时，抛出 StopIteration
 
 
 class DataSpace:

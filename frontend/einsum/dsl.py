@@ -561,15 +561,19 @@ def foo(A: Tensor, B: Tensor) -> Tensor:
 """
 1. expression
 
-@einsum
-def foo()
 
-@einsum
+def foo() {
+    
+}
+
+
 def matmul(A: Tensor, B: Tensor) -> Tensor:
-    X = map(A, B, "ik, kj -> ikj", ["k"], "*")
-    C = reduce(X, "abc -> ac", ["b"], "+")
+    Z = foo(A, B)
+    X = einsum.map(A, B, "ik, kj -> ikj", ["k"], "*")
+    C = eisnum.reduce(X, "ikj -> ij", ["k"], "+")
     return C
     
+matmul()
 2. analyze & fusion: some passes
 
 @einsum
