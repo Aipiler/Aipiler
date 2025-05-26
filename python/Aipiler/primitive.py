@@ -54,8 +54,8 @@ class Unary(EinsumPrimitive):
     pass
 
 
-def map(lhs: Tensor, rhs: Tensor, einsum_str: str, rank_to_map: str, op: BasicOperator):
-    m = Map(lhs, rhs, einsum_str, rank_to_map, op)
+def map(lhs: Tensor, rhs: Tensor, einsum_str: str, ranks_to_map: str, op: BasicOperator):
+    m = Map(lhs, rhs, einsum_str, ranks_to_map, op)
     return m.output
 
 

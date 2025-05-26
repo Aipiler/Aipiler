@@ -1,19 +1,19 @@
 from Aipiler.primitive import EinsumPrimitive, reduce, map
 from Aipiler.tensor import Tensor
 from Aipiler.basic_operator import BasicOperator
+from functools import partial
+
+def binary_elementwise(a: Tensor, b: Tensor, op) -> Tensor:
+    assert len(a.symbolic_shape) == len(b.symbolic_shape)
+    l = len(a.symbolic_shape)
+    einsum_alphabet = "abcdefghijklmnopqrstuvwxyz"
+    assert l < len(einsum_alphabet)
+    letters = einsum_alphabet[:l]
+    
+    return map(a, b, "{letters}, {letters} -> {letters}".format(letters=letters), list(letters), op)
 
 
-def add(a: Tensor, b: Tensor)->Tensor:
-    return map(a, b, "i, i -> i", "i", BasicOperator.ADD)
-
-
-def sub(a: Tensor, b: Tensor)->Tensor:
-    return map(a, b, "i, i -> i", "i", BasicOperator.SUB)
-
-
-def mul(a: Tensor, b: Tensor)->Tensor:
-    return map(a, b, "i, i -> i", "i", BasicOperator.ADD)
-
-
-def div(a: Tensor, b: Tensor)->Tensor:
-    return map(a, b, "i, i -> i", "i", BasicOperator.ADD)
+add = partial(binary_elementwise, op=BasicOperator.ADD)
+sub = partial(binary_elementwise, op=BasicOperator.SUB)
+mul = partial(binary_elementwise, op=BasicOperator.MUL)
+div = partial(binary_elementwise, op=BasicOperator.DIV)

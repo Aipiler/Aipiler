@@ -46,8 +46,8 @@ class EinsumGraph:
                 rhs = prim.inputs[1]
                 ret = prim.output
                 tensors.append(ret)
-                prim_doc = "{ret} = map({lhs}, {rhs}, {einsum_str}, [{map_dims}])".format(
-                    ret=nameof(ret), lhs=nameof(lhs), rhs=nameof(rhs), einsum_str=prim.einsum_str, map_dims=", ".join(prim.ranks_to_map)
+                prim_doc = "{ret} = map({lhs}, {rhs}, \"{einsum_str}\", [{map_dims}], \"{op}\")".format(
+                    ret=nameof(ret), lhs=nameof(lhs), rhs=nameof(rhs), einsum_str=prim.einsum_str, map_dims=", ".join(["\"{}\"".format(letter) for letter in prim.ranks_to_map]), op=prim.op.value[1]
                 )
                 doc += "\t"
                 doc += prim_doc
@@ -55,18 +55,17 @@ class EinsumGraph:
                 inp = prim.inputs[0]
                 ret = prim.output
                 tensors.append(ret)
-                prim_doc = "{ret} = reduce({inp}, {einsum_str}, [{reduce_dims}])".format(
-                    ret=nameof(ret), inp=nameof(inp), einsum_str=prim.einsum_str, reduce_dims=prim.reduce_rank
+                prim_doc = "{ret} = reduce({inp}, \"{einsum_str}\", \"{reduce_dims}\", \"{op}\")".format(
+                    ret=nameof(ret), inp=nameof(inp), einsum_str=prim.einsum_str, reduce_dims=prim.reduce_rank, op=prim.op.value[1]
                 )
                 doc += "\t"
                 doc += prim_doc
             else:
                 doc += prim.__str__
             doc += "\n"
-        for out in self.outputs:
-            doc += "return "
-            doc += nameof(out)
-            doc += "\n"
+        doc += "\treturn "
+        outputs = [nameof(out) for out in self.outputs]
+        doc += ", ".join(outputs)
         return doc
 
 def trace_from(
