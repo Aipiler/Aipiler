@@ -65,7 +65,9 @@ def create_example_inputs(tokenizer, config, batch_size=1, seq_length=32):
     return input_ids, attention_mask
 
 
-def export_model_with_torch_export(model, input_ids, attention_mask=None):
+def export_model_with_torch_export(
+    model, input_ids, attention_mask=None
+) -> torch.export.ExportedProgram:
     """使用torch.export导出模型"""
     print("🔄 使用torch.export导出PyTorch模型...")
 
@@ -80,7 +82,6 @@ def export_model_with_torch_export(model, input_ids, attention_mask=None):
                 output = model(input_ids=input_ids)
                 print(f"   - 输出logits形状: {output.logits.shape}")
 
-        # 方法1: 直接导出模型 (最简单的方式)
         print("   - 尝试直接导出模型...")
         try:
             if attention_mask is not None:
@@ -106,7 +107,7 @@ def export_model_with_torch_export(model, input_ids, attention_mask=None):
                 model, args=example_args, dynamic_shapes=dynamic_shapes
             )
             print("✅ 直接导出成功")
-            return exported_program, None
+            return exported_program
 
         except Exception as e1:
             print(f"   ❌ 直接导出失败: {e1}")
@@ -119,7 +120,7 @@ def export_model_with_torch_export(model, input_ids, attention_mask=None):
         traceback.print_exc()
 
 
-def analyze_exported_graph(exported_program):
+def analyze_exported_graph(exported_program: torch.export.ExportedProgram):
     """分析导出的图结构"""
     if exported_program is None:
         print("⚠️ 没有导出的模型可供分析")
@@ -275,7 +276,7 @@ def main():
         )
 
         # 3. 使用torch.export导出模型
-        exported_program, error = export_model_with_torch_export(
+        exported_program = export_model_with_torch_export(
             model, input_ids, attention_mask
         )
 
@@ -290,13 +291,6 @@ def main():
             save_export_analysis(exported_program)
 
             print("\n✅ torch.export导出和分析完成")
-
-        else:
-            print(f"\n❌ torch.export导出失败: {error}")
-            print("可能的原因:")
-            print("1. 模型包含动态形状或控制流")
-            print("2. 模型使用了torch.export不支持的操作")
-            print("3. 模型太大或太复杂")
 
         # 7. 额外的模型结构分析
         print("\n" + "=" * 60)
