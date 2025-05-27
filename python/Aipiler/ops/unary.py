@@ -1,6 +1,6 @@
-from Aipiler.primitive import EinsumPrimitive, reduce, map, populate, unary
-from Aipiler.tensor import Tensor
 from Aipiler.datatype import DataType
+from Aipiler.primitive import EinsumPrimitive, EinsumBuilder
+from Aipiler.tensor import Tensor, Dtype, DtypeMapper
 from Aipiler.basic_operator import operator_registry
 
 
@@ -16,15 +16,15 @@ def to_dtype(tensor: Tensor, dtype: DataType) -> Tensor:
         Tensor: The tensor converted to the specified dtype.
     """
 
-    return unary(tensor, operator_registry.get(f"to_{dtype.name}"))
+    return EinsumBuilder.unary(tensor, operator_registry.get(f"to_{dtype.name}"))
 
 
 def neg(tensor: Tensor) -> Tensor:
-    return unary(tensor, operator_registry.get("neg"))
+    return EinsumBuilder.unary(tensor, operator_registry.get("neg"))
 
 
 def abs(tensor: Tensor) -> Tensor:
-    return unary(tensor, operator_registry.get("abs"))
+    return EinsumBuilder.unary(tensor, operator_registry.get("abs"))
 
 
 def pow(tensor: Tensor, exponent: float) -> Tensor:
@@ -38,7 +38,7 @@ def pow(tensor: Tensor, exponent: float) -> Tensor:
     Returns:
         Tensor: A new tensor with each element raised to the specified exponent.
     """
-    return unary(tensor, operator_registry.get(f"pow_{exponent}"))
+    return EinsumBuilder.unary(tensor, operator_registry.get(f"pow_{exponent}"))
 
 
 def relu(tensor: Tensor) -> Tensor:
@@ -51,4 +51,4 @@ def relu(tensor: Tensor) -> Tensor:
     Returns:
         Tensor: A new tensor with ReLU applied.
     """
-    return unary(tensor, operator_registry.get("relu"))
+    return EinsumBuilder.unary(tensor, operator_registry.get("relu"))

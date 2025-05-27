@@ -16,7 +16,7 @@ $ pip install -r requirements.txt
 ### Build and Test LLVM/MLIR/CLANG with python binding
 
 
-```
+```shell
 $ cd thirdparty/llvm
 $ git apply ../llvm_lld_link.patch
 $ cmake -G Ninja -Sllvm -Bbuild \
@@ -35,7 +35,7 @@ $ export PYTHONPATH=$(cd build && pwd)/tools/mlir/python_packages/mlir_core:${PY
 
 ### Build Aipiler
 
-```
+```shell
 $ cmake -G Ninja -S. -Bbuild \
     -DMLIR_DIR=$PWD/thirdparty/llvm/build/lib/cmake/mlir \
     -DLLVM_DIR=$PWD/thirdparty/llvm/build/lib/cmake/llvm \
