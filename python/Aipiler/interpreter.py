@@ -29,11 +29,7 @@ class Interpreter:
     def _check_support(self):
         not_supported = set()
         for node in self.graph.nodes:
-            if node.op == "call_module":
-                torch_cls = type(self.torch_modules[node.target])
-                if torch_cls not in Registry.registered_modules:
-                    not_supported.add(torch_cls)
-            elif node.op == "call_function":
+            if node.op == "call_function":
                 converted_fn: Optional[Callable] = self._lookup_aipiler_function(
                     node.target
                 )
@@ -44,11 +40,6 @@ class Interpreter:
             raise NotImplementedError(
                 "\n".join([target.__name__ for target in not_supported])
             )
-
-    def _lookup_aipiler_method(self, torch_method) -> Callable:
-        if torch_method not in Registry.registered_methods:
-            self._raise_unsupported_error([torch_method])
-        return Registry.registered_methods[torch_method]
 
     def _lookup_aipiler_function(self, torch_func) -> Callable:
         if torch_func not in Registry.registered_functions:
@@ -122,26 +113,6 @@ class Interpreter:
                     #     aipiler_env[str(node.args[0])] = aipiler_env[node.name]
                 except Exception as e:
                     raise e
-            elif node.op == "call_method":
-                args = load_arg(node.args, aipiler_env)
-                kwargs = load_arg(node.kwargs, aipiler_env)
-                self_arg_name = node.args[0].name
-
-                assert isinstance(args[0], Tensor)
-                # expect only `torch.Tensor` methods here.
-                torch_method = getattr(torch.Tensor, node.target)
-
-                aipiler_method = self._lookup_aipiler_method(torch_method)
-                try:
-                    res = aipiler_method(*args, **kwargs)
-                    aipiler_env[node.name] = res
-                    if is_torch_method_inplace(node.target):
-                        aipiler_env[self_arg_name] = res
-                except Exception as e:
-                    raise e
-            elif node.op == "call_module":
-                # TODO: call module
-                raise NotImplementedError("call_module")
             elif node.op == "output":
                 graph_output = aipiler_env[node.name] = load_arg(
                     node.args[0], aipiler_env

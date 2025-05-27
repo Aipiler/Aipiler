@@ -7,7 +7,7 @@ from typing import List, Union
 import torch
 
 
-def compile(ep: torch.export.ExportedProgram):
+def compile(ep: torch.export.ExportedProgram) -> EinsumGraph:
     assert isinstance(ep, torch.export.ExportedProgram)
 
     graph_module = ep.graph_module
@@ -24,18 +24,17 @@ def compile(ep: torch.export.ExportedProgram):
     return einsum_graph
 
 
-def aipiler_backend_from_exported_program(
-    exported_program: torch.export.ExportedProgram,
-) -> EinsumGraph:
-    assert exported_program is not None
-    assert isinstance(exported_program, torch.export.ExportedProgram)
+def aipiler_backend(graph_module, example_inputs, **kwargs):
+    assert isinstance(graph_module, torch.fx.GraphModule)
 
     # get the interpreter for the subgraph
-    interpreter = Interpreter(exported_program.graph_module)
-    einsum_graph = get_einsum_graph(interpreter, exported_program.graph_signature)
+    interpreter = Interpreter(graph_module)
+
+    einsum_graph, inputs, outputs = get_einsum_graph(interpreter, example_inputs)
     del interpreter
     print(str(einsum_graph))
-    return einsum_graph
+    # TODO: compile and return Callable
+    return graph_module.forward
 
 
 def get_einsum_graph(interpreter: Interpreter, example_inputs):

@@ -1,15 +1,17 @@
 class AffineExpr:
     pass
 
+
 class AffineConstantExpr(AffineExpr):
     def __init__(self, cst) -> None:
         assert isinstance(cst, int)
         self.cst = cst
 
+
 class AffineDimExpr(AffineExpr):
-    def __init__(self, rank: "Dim") -> None:
+    def __init__(self, dim: "Dim") -> None:
         super().__init__()
-        self.rank = rank
+        self.dim = dim
 
 
 class AffineAddExpr(AffineExpr):
@@ -17,7 +19,7 @@ class AffineAddExpr(AffineExpr):
         super().__init__()
         self.lhs = lhs
         self.rhs = rhs
-    
+
 
 class AffineMulExpr(AffineExpr):
     def __init__(self, lhs: AffineExpr, rhs: AffineExpr) -> None:

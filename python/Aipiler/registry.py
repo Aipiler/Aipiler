@@ -1,5 +1,5 @@
 from typing import Dict, Callable, Union
-from Aipiler.tensor import Tensor
+from Aipiler.tensor import Tensor, Dtype
 from Aipiler import ops
 import torch
 
@@ -35,10 +35,20 @@ def register_method(method: Callable):
 
 @register_function(torch.matmul)
 def matmul(A: Tensor, B: Tensor):
-    return ops.matmul(A, B)
+    return ops.special(A, B)
 
 
 @register_function(torch.add)
 @register_function(torch.ops.aten.add.Tensor)
 def add(A, B):
     return ops.add(A, B)
+
+
+@register_function(torch.ops.aten.to.dtype)
+def to_dtype(tensor: Tensor, dtype: Dtype) -> Tensor:
+    return ops.to_dtype(tensor, dtype)
+
+
+@register_function(torch.ops.aten.pow.Tensor_Scalar)
+def pow(tensor: Tensor, exponent: float) -> Tensor:
+    return ops.pow(tensor, exponent)
