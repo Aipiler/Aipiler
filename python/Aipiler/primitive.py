@@ -31,7 +31,7 @@ class EinsumPrimitive:
                     # if script appear in both output_script and input_script
                     if output_script == input_script:
                         # construct AffineDimExpr
-                        input_dim = tensor_input.shape[idx]
+                        input_dim = tensor_input.symbolic_shape[idx]
                         if input_dim.affine_exprs:
                             affine_exprs += input_dim.affine_exprs
                             affine_exprs = list(set(affine_exprs))
@@ -88,16 +88,20 @@ class Populate(EinsumPrimitive):
 
 
 class Unary(EinsumPrimitive):
-
     def __init__(self, x: Tensor, op: BaseOperator):
         super().__init__(inputs=[x], einsum_str="")
         self.op = op
         self.output = self.run()
 
 
-def map(lhs: Tensor, rhs: Tensor, einsum_str: str, ranks_to_map: str, op: BaseOperator):
-    m = Map(lhs, rhs, einsum_str, ranks_to_map, op)
-    return m.output
+def map(
+    lhs: Tensor,
+    rhs: Tensor,
+    einsum_str: str,
+    ranks_to_map: Union[str, Sequence[str]],
+    op: BaseOperator,
+):
+    return Map(lhs, rhs, einsum_str, ranks_to_map, op).output
 
 
 def reduce(x: Tensor, einsum_str: str, rank_to_reduce: str, op: BaseOperator):

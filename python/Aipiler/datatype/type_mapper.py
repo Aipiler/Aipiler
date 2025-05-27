@@ -1,6 +1,6 @@
 import torch
 from typing import Dict
-from .datatype import DataType
+from .dataType import DataType
 import Aipiler
 
 

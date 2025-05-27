@@ -36,7 +36,7 @@ def register_method(method: Callable):
 
 @register_function(torch.matmul)
 def matmul(A: Tensor, B: Tensor):
-    return ops.special(A, B)
+    return ops.special.matmul(A, B)
 
 
 @register_function(torch.add)

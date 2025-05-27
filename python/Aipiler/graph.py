@@ -13,6 +13,7 @@ class EinsumGraph:
         self.inputs: Optional[List[Tensor]] = list(inputs) if inputs else []
         self.nodes: List[EinsumPrimitive] = self.update_nodes()
 
+
     def update_nodes(self):
         nodes: List[EinsumPrimitive] = []
         stack: List[EinsumPrimitive] = [output._trace for output in self.outputs]
