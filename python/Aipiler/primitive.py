@@ -67,10 +67,18 @@ class Map(EinsumPrimitive):
 class Reduce(EinsumPrimitive):
 
     def __init__(
-        self, x: Tensor, einsum_str: str, rank_to_reduce: str, op: BaseOperator
+        self,
+        x: Tensor,
+        einsum_str: str,
+        ranks_to_reduce: Union[str, Sequence[str]],
+        op: BaseOperator,
     ) -> None:
         super().__init__([x], einsum_str)
-        self.reduce_rank = rank_to_reduce
+        self.ranks_to_reduce = (
+            [ranks_to_reduce]
+            if isinstance(ranks_to_reduce, str)
+            else list(ranks_to_reduce)
+        )
         self.op = op
         self.output = self.run()
 
