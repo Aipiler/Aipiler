@@ -1,5 +1,6 @@
 from typing import Dict, Callable, Union
-from Aipiler.tensor import Tensor, Dtype
+from Aipiler.tensor import Tensor
+from Aipiler.datatype import DataType
 from Aipiler import ops
 import torch
 
@@ -45,7 +46,7 @@ def add(A, B):
 
 
 @register_function(torch.ops.aten.to.dtype)
-def to_dtype(tensor: Tensor, dtype: Dtype) -> Tensor:
+def to_dtype(tensor: Tensor, dtype: DataType) -> Tensor:
     return ops.to_dtype(tensor, dtype)
 
 

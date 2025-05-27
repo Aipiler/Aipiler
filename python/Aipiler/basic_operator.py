@@ -5,6 +5,57 @@ from functools import wraps
 import inspect
 
 
+class BaseOperator(ABC):
+    """操作符基类"""
+
+    def __init__(self, name: str, category: str):
+        self.name = name
+        self.category = category
+
+    @abstractmethod
+    def __call__(self, *args, **kwargs):
+        pass
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}('{self.name}', '{self.category}')"
+
+
+class FunctionOperator(BaseOperator):
+    """函数操作符包装器"""
+
+    def __init__(self, name: str, category: str, func: Callable):
+        super().__init__(name, category)
+        self.func = func
+        # 保留原函数的元信息
+        self.__doc__ = func.__doc__
+        self.__name__ = func.__name__
+
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
+
+class ArithmeticOperator(BaseOperator):
+    """算术操作符"""
+
+    def __init__(self, name: str, category: str, func: Callable = None):
+        super().__init__(name, category)
+        self.func = func
+
+    def __call__(self, x, y):
+        return self.func(x, y)
+
+
+class UnaryOperator(BaseOperator):
+    """一元操作符"""
+
+    def __init__(self, name: str, category: str, func: Callable = None):
+        super().__init__(name, category)
+        self.func = func
+
+    def __call__(self, x):
+        return self.func(x)
+
+
 class OperatorRegistry:
     """操作符注册中心"""
 
@@ -12,6 +63,7 @@ class OperatorRegistry:
         self._operators: Dict[str, "BaseOperator"] = {}
         self._categories: Dict[str, Set[str]] = {}
         self._aliases: Dict[str, str] = {}
+        self._batch_register_cast_ops()
 
     def register(self, name: str, category: str = "general", aliases: List[str] = None):
         """注册操作符的装饰器"""
@@ -69,67 +121,19 @@ class OperatorRegistry:
         """列出所有分类"""
         return list(self._categories.keys())
 
-    def batch_register_cast_ops(self, dtypes: List[str]):
+    def _batch_register_cast_ops(self):
         """批量注册类型转换操作符"""
-        for dtype in dtypes:
-            name = f"to_{dtype}"
-            func = lambda x, dt=dtype: x.to(dtype=dt)
+        from Aipiler.datatype import AIPILER_TYPES
+
+        for dtype in AIPILER_TYPES:
+            dtype_name = dtype.name
+            name = f"to_{dtype_name}"
+            func = lambda x, dt=dtype_name: x.to(dtype=dt)
             self.register(name, "cast")(func)
 
 
 # 全局注册器
 operator_registry = OperatorRegistry()
-
-
-class BaseOperator(ABC):
-    """操作符基类"""
-
-    def __init__(self, name: str, category: str):
-        self.name = name
-        self.category = category
-
-    @abstractmethod
-    def __call__(self, *args, **kwargs):
-        pass
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}('{self.name}', '{self.category}')"
-
-
-class FunctionOperator(BaseOperator):
-    """函数操作符包装器"""
-
-    def __init__(self, name: str, category: str, func: Callable):
-        super().__init__(name, category)
-        self.func = func
-        # 保留原函数的元信息
-        self.__doc__ = func.__doc__
-        self.__name__ = func.__name__
-
-    def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
-
-
-class ArithmeticOperator(BaseOperator):
-    """算术操作符"""
-
-    def __init__(self, name: str, category: str, func: Callable = None):
-        super().__init__(name, category)
-        self.func = func
-
-    def __call__(self, x, y):
-        return self.func(x, y)
-
-
-class UnaryOperator(BaseOperator):
-    """一元操作符"""
-
-    def __init__(self, name: str, category: str, func: Callable = None):
-        super().__init__(name, category)
-        self.func = func
-
-    def __call__(self, x):
-        return self.func(x)
 
 
 # 使用装饰器注册操作符
@@ -185,20 +189,3 @@ def neg_op(x):
 def pass_through_op(x):
     """直通操作"""
     return x
-
-
-# 批量注册类型转换操作符
-dtypes = [
-    "float32",
-    "float16",
-    "int32",
-    "int64",
-    "bool",
-    "uint8",
-    "int8",
-    "int16",
-    "uint16",
-    "uint32",
-    "uint64",
-]
-operator_registry.batch_register_cast_ops(dtypes)

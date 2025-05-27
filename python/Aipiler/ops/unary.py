@@ -1,9 +1,10 @@
 from Aipiler.primitive import EinsumPrimitive, reduce, map, populate, unary
-from Aipiler.tensor import Tensor, Dtype, DtypeMapper
+from Aipiler.tensor import Tensor
+from Aipiler.datatype import DataType
 from Aipiler.basic_operator import operator_registry
 
 
-def to_dtype(tensor: Tensor, dtype: Dtype) -> Tensor:
+def to_dtype(tensor: Tensor, dtype: DataType) -> Tensor:
     """
     Converts a tensor to the specified dtype.
 
