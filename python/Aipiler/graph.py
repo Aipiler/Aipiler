@@ -10,6 +10,7 @@ class EinsumGraph:
         self.inputs: Optional[List[Tensor]] = list(inputs) if inputs else []
         self.nodes: List[EinsumPrimitive] = self.update_nodes()
 
+
     def update_nodes(self):
         nodes : List[EinsumPrimitive] = []
         stack: List[EinsumPrimitive] = [output._trace for output in self.outputs]
@@ -23,6 +24,7 @@ class EinsumGraph:
                     if i not in self.inputs:
                         self.inputs.append(i)
         return nodes
+
 
     def __str__(self) -> str:
         tensors = []
@@ -67,6 +69,8 @@ class EinsumGraph:
         outputs = [nameof(out) for out in self.outputs]
         doc += ", ".join(outputs)
         return doc
+
+
 
 def trace_from(
     tensors: Optional[List[Tensor]], inputs: Optional[Union[Tensor, List[Tensor]]] = None
