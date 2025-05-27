@@ -7,7 +7,14 @@ $ cd Aipiler
 $ git submodule update --init
 ```
 
-### Build and Test LLVM/MLIR/CLANG
+### Create your conda env
+```
+$ conda create -n aipiler python=3.12
+$ pip install -r requirements.txt
+```
+
+### Build and Test LLVM/MLIR/CLANG with python binding
+
 
 ```
 $ cd thirdparty/llvm
@@ -20,7 +27,11 @@ $ cmake -G Ninja -Sllvm -Bbuild \
     -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
     -DPython3_EXECUTABLE=$(which python3)
 $ cd build && ninja check-mlir check-clang check-lld
+
+$ cd thirdpart/llvm
+$ export PYTHONPATH=$(cd build && pwd)/tools/mlir/python_packages/mlir_core:${PYTHONPATH} 
 ```
+
 
 ### Build Aipiler
 
@@ -34,8 +45,3 @@ $ cmake -G Ninja -S. -Bbuild \
 $ cmake --build build
 ```
 
-### Create your conda env
-```
-$ conda create -n aipiler python=3.12
-$ pip install -r requirements.txt
-```
