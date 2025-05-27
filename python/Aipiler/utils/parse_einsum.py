@@ -1,6 +1,5 @@
-import re
 from typing import Tuple, List, Set, Dict
-# from Aipiler.rank import *
+
 
 def parse_einsum_str(
     equation: str,
@@ -19,16 +18,16 @@ def parse_einsum_str(
         equation (str): 符合上述规则的einsum方程字符串
 
     Returns:
-        Tuple[List[List[str]], List[str], List[str]]: 三元组，包含:
+        Tuple[List[List[str]], List[str]]: 三元组，包含:
             - input_subscripts: 每个输入操作数的下标列表
             - output_subscripts: 输出的下标列表
-            - sum_subscripts: 需要求和的下标列表
     """
     # 第一步：字符合法性检查
     # 创建包含所有允许字符的集合：小写字母a-z、下划线、逗号、箭头符号
+    # TODO: support affine expression
     equation = equation.replace(" ", "")
-    allowed_chars: Set[str] = set("abcdefghijklmnopqrstuvwxyz_,->+*")
-    
+    allowed_chars: Set[str] = set("abcdefghijklmnopqrstuvwxyz_,->")
+
     # 遍历方程中的每个字符，确保都在允许列表中
     for char in equation:
         if char not in allowed_chars:
@@ -60,42 +59,33 @@ def parse_einsum_str(
         raise ValueError("只支持一个或两个操作数，发现多个逗号")
 
     # 第六步：解析输入操作数下标
-    # 按逗号分割并转换为字符列表，例如："ab,bc" -> [['a','b'], ['b','c']]
-    # input_subscripts: List[List[str]] = [
-    #     list(subscript) for subscript in input_part.split(",")
-    # ]
+    # 按逗号分割并转换为字符列表，例如："ab,bc" -> ['ab', 'bc']
     input_subscripts = input_part.split(",")
-    
+
     # 第七步：验证每个操作数的下标
     # 确保每个操作数都有下标，0维张量必须用'_'而不是空字符串
     for i, subscripts in enumerate(input_subscripts):
         if not subscripts:
             raise ValueError(f"第{i+1}个操作数的下标不能为空，0维张量请使用'_'表示")
 
-    # 第八步：统计每个下标在输入中的出现次数
-    # 创建字典记录每个下标的出现频率，用于后续确定求和下标
-    subscript_counts: Dict[str, int] = {}
-    for subscript_list in input_subscripts:
-        for subscript in subscript_list:
-            # 如果下标已存在则加1，否则设为1
-            subscript_counts[subscript] = subscript_counts.get(subscript, 0) + 1
+    # ['ab', 'bc'] -> [['a', 'b'], ['b', 'c']]
+    inputs = [list(input_subscript) for input_subscript in input_subscripts]
+
+    if "," in output_part:
+        raise ValueError(f'","不应该出现在输出字符串中')
 
     # 第九步：处理输出下标
-    # 将输出部分转换为字符列表，例如："ac" -> ['a','c']
-    output_subscripts: List[str] = list(output_part)
+    # 将输出部分转换为字符列表，例如： "ac" -> ['a','c']
+    outputs: List[str] = list(output_part)
 
     # 第十步：验证输出下标合法性
     # 确保每个输出下标在输入中出现过（除了特殊的'_'标记）
-    for subscript in output_subscripts:
+    subscript_counts = []
+    for input_subscript in inputs:
+        subscript_counts += input_subscript
+
+    for subscript in outputs:
         if subscript != "_" and subscript not in subscript_counts:
             # 如果输出中有未在输入中出现过的下标，报错
             raise ValueError(f"输出下标 '{subscript}' 未在任何输入操作数中出现")
-
-    # 返回三个关键结果：
-    # 1. 输入操作数的下标列表：例如 [['a','b'], ['b','c']]
-    # 2. 输出的下标列表：例如 ['a','c']
-    return input_subscripts, output_subscripts
-
-# print(parse_einsum_str("ik,kj->ij"))
-print(parse_einsum_str("q+s, s -> qs"))
-
+    return inputs, outputs
