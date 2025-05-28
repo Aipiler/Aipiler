@@ -1,6 +1,6 @@
 from Aipiler.datatype import DataType
 from Aipiler.primitive import EinsumPrimitive, EinsumBuilder
-from Aipiler.tensor import Tensor, Dtype, DtypeMapper
+from Aipiler.tensor import Tensor
 from Aipiler.basic_operator import operator_registry
 
 

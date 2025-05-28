@@ -38,6 +38,17 @@ class Tensor:
     def shape(self):
         return self._shape
 
+    @property
+    def strides(self):
+        s = []
+        if self._shape is None:
+            raise RuntimeError()
+        stride = 1
+        for i in self.shape:
+            s.insert(0, i)
+            stride *= i
+        return s
+
     def numpy(self) -> np.ndarray:
         if self.device.kind != "cpu":
             raise RuntimeError(

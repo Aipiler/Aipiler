@@ -8,7 +8,7 @@ from Aipiler.primitive import (
     UnaryPrimitive,
 )
 from Aipiler.tensor import Tensor
-from Aipiler.datatype import DtypeMapper
+from Aipiler import datatype as dtypes
 from mlir import ir
 from mlir.dialects.linalg.opdsl.lang import *
 from mlir.ir import *
@@ -38,6 +38,27 @@ class Visitor(ABC):
 
 
 class MLIRCodeGenVisitor(Visitor):
+    _AIPILER_TO_MLIR: Dict[dtypes.DataType, str] = {
+        dtypes.f32: ir.F32Type.get(),
+        dtypes.boolean: ir.IntegerType.get_signless(1),
+    }
+
+    _MLIR_TO_AIPILER: Dict[str, dtypes.DataType] = {
+        ir.F32Type.get(): dtypes.f32,
+        ir.IntegerType.get_signless(1): dtypes.boolean,
+    }
+
+    @classmethod
+    def from_dtype(dtype: dtypes.DataType):
+        if dtype not in MLIRCodeGenVisitor._AIPILER_TO_MLIR:
+            raise RuntimeError("Unsupported data type: {} now".format(dtype.name))
+        return MLIRCodeGenVisitor._AIPILER_TO_MLIR[dtype]
+
+    @classmethod
+    def to_dtype(mlirty: str) -> dtypes.DataType:
+        if mlirty not in MLIRCodeGenVisitor._MLIR_TO_AIPILER:
+            raise RuntimeError("Unsupported data type: {} now".format(mlirty))
+        return MLIRCodeGenVisitor._MLIR_TO_AIPILER[mlirty]
 
     def __init__(
         self, context: ir.Context, symbol_table: Dict[Tensor, ir.Value]
@@ -46,7 +67,7 @@ class MLIRCodeGenVisitor(Visitor):
         self.symbol_table: Dict[Tensor, ir.Value] = symbol_table
         self.context: ir.Context = context
 
-    def visit_map(
+    def visit_MapPrimitive(
         self,
         node: MapPrimitive,
     ) -> ir.Value:
@@ -88,7 +109,7 @@ class MLIRCodeGenVisitor(Visitor):
             # TODO: 当前只支持加减乘数,不能写死
             C[output_indices] = A[lhs_indices] * B[rhs_indices]
 
-        mlir_dtype = DtypeMapper.to_mlir(node.output.dtype)
+        mlir_dtype = MLIRCodeGenVisitor.from_dtype(node.output.dtype)
         # TODO: 需要处理symbolic shape
         init_result = tensor.EmptyOp(node.output.shape, mlir_dtype)
         op = _map(
@@ -99,8 +120,7 @@ class MLIRCodeGenVisitor(Visitor):
 
         return op
 
-    @linalg_structured_op
-    def visit_reduce(self, node: ReducePrimitive) -> ir.Value:
+    def visit_ReducePrimitive(self, node: ReducePrimitive) -> ir.Value:
         self.visited_nodes.append(node)
 
         # 从符号表中找到输入张量的value
@@ -131,7 +151,7 @@ class MLIRCodeGenVisitor(Visitor):
             # TODO: 当前只支持加减乘数,不能写死
             OUTPUT[output_indices] += INPUT[input_indices]
 
-        mlir_dtype = DtypeMapper.to_mlir(node.output.dtype)
+        mlir_dtype = MLIRCodeGenVisitor.from_dtype(node.output.dtype)
         # TODO: 需要处理symbolic shape
         init_result = tensor.EmptyOp(node.output.shape, mlir_dtype)
         op = _map(
@@ -141,10 +161,10 @@ class MLIRCodeGenVisitor(Visitor):
 
         return op
 
-    def visit_populate(self, node: PopulatePrimitive) -> ir.Value:
+    def visit_PopulatePrimitive(self, node: PopulatePrimitive) -> ir.Value:
         self.visited_nodes.append(node)
         return node.output
 
-    def visit_unary(self, node: UnaryPrimitive) -> ir.Value:
+    def visit_UnaryPrimitive(self, node: UnaryPrimitive) -> ir.Value:
         self.visited_nodes.append(node)
         return node.output

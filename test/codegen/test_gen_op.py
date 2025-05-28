@@ -68,49 +68,50 @@ def _reduce(
     OUTPUT[output_indices] += INPUT[input_indices]
 
 
-with Context() as ctx, Location.unknown():
-    module = Module.create()
-    f16 = F16Type.get()
-    f32 = F32Type.get()
-    f64 = F64Type.get()
-    i8 = IntegerType.get_signless(8)
-    i16 = IntegerType.get_signless(16)
-    i32 = IntegerType.get_signless(32)
-    dyn = ShapedType.get_dynamic_size()
-    with InsertionPoint(module.body):
+def test_():
 
-        @func.FuncOp.from_py_func(
-            RankedTensorType.get((4, dyn), f32), RankedTensorType.get((dyn, 8), f32)
-        )
-        def test_map(A, B):
-            init_result1 = tensor.EmptyOp([4, dyn, 8], f32)
-            m1 = _map(A, B, outs=[init_result1.result])
-            init_result2 = tensor.EmptyOp([4, 8], f32)
-            r1 = _reduce(m1, outs=[init_result2.result])
-            return r1
+    with Context() as ctx, Location.unknown():
+        module = Module.create()
+        f16 = F16Type.get()
+        f32 = F32Type.get()
+        f64 = F64Type.get()
+        i8 = IntegerType.get_signless(8)
+        i16 = IntegerType.get_signless(16)
+        i32 = IntegerType.get_signless(32)
+        dyn = ShapedType.get_dynamic_size()
+        with InsertionPoint(module.body):
 
-        # Multiplication indexing maps. We verify only the indexing maps of the
-        # first multiplication and then do additional tests on casting and body
-        # generation behavior.
-        # CHECK: #[[$MUL_MAP_A:.+]] = affine_map<(d0, d1, d2) -> (d0, d2)>
-        # CHECK: #[[$MUL_MAP_B:.+]] = affine_map<(d0, d1, d2) -> (d2, d1)>
-        # CHECK: #[[$MUL_MAP_C:.+]] = affine_map<(d0, d1, d2) -> (d0, d1)>
+            @func.FuncOp.from_py_func(
+                RankedTensorType.get((4, dyn), f32), RankedTensorType.get((dyn, 8), f32)
+            )
+            def gen_map(A, B):
+                init_result1 = tensor.EmptyOp([4, dyn, 8], f32)
+                m1 = _map(A, B, outs=[init_result1.result])
+                init_result2 = tensor.EmptyOp([4, 8], f32)
+                r1 = _reduce(m1, outs=[init_result2.result])
+                return r1
 
-        # CHECK-LABEL: func @test_matmul_mono
-        # CHECK-SAME:  %[[A:.+]]: tensor<4x16xf32>
-        # CHECK-SAME:  %[[B:.+]]: tensor<16x8xf32>
-        # CHECK: %[[INITC:.+]] = tensor.empty() : tensor<4x8xf32>
-        # CHECK: linalg.generic
-        # CHECK-SAME: indexing_maps = [#[[$MUL_MAP_A]], #[[$MUL_MAP_B]], #[[$MUL_MAP_C]]]
-        # CHECK-SAME: iterator_types = ["parallel", "parallel", "reduction"]
-        # CHECK-SAME: ins(%[[A]], %[[B]]
-        # CHECK-SAME: outs(%[[INITC]]
-        # @func.FuncOp.from_py_func(
-        #     RankedTensorType.get((4, 16), f32), RankedTensorType.get((16, 8), f32)
-        # )
-        # def test_matmul_mono(lhs, rhs):
-        #     init_result = tensor.EmptyOp([4, 8], f32)
-        #     return matmul_mono(lhs, rhs, outs=[init_result.result])
+            # Multiplication indexing maps. We verify only the indexing maps of the
+            # first multiplication and then do additional tests on casting and body
+            # generation behavior.
+            # CHECK: #[[$MUL_MAP_A:.+]] = affine_map<(d0, d1, d2) -> (d0, d2)>
+            # CHECK: #[[$MUL_MAP_B:.+]] = affine_map<(d0, d1, d2) -> (d2, d1)>
+            # CHECK: #[[$MUL_MAP_C:.+]] = affine_map<(d0, d1, d2) -> (d0, d1)>
 
+            # CHECK-LABEL: func @test_matmul_mono
+            # CHECK-SAME:  %[[A:.+]]: tensor<4x16xf32>
+            # CHECK-SAME:  %[[B:.+]]: tensor<16x8xf32>
+            # CHECK: %[[INITC:.+]] = tensor.empty() : tensor<4x8xf32>
+            # CHECK: linalg.generic
+            # CHECK-SAME: indexing_maps = [#[[$MUL_MAP_A]], #[[$MUL_MAP_B]], #[[$MUL_MAP_C]]]
+            # CHECK-SAME: iterator_types = ["parallel", "parallel", "reduction"]
+            # CHECK-SAME: ins(%[[A]], %[[B]]
+            # CHECK-SAME: outs(%[[INITC]]
+            # @func.FuncOp.from_py_func(
+            #     RankedTensorType.get((4, 16), f32), RankedTensorType.get((16, 8), f32)
+            # )
+            # def test_matmul_mono(lhs, rhs):
+            #     init_result = tensor.EmptyOp([4, 8], f32)
+            #     return matmul_mono(lhs, rhs, outs=[init_result.result])
 
-print(module)
+    print(module)

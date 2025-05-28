@@ -6,9 +6,6 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 from Aipiler.utils import parse_einsum_str
 
-if TYPE_CHECKING:
-    from Aipiler.visitor import Visitor
-
 
 class EinsumPrimitive(ABC):
     def __init__(self, inputs: List[Tensor], einsum_str: str) -> None:
@@ -47,20 +44,29 @@ class EinsumPrimitive(ABC):
             # construct dim obj
             assert affine_exprs
             tensor_shape.append(Dim(affine_exprs))
-            dtype = self.inputs[0].dtype
-        return Tensor(tensor_shape, dtype, self)
+        dtype = self.inputs[0].dtype
+        device = self.inputs[0].device
+        return Tensor(
+            symbolic_shape=tensor_shape,
+            dtype=dtype,
+            device=device,
+            storage=None,
+            trace=self,
+        )
 
-    @abstractmethod
-    def accept(self, visitor: Visitor) -> None:
+    def accept(self, visitor) -> None:
         """
         Accept a visitor for the visitor pattern.
         This method should be implemented by subclasses.
         """
-        pass
+        cls_name = self.__class__.__name__
+        mth = getattr(visitor, f"visit_{cls_name}", None)
+        if mth is None:
+            raise RuntimeError("Expected visitor has function:  `{}`".format(cls_name))
+        return mth(self)
 
 
 class MapPrimitive(EinsumPrimitive):
-
     def __init__(
         self,
         lhs: Tensor,
@@ -81,9 +87,6 @@ class MapPrimitive(EinsumPrimitive):
         )
         self.op = op
         self.output = self.run()
-
-    def accept(self, visitor: Visitor) -> Any:
-        return visitor.visit_map(self)
 
 
 class ReducePrimitive(EinsumPrimitive):
@@ -107,9 +110,6 @@ class ReducePrimitive(EinsumPrimitive):
         self.op = op
         self.output = self.run()
 
-    def accept(self, visitor: Visitor) -> Any:
-        return visitor.visit_reduce(self)
-
 
 # TODO
 class PopulatePrimitive(EinsumPrimitive):
@@ -118,9 +118,6 @@ class PopulatePrimitive(EinsumPrimitive):
         super().__init__(inputs=[], einsum_str="")
         pass
 
-    def accept(self, visitor: Visitor) -> Any:
-        return visitor.visit_populate(self)
-
 
 class UnaryPrimitive(EinsumPrimitive):
 
@@ -128,9 +125,6 @@ class UnaryPrimitive(EinsumPrimitive):
         super().__init__(inputs=[x], einsum_str="")
         self.op = op
         self.output = self.run()
-
-    def accept(self, visitor: Visitor) -> Any:
-        return visitor.visit_unary(self)
 
 
 class EinsumBuilder:
