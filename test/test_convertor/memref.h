@@ -39,7 +39,4 @@ public:
       : rank(N), basePtr(memRef.basePtr), data(memRef.data),
         offset(memRef.offset), sizes(memRef.sizes), strides(memRef.strides) {}
 };
-
-extern "C" void printMemref(DynamicMemRefType<int32_t> *dy);
-
 #endif

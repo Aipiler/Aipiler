@@ -8,7 +8,7 @@ import Aipiler
 import Aipiler.runtime
 
 import Aipiler.runtime.device
-from .device import Device, device
+from .device import Device, to_device
 
 
 def nbytes2str(nbytes: int) -> str:
@@ -41,19 +41,11 @@ class MemoryAPI:
         raise NotImplementedError
 
 
-class CudaMemoryAPI(MemoryAPI):
-    pass
-
-
-class CUDAHostMemoryAPI(MemoryAPI):
-    pass
-
-
 class CpuMemoryAPI(MemoryAPI):
     def malloc(self, nbytes: int) -> int:
-        from Aipiler.ffi import crt
+        from Aipiler.ffi import cruntime
 
-        addr = crt.malloc(nbytes)
+        addr = cruntime.malloc(nbytes)
         if addr == 0 and nbytes != 0:
             return 0
         self.allocated += nbytes
@@ -62,108 +54,13 @@ class CpuMemoryAPI(MemoryAPI):
         return addr
 
     def free(self, addr: int):
-        # TODO: import crt from Aipiler.ffi
+        from Aipiler.ffi import cruntime
 
-        crt.free(addr)
+        cruntime.free(addr)
         self.allocated -= self.addr2nbytes.pop(addr)
 
     def memory_info(self) -> Tuple[int, int]:
         raise NotImplementedError()
-
-
-class Storage:
-    def __init__(
-        self,
-        device: Device,
-        addr: int,
-        num_bytes: int,
-        free_handler: Callable[[Storage], None],
-    ):
-        self.device: Device = device
-        self.addr: int = addr
-        self.num_bytes: int = num_bytes
-        self.free_handler: Callable[[Storage], None] = free_handler
-
-    def __del__(self):
-        if self.addr != 0:
-            self.free_handler(self)
-
-    def __getstate__(self):
-        raise ValueError()
-
-    def __setstate__(self, state):
-        raise ValueError()
-
-    @staticmethod
-    def new(device: Union[Device, str], num_bytes: int) -> Storage:
-        """
-        Allocate a new storage on the given device.
-
-        Parameters
-        ----------
-        device: Device or str
-            The device to allocate the storage on.
-
-        num_bytes
-            The number of bytes to allocate.
-
-        Returns
-        -------
-        ret: Storage
-            The allocated storage.
-        """
-        if isinstance(device, str):
-            device = Aipiler.runtime.device.device(device)
-        else:
-            if not isinstance(device, Device):
-                raise TypeError(
-                    "device must be Device or str, but got {}".format(type(device))
-                )
-        if device.is_cuda() and device.id is None:
-            device = Aipiler.runtime.device.Device(device.kind, device.id)
-        return current_memory_pool(device).malloc(num_bytes)
-
-    @staticmethod
-    def _convert(
-        src: Storage,
-        dst_device: Device,
-        non_blocking: bool,
-        stream=None,
-        copy: bool = False,
-    ) -> Storage:
-        if src.device == dst_device and not copy:
-            return src
-
-        dst: Storage = Storage.new(dst_device, src.num_bytes)
-        if (
-            src.device.is_cuda()
-            and dst.device.is_cuda()
-            and src.device.id != dst_device.id
-        ):
-            # TODO: peer to peer copy among cuda devices
-            raise NotImplementedError("Unsupported: copy among cuda devices")
-        else:
-            # TODO: memory copy
-            device = src.device if src.device.is_cuda() else dst_device
-            raise NotImplementedError("Unsupported: memory copy")
-
-    def cpu(self) -> Storage:
-        raise NotImplementedError("Unsupported: to_device")
-
-    def cpu_async(self, stream=None):
-        raise NotImplementedError("Unsupported: to_device")
-
-    def cuda_async(self, dst_id: int, stream=None):
-        raise NotImplementedError("Unsupported: to_device")
-
-    def vcuda(self, dst_id: int) -> Storage:
-        raise NotImplementedError("Unsupported: to_device")
-
-    def copy(self) -> Storage:
-        raise NotImplementedError("Unsupported: copy")
-
-    def copy_async(self, stream=None) -> Storage:
-        raise NotImplementedError("Unsupported: copy")
 
 
 class MemoryPool:
@@ -275,26 +172,40 @@ class DeviceMemoryPools:
 _device2pool: DeviceMemoryPools = DeviceMemoryPools()
 
 
-def current_memory_pool(device: Union[Device, str]) -> MemoryPool:
-    """
-    Get current memory pool for the given device.
+class Storage:
+    def __init__(
+        self,
+        device: Device,
+        addr: int,
+        num_bytes: int,
+        free_handler: Callable[[Storage], None],
+    ):
+        self.device: Device = device
+        self.addr: int = addr
+        self.num_bytes: int = num_bytes
+        self.free_handler: Callable[[Storage], None] = free_handler
 
-    All memory allocations on given device will be performed from the returned memory pool. You can change the current
-    memory pool by using :func:`memory_pool` context manager.
+    def __del__(self):
+        if self.addr != 0:
+            self.free_handler(self)
 
-    Parameters
-    ----------
-    device: Device or str
-        Device for which to get the current memory pool.
+    def __getstate__(self):
+        raise ValueError()
 
-    Returns
-    -------
-    ret: MemoryPool
-        Current memory pool for the given device.
-    """
-    device = Aipiler.runtime.device.device(device)
-    return _device2pool[device]
+    def __setstate__(self, state):
+        raise ValueError()
 
-
-def memory_pool(pool: MemoryPool):
-    return MemoryPoolContext(pool)
+    @staticmethod
+    def new(device: Union[Device, str], num_bytes: int) -> Storage:
+        """
+        Allocate a new storage on the given device.
+        """
+        if isinstance(device, str):
+            device = Aipiler.runtime.device.to_device(device)
+        else:
+            if not isinstance(device, Device):
+                raise TypeError(
+                    "device must be Device or str, but got {}".format(type(device))
+                )
+        memory_pool = _device2pool[device]
+        return memory_pool.malloc(num_bytes)

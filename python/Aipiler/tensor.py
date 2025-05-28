@@ -1,18 +1,19 @@
 from Aipiler.dim import Dim
 from Aipiler.datatype import DataType
 import Aipiler.datatype as dtypes
-from typing import Optional, List, Dict, Sequence, Tuple
+from typing import Optional, List, Dict, Sequence, Tuple, Union
 import numpy as np
 from Aipiler.runtime import Storage
-from Aipiler.runtime.device import Device
+from Aipiler.runtime.device import Device, to_device
 
 
+# TODO: data layout
 class Tensor:
     def __init__(
         self,
         symbolic_shape: Sequence[Dim],
         dtype: DataType,
-        device: Device,
+        device: Union[Device, str],
         storage: Storage,
         shape: Optional[Sequence[int]] = None,
         trace=None,
@@ -21,7 +22,7 @@ class Tensor:
 
         self._symbolic_shape = list(symbolic_shape)
         self.dtype = dtype
-        self.device = device
+        self.device = to_device(device) if isinstance(device, str) else device
         self.storage = storage
         self._shape = shape
         self._trace: Optional[EinsumPrimitive] = trace
@@ -45,7 +46,7 @@ class Tensor:
             raise RuntimeError()
         stride = 1
         for i in self.shape:
-            s.insert(0, i)
+            s.insert(0, stride)
             stride *= i
         return s
 
@@ -125,3 +126,27 @@ def from_torch(torch_tensor) -> Tensor:
         return from_dlpack(torch_tensor.to(dtype=torch.uint8)).to(dtype="bool")
     else:
         return from_dlpack(torch_tensor)
+
+
+def empty(
+    shape: Sequence[int],
+    dtype: Union[DataType, str] = "float32",
+    device: Union[Device, str] = "cpu",
+):
+    dtype = dtypes.data_type(dtype)
+    shape = list(shape)
+    # malloc memory
+    size = 1
+    for i in shape:
+        size *= i
+    num_bytes = int(size * dtype.nbytes)
+    storage = Storage.new(device, num_bytes)
+
+    symbolic_shape = [Dim() for _ in range(len(shape))]
+    return Tensor(
+        symbolic_shape=symbolic_shape,
+        dtype=dtype,
+        device=device,
+        storage=storage,
+        shape=shape,
+    )

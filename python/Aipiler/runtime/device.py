@@ -38,7 +38,7 @@ class Device:
         return "cuda" if self.kind in ["cuda", "vcuda"] else "cpu"
 
 
-def device(device_type: str, device_index: Optional[int] = None):
+def to_device(device_type: str, device_index: Optional[int] = None):
     if ":" in device_type:
         if device_index is not None:
             raise RuntimeError(
