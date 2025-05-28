@@ -1,10 +1,13 @@
 from Aipiler.tensor import Tensor
 from Aipiler.basic_operator import BaseOperator
 from Aipiler.dim import Dim, AffineDimExpr
-from typing import List, Union, Sequence, Dict
+from typing import List, Union, Sequence, Dict, Any
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+from Aipiler.utils import parse_einsum_str
 
 
-class EinsumPrimitive:
+class EinsumPrimitive(ABC):
     def __init__(self, inputs: List[Tensor], einsum_str: str) -> None:
         self.inputs = inputs
         self.einsum_str = einsum_str
@@ -51,73 +54,102 @@ class EinsumPrimitive:
             trace=self,
         )
 
+    def accept(self, visitor) -> None:
+        """
+        Accept a visitor for the visitor pattern.
+        This method should be implemented by subclasses.
+        """
+        cls_name = self.__class__.__name__
+        mth = getattr(visitor, f"visit_{cls_name}", None)
+        if mth is None:
+            raise RuntimeError("Expected visitor has function:  `{}`".format(cls_name))
+        return mth(self)
 
-class Map(EinsumPrimitive):
 
+class MapPrimitive(EinsumPrimitive):
     def __init__(
         self,
         lhs: Tensor,
         rhs: Tensor,
         einsum_str: str,
-        ranks_to_map: Union[str, Sequence[str]],
+        dims_to_map: Union[str, Sequence[str]],
         op: BaseOperator,
     ) -> None:
         super().__init__([lhs, rhs], einsum_str)
-        self.einsum_str = einsum_str
+
+        self.lhs_scripts, self.rhs_scripts = parse_einsum_str(einsum_str)[0]
+        self.output_scripts = parse_einsum_str(einsum_str)[1]
+        self.iteration_scripts = set(
+            self.lhs_scripts + self.rhs_scripts + self.output_scripts
+        )
         self.ranks_to_map = (
-            [ranks_to_map] if isinstance(ranks_to_map, str) else list(ranks_to_map)
+            [dims_to_map] if isinstance(dims_to_map, str) else list(dims_to_map)
         )
         self.op = op
         self.output = self.run()
 
 
-class Reduce(EinsumPrimitive):
+class ReducePrimitive(EinsumPrimitive):
 
     def __init__(
         self,
         x: Tensor,
         einsum_str: str,
-        ranks_to_reduce: Union[str, Sequence[str]],
+        dims_to_reduce: Union[str, Sequence[str]],
         op: BaseOperator,
     ) -> None:
         super().__init__([x], einsum_str)
+        self.x_scripts = parse_einsum_str(einsum_str)[0][0]  # only one input
+        self.output_scripts = parse_einsum_str(einsum_str)[1]
+        self.iteration_scripts = set(self.x_scripts + self.output_scripts)
         self.ranks_to_reduce = (
-            [ranks_to_reduce]
-            if isinstance(ranks_to_reduce, str)
-            else list(ranks_to_reduce)
+            [dims_to_reduce]
+            if isinstance(dims_to_reduce, str)
+            else list(dims_to_reduce)
         )
         self.op = op
         self.output = self.run()
 
 
-class Populate(EinsumPrimitive):
-    pass
+# TODO
+class PopulatePrimitive(EinsumPrimitive):
+
+    def __init__(self):
+        super().__init__(inputs=[], einsum_str="")
+        pass
 
 
-class Unary(EinsumPrimitive):
+class UnaryPrimitive(EinsumPrimitive):
+
     def __init__(self, x: Tensor, op: BaseOperator):
         super().__init__(inputs=[x], einsum_str="")
         self.op = op
         self.output = self.run()
 
 
-def map(
-    lhs: Tensor,
-    rhs: Tensor,
-    einsum_str: str,
-    ranks_to_map: Union[str, Sequence[str]],
-    op: BaseOperator,
-):
-    return Map(lhs, rhs, einsum_str, ranks_to_map, op).output
+class EinsumBuilder:
+    """
+    A builder for creating Einsum primitives.
+    This class is used to create Einsum primitives like Map, Reduce, Populate, and Unary.
+    """
 
+    @staticmethod
+    def map(
+        lhs: Tensor, rhs: Tensor, einsum_str: str, dims_to_map: str, op: BaseOperator
+    ) -> Tensor:
+        m = MapPrimitive(lhs, rhs, einsum_str, dims_to_map, op)
+        return m.output
 
-def reduce(x: Tensor, einsum_str: str, rank_to_reduce: str, op: BaseOperator):
-    return Reduce(x, einsum_str, rank_to_reduce, op).output
+    @staticmethod
+    def reduce(
+        x: Tensor, einsum_str: str, dim_to_reduce: str, op: BaseOperator
+    ) -> Tensor:
+        return ReducePrimitive(x, einsum_str, dim_to_reduce, op).output
 
+    @staticmethod
+    def populate() -> Tensor:
+        pass
 
-def populate():
-    pass
-
-
-def unary(x: Tensor, op: BaseOperator):
-    return Unary(x, op).output
+    @staticmethod
+    def unary(x: Tensor, op: BaseOperator) -> Tensor:
+        return UnaryPrimitive(x, op).output

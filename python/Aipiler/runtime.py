@@ -1,14 +1,14 @@
 import torch
 from Aipiler.interpreter import Interpreter
-from Aipiler.tensor import Tensor, from_torch_tensor
+from Aipiler.tensor import Tensor, from_torch
 from Aipiler.dim import Dim
 from Aipiler.graph import EinsumGraph
 from typing import List, Union, Optional
 
 
-class ExecutionEngine:
+class Runtime:
     """
-    ExecutionEngine is responsible for compiling and executing the model.
+    Runime is responsible for compiling and executing the model.
     It takes an ExportedProgram and compiles it into an EinsumGraph.
     The EinsumGraph can then be executed with input data.
     """
@@ -46,21 +46,23 @@ class ExecutionEngine:
         # prepare tensor input of einsum graph
         for torch_input in example_inputs:
             if isinstance(torch_input, torch.Tensor):
-                inputs.append(from_torch_tensor(torch_input))
+                inputs.append(from_torch(torch_input))
 
         outputs = self.interpreter(*inputs)
 
         return self._trace_from(outputs, inputs=inputs)
 
+    # TODO: execute接收pytorch的输入数据，返回pytorch的输出数据
     def execute(self, input_data):
         """
         Execute the model with the provided input data.
         """
         pass
 
+    # TODO: compile 函数应该返回一个python内的可调用对象
     def compile(
         self,
-    ) -> EinsumGraph:
+    ):
         example_inputs = self.exported_program.example_inputs[0]
         kwargs = self.exported_program.example_inputs[1]
 
@@ -68,3 +70,7 @@ class ExecutionEngine:
         print(str(self.einsum_graph))
         # TODO: compile and return Callable
         return self.einsum_graph
+
+    # TODO: codegen 函数应该返回一个字符串或输出文件，表示编译后的代码。
+    def codegen(self, file_path: str) -> str:
+        pass

@@ -1,4 +1,4 @@
-from Aipiler.primitive import EinsumPrimitive, reduce, map
+from Aipiler.primitive import EinsumPrimitive, EinsumBuilder
 from Aipiler.tensor import Tensor
 from Aipiler.basic_operator import operator_registry, BaseOperator
 from functools import partial
@@ -11,7 +11,7 @@ def binary_elementwise(a: Tensor, b: Tensor, op: BaseOperator) -> Tensor:
     assert l < len(einsum_alphabet)
     letters = einsum_alphabet[:l]
 
-    return map(
+    return EinsumBuilder.map(
         a,
         b,
         "{letters}, {letters} -> {letters}".format(letters=letters),

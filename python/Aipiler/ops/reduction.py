@@ -1,4 +1,4 @@
-from Aipiler.primitive import EinsumPrimitive, reduce, map, populate, unary
+from Aipiler.primitive import EinsumPrimitive, EinsumBuilder
 from Aipiler.tensor import Tensor
 from Aipiler.basic_operator import operator_registry, BaseOperator
 from typing import List, Union, Sequence
@@ -16,7 +16,7 @@ def reduction(x: Tensor, dim: List[int], keepdim: bool, op: BaseOperator) -> Ten
     assert len(dim) > 0, "At least one dimension must be specified for reduction"
     assert len(dim) < l, "Cannot reduce all dimensions"
 
-    reduce_tensor = reduce(
+    reduce_tensor = EinsumBuilder.reduce(
         x,
         "{rhs_letters} -> {lhs_letters}".format(
             rhs_letters="".join([letters[i] for i in dim]),
