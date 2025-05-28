@@ -10,6 +10,3 @@ def test_from_torch():
     assert len(aipiler_a.symbolic_shape) == 2
     assert aipiler_a.dtype is Aipiler.f32
     print(aipiler_a)
-
-
-test_from_torch()

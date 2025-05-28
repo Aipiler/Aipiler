@@ -5,8 +5,8 @@ from Aipiler.dim import Dim
 
 
 def test_add():
-    a = Tensor([Dim(), Dim()], dtype=Aipiler.i32)
-    b = Tensor([Dim(), Dim()], dtype=Aipiler.i32)
+    a = Tensor([Dim(), Dim()], dtype=Aipiler.i32, device="cpu", storage=None)
+    b = Tensor([Dim(), Dim()], dtype=Aipiler.i32, device="cpu", storage=None)
 
     # ab, ab -> ab
     c = add(a, b)
@@ -22,8 +22,8 @@ def test_add():
 
 
 def test_mm():
-    a = Tensor([Dim(), Dim()], dtype=Aipiler.i32)
-    b = Tensor([Dim(), Dim()], dtype=Aipiler.i32)
+    a = Tensor([Dim(), Dim()], dtype=Aipiler.i32, device="cpu", storage=None)
+    b = Tensor([Dim(), Dim()], dtype=Aipiler.i32, device="cpu", storage=None)
 
     # ik, kj -> ij
     c = matmul(a, b)

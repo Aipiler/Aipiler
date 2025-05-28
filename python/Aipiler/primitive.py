@@ -41,8 +41,15 @@ class EinsumPrimitive:
             # construct dim obj
             assert affine_exprs
             tensor_shape.append(Dim(affine_exprs))
-            dtype = self.inputs[0].dtype
-        return Tensor(tensor_shape, dtype, self)
+        dtype = self.inputs[0].dtype
+        device = self.inputs[0].device
+        return Tensor(
+            symbolic_shape=tensor_shape,
+            dtype=dtype,
+            device=device,
+            storage=None,
+            trace=self,
+        )
 
 
 class Map(EinsumPrimitive):
