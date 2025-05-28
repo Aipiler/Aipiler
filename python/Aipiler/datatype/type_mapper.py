@@ -2,6 +2,7 @@ import torch
 from typing import Dict
 from .dataType import DataType
 import Aipiler
+import mlir.ir as ir
 
 
 # TODO: replace with importing tensor from dlpack
@@ -26,7 +27,7 @@ class DtypeMapper:
     }
 
     # 反向映射表（如果需要的话）
-    _CUSTOM_TO_PYTORCH: Dict[DataType, torch.dtype] = {
+    _AIPILER_TO_PYTORCH: Dict[DataType, torch.dtype] = {
         Aipiler.f32: torch.float32,
         Aipiler.f64: torch.float64,
         Aipiler.i32: torch.int32,
@@ -38,19 +39,31 @@ class DtypeMapper:
         # UINT16, UINT32, UINT64 在 PyTorch 中不存在
     }
 
+    _AIPILER_TO_MLIR: Dict[DataType, str] = {
+        Aipiler.f32: ir.F32Type.get(),
+        Aipiler.boolean: ir.IntegerType.get_signless(1),
+    }
+
     @classmethod
     def from_pytorch(cls, pytorch_dtype: torch.dtype) -> DataType:
-        """从 PyTorch dtype 转换到自定义 Dtype"""
+        """从 PyTorch dtype 转换到aipiler Dtype"""
         if pytorch_dtype not in cls._PYTORCH_TO_AIPILER:
             raise ValueError(f"不支持的 PyTorch dtype: {pytorch_dtype}")
         return cls._PYTORCH_TO_AIPILER[pytorch_dtype]
 
     @classmethod
-    def to_pytorch(cls, custom_dtype: DataType) -> torch.dtype:
-        """从自定义 Dtype 转换到 PyTorch dtype"""
-        if custom_dtype not in cls._CUSTOM_TO_PYTORCH:
-            raise ValueError(f"无法转换到 PyTorch dtype: {custom_dtype}")
-        return cls._CUSTOM_TO_PYTORCH[custom_dtype]
+    def to_pytorch(cls, aipiler_dtype: DataType) -> torch.dtype:
+        """从aipiler Dtype 转换到 PyTorch dtype"""
+        if aipiler_dtype not in cls._AIPILER_TO_PYTORCH:
+            raise ValueError(f"无法转换到 PyTorch dtype: {aipiler_dtype}")
+        return cls._AIPILER_TO_PYTORCH[aipiler_dtype]
+
+    @classmethod
+    def to_mlir(cls, aipiler_dtype: DataType) -> torch.dtype:
+        """从aipiler Dtype 转换到 MLIR dtype"""
+        if aipiler_dtype not in cls._AIPILER_TO_MLIR:
+            raise ValueError(f"无法转换到 MLIR dtype: {aipiler_dtype}")
+        return cls._AIPILER_TO_MLIR[aipiler_dtype]
 
     @classmethod
     def is_supported_pytorch_dtype(cls, pytorch_dtype: torch.dtype) -> bool:
@@ -60,7 +73,7 @@ class DtypeMapper:
     @classmethod
     def is_supported_aipiler_dtype(cls, custom_dtype: DataType) -> bool:
         """检查是否支持该自定义 Dtype"""
-        return custom_dtype in cls._CUSTOM_TO_PYTORCH
+        return custom_dtype in cls._AIPILER_TO_PYTORCH
 
     @classmethod
     def get_supported_pytorch_dtypes(cls) -> list[torch.dtype]:
@@ -70,4 +83,4 @@ class DtypeMapper:
     @classmethod
     def get_supported_aipiler_dtypes(cls) -> list[DataType]:
         """获取所有支持的自定义 Dtype"""
-        return list(cls._CUSTOM_TO_PYTORCH.keys())
+        return list(cls._AIPILER_TO_PYTORCH.keys())

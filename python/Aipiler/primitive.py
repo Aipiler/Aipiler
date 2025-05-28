@@ -4,6 +4,7 @@ from Aipiler.dim import Dim, AffineDimExpr
 from typing import List, Union, Sequence, Dict, Any
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
+from Aipiler.utils import parse_einsum_str
 
 if TYPE_CHECKING:
     from Aipiler.visitor import Visitor
@@ -69,7 +70,12 @@ class MapPrimitive(EinsumPrimitive):
         op: BaseOperator,
     ) -> None:
         super().__init__([lhs, rhs], einsum_str)
-        self.einsum_str = einsum_str
+
+        self.lhs_scripts, self.rhs_scripts = parse_einsum_str(einsum_str)[0]
+        self.output_scripts = parse_einsum_str(einsum_str)[1]
+        self.iteration_scripts = set(
+            self.lhs_scripts + self.rhs_scripts + self.output_scripts
+        )
         self.ranks_to_map = (
             [dims_to_map] if isinstance(dims_to_map, str) else list(dims_to_map)
         )
@@ -90,6 +96,9 @@ class ReducePrimitive(EinsumPrimitive):
         op: BaseOperator,
     ) -> None:
         super().__init__([x], einsum_str)
+        self.x_scripts = parse_einsum_str(einsum_str)[0][0]  # only one input
+        self.output_scripts = parse_einsum_str(einsum_str)[1]
+        self.iteration_scripts = set(self.x_scripts + self.output_scripts)
         self.ranks_to_reduce = (
             [dims_to_reduce]
             if isinstance(dims_to_reduce, str)

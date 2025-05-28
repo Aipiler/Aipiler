@@ -1,6 +1,6 @@
 import torch
 from Aipiler.interpreter import Interpreter
-from Aipiler.tensor import Tensor, from_torch_tensor
+from Aipiler.tensor import Tensor, from_torch
 from Aipiler.dim import Dim
 from Aipiler.graph import EinsumGraph
 from typing import List, Union, Optional
@@ -46,7 +46,7 @@ class Runtime:
         # prepare tensor input of einsum graph
         for torch_input in example_inputs:
             if isinstance(torch_input, torch.Tensor):
-                inputs.append(from_torch_tensor(torch_input))
+                inputs.append(from_torch(torch_input))
 
         outputs = self.interpreter(*inputs)
 

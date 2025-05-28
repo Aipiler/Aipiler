@@ -1,5 +1,6 @@
 from typing import Union
 from .dataType import DataType
+from .type_mapper import DtypeMapper
 from .integer import (
     int8,
     int16,

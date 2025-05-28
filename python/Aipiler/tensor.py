@@ -2,10 +2,7 @@ from Aipiler.dim import Dim
 from Aipiler.datatype import DataType
 import Aipiler.datatype as dtypes
 from typing import Optional, List, Dict, Sequence, Tuple
-import torch
 import numpy as np
-from enum import Enum
-import Aipiler
 from Aipiler.runtime import Storage
 from Aipiler.runtime.device import Device
 
@@ -105,7 +102,7 @@ def from_dlpack(dltensor) -> Tensor:
     return from_dlpack_capsule(dltensor.__dlpack__())
 
 
-def from_torch(torch_tensor):
+def from_torch(torch_tensor) -> Tensor:
     import torch
 
     if not isinstance(torch_tensor, torch.Tensor):

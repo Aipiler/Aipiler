@@ -2,7 +2,10 @@ from typing import List, Dict, Any, Optional, Set, Tuple, Union, Type, Sequence
 from Aipiler.tensor import Tensor
 from Aipiler.primitive import EinsumPrimitive, MapPrimitive, ReducePrimitive
 from Aipiler.visitor import MLIRCodeGenVisitor
-from mlir import ir
+from Aipiler.datatype import DtypeMapper
+from mlir.dialects import arith, builtin, func, linalg, tensor
+from mlir.dialects.linalg.opdsl.lang import *
+from mlir.ir import *
 
 
 class EinsumGraph:
@@ -16,8 +19,9 @@ class EinsumGraph:
         self.nodes: List[EinsumPrimitive] = self.update_nodes()
         self._mlir_context = ir.Context()
         self._module = ir.Module.create()
-        self._symbol_table = {}
-
+        self._func_name = "main"
+        self._symbol_table: Dict[Tensor, Value] = {}
+        self.visitor = MLIRCodeGenVisitor(self._mlir_context, self._symbol_table)
 
     def update_nodes(self):
         nodes: List[EinsumPrimitive] = []
@@ -42,34 +46,47 @@ class EinsumGraph:
 
         with ir.InsertionPoint(self._module.body):
             arguments = []
-            for arg in self.inputs:
-                shape_list = list(arg.shape)
-                dtype = arg.dtype
-                mlir_dtype = self._str_to_mlir_dtype(dtype)
+            for inpur_tensor in self.inputs:
+                # TODO：暂时使用tensor的shape，后期再使用symbolic_shape
+                shape_list = list(inpur_tensor.shape)
+                mlir_dtype = DtypeMapper.to_mlir(input_tensor.dtype)
                 tensor_arg = ir.RankedTensorType.get(shape_list, mlir_dtype)
                 arguments.append(tensor_arg)
-            extern_func = []
 
-        # 遍历所有节点，生成对应的 MLIR 操作
-        for i, node in enumerate(self.nodes):
-            pass
+            @func.FuncOp.from_py_func(*arguments, name=self._func_name)
+            def generated_func(*args):
+                # 建立输入参数的符号表
+                args_list = list(args)
+                for i, arg in enumerate(args_list):
+                    self._symbol_table[self.inputs[i]] = arg
 
-    def _gen_tensor(self, tensor: Tensor) -> ir.Value:
-        """生成对应的 MLIR Tensor"""
-        # 这里需要根据 tensor 的具体类型和属性来生成 MLIR Tensor
-        # 例如，可以使用 tensor 的 shape 和 dtype 来创建 MLIR Tensor
-        pass
+                # 遍历所有节点，生成对应的 MLIR 操作
+                for node in self.nodes:
+                    op_ret: ir.Operation | ir.Value | tuple | List | ir.OpResult = (
+                        node.accept(self.visitor)
+                    )
 
-    def _gen_primitive(self, prim: EinsumPrimitive) -> ir.Operation:
-        """生成对应的 MLIR 操作"""
-        # 这里需要根据 prim 的具体类型和属性来生成 MLIR 操作
-        # 例如，可以使用 prim 的输入、输出和操作类型来创建 MLIR 操作
-        if isinstance(prim, MapPrimitive):
-            self.visitor.visit_map(prim)
-        elif isinstance(prim, ReducePrimitive):
-            self.visitor.visit_reduce(prim)
-        else:
-            raise NotImplementedError(f"Unsupported primitive type: {type(prim)}")
+                    if isinstance(op_ret, tuple | List):
+                        for i, operation in enumerate(op_ret):
+                            if isinstance(operation, ir.Operation) or isinstance(
+                                operation, ir.OpView
+                            ):
+                                self._symbol_table[node.output] = operation.result
+                            elif isinstance(operation, ir.OpResult):
+                                self._symbol_table[node.output] = operation
+                            else:
+                                raise NotImplementedError
+                    elif isinstance(op_ret, ir.OpResult):
+                        self._symbol_table[node.output] = op_ret
+                    else:
+                        for i, result in enumerate(op_ret.results):
+                            self._symbol_table[node.output] = result
+
+                # 获得函数的所有输出
+                outputs = (self._symbol_table.get(out) for out in self.outputs)
+                return outputs
+
+        print(self._module)
 
     def __str__(self) -> str:
         tensors = []
