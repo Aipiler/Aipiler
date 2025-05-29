@@ -201,9 +201,6 @@ def from_dlpack_capsule(dltensor) -> Tensor:
         shape: List[int] = read_longs(tensor.shape, tensor.ndim)
         dim = len(shape)
 
-        # symbolic shape
-        symbolic_shape = [Dim() for _ in range(dim)]
-
         # dtype
         dtype: DataType = DLDataType.to_dtype(tensor.dtype)
 
@@ -246,7 +243,6 @@ def from_dlpack_capsule(dltensor) -> Tensor:
         pythonapi.PyCapsule_SetName(dltensor, b"used_dltensor")
 
         return Tensor(
-            symbolic_shape=symbolic_shape,
             dtype=dtype,
             device=device,
             storage=storage,

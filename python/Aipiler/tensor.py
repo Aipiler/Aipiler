@@ -5,35 +5,44 @@ from typing import Optional, List, Dict, Sequence, Tuple, Union
 import numpy as np
 from Aipiler.runtime import Storage
 from Aipiler.runtime.device import Device, to_device
+import torch
+
+
+class FakeTensor:
+
+    def __init__(
+        self,
+        symbolic_shape: Sequence[Dim],
+        dtype: DataType,
+        trace=None,
+    ):
+        from Aipiler.primitive import EinsumPrimitive
+
+        self.symbolic_shape = symbolic_shape
+        self.dtype = dtype
+        for idx, dim in enumerate(self.symbolic_shape):
+            dim.set_fake_tensor(self, idx)
+        self._trace: Optional[EinsumPrimitive] = trace
 
 
 # TODO: data layout
 class Tensor:
     def __init__(
         self,
-        symbolic_shape: Sequence[Dim],
         dtype: DataType,
         device: Union[Device, str],
         storage: Storage,
         shape: Optional[Sequence[int]] = None,
-        trace=None,
     ) -> None:
-        from Aipiler.primitive import EinsumPrimitive
 
-        self._symbolic_shape = list(symbolic_shape)
         self.dtype = dtype
         self.device = to_device(device) if isinstance(device, str) else device
         self.storage = storage
         self._shape = shape
-        self._trace: Optional[EinsumPrimitive] = trace
 
     @property
     def dim(self):
-        return len(self._symbolic_shape)
-
-    @property
-    def symbolic_shape(self):
-        return self._symbolic_shape
+        return len(self._shape)
 
     @property
     def shape(self):
@@ -114,8 +123,7 @@ def from_dlpack(dltensor) -> Tensor:
     return from_dlpack_capsule(dltensor.__dlpack__())
 
 
-def from_torch(torch_tensor) -> Tensor:
-    import torch
+def from_torch(torch_tensor: torch.Tensor) -> Tensor:
 
     if not isinstance(torch_tensor, torch.Tensor):
         raise ValueError("Expect a torch.Tensor, got {}".format(type(torch_tensor)))
@@ -126,6 +134,16 @@ def from_torch(torch_tensor) -> Tensor:
         return from_dlpack(torch_tensor.to(dtype=torch.uint8)).to(dtype="bool")
     else:
         return from_dlpack(torch_tensor)
+
+
+def from_torch_to_fake_tensor(torch_tensor: torch.Tensor) -> FakeTensor:
+    from Aipiler.utils.dlpack import DLDataType
+
+    return FakeTensor(
+        symbolic_shape=[Dim() for _ in range(torch_tensor.dim())],
+        dtype=dtypes.f32,
+        trace=None,
+    )
 
 
 def empty(

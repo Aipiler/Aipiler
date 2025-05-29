@@ -3,7 +3,7 @@ from typing import Tuple, List, Set, Dict
 
 def parse_einsum_str(
     equation: str,
-) -> Tuple[List[List[str]], List[str], List[str]]:
+) -> Tuple[List[List[str]], List[str]]:
     """
     解析einsum方程字符串，遵循严格的格式要求
 

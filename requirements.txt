@@ -1,5 +1,5 @@
 --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-torch==2.5.0
+torch==2.7.0
 pybind11
 numpy
 transformers

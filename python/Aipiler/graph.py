@@ -1,29 +1,34 @@
 from typing import List, Dict, Any, Optional, Set, Tuple, Union, Type, Sequence
-from Aipiler.tensor import Tensor
+from Aipiler.tensor import FakeTensor
 from Aipiler.primitive import EinsumPrimitive, MapPrimitive, ReducePrimitive
 from Aipiler.visitor import MLIRCodeGenVisitor
-from Aipiler.datatype import DtypeMapper
 from mlir.dialects import arith, builtin, func, linalg, tensor
 from mlir.dialects.linalg.opdsl.lang import *
 from mlir.ir import *
+from Aipiler.dim import Dim, DisjointSetUnion
 
 
 class EinsumGraph:
     """节点管理器，负责管理计算图中的所有节点"""
 
     def __init__(
-        self, outputs: Sequence[Tensor], inputs: Optional[Sequence[Tensor]] = None
+        self,
+        outputs: Sequence[FakeTensor],
+        inputs: Optional[Sequence[FakeTensor]] = None,
     ):
         self.outputs = list(outputs)
-        self.inputs: Optional[List[Tensor]] = list(inputs) if inputs else []
-        self.nodes: List[EinsumPrimitive] = self.update_nodes()
+        self.inputs: Optional[List[FakeTensor]] = list(inputs) if inputs else []
+        self.nodes: List[EinsumPrimitive] = []
         self._mlir_context = ir.Context()
-        self._module = ir.Module.create()
+        self._module = ir.Module.create(
+            loc=Location.unknown(context=self._mlir_context)
+        )
         self._func_name = "main"
-        self._symbol_table: Dict[Tensor, Value] = {}
+        self._symbol_table: Dict[FakeTensor, Value] = {}
         self.visitor = MLIRCodeGenVisitor(self._mlir_context, self._symbol_table)
+        self.sym_dim_set: DisjointSetUnion = DisjointSetUnion()
 
-    def update_nodes(self):
+    def update_nodes(self) -> "EinsumGraph":
         nodes: List[EinsumPrimitive] = []
         stack: List[EinsumPrimitive] = [output._trace for output in self.outputs]
         while stack:
@@ -35,7 +40,43 @@ class EinsumGraph:
                 else:
                     if i not in self.inputs:
                         self.inputs.append(i)
-        return nodes
+
+        self.nodes = nodes
+        self.update_dim_value_set()
+        return self
+
+    def update_dim_value_set(self):
+        """
+        更新图中所有节点的维度值集合
+        """
+        for node in self.nodes:
+            input_scripts = node.input_scripts
+            output_scripts = node.output_scripts
+
+            input_tensors = node.inputs
+            output_tensor = node.output
+
+            idx_dim_dict: Dict[str, List[Dim]] = {}
+            for input_script, input_tensor in zip(input_scripts, input_tensors):
+                for input_idx, input_dim in zip(
+                    input_script, input_tensor.symbolic_shape
+                ):
+                    if input_idx not in idx_dim_dict:
+                        idx_dim_dict[input_idx] = []
+                    idx_dim_dict[input_idx].append(input_dim)
+
+            for output_script, output_dim in zip(
+                output_scripts, output_tensor.symbolic_shape
+            ):
+                if output_script not in idx_dim_dict:
+                    idx_dim_dict[output_script] = []
+                idx_dim_dict[output_script].append(output_dim)
+
+            # 更新维度值集合
+            for script, dim_list in idx_dim_dict.items():
+                if len(dim_list) == 1:
+                    continue
+                self.sym_dim_set.union(*dim_list)
 
     def codegen(self):
         """生成 MLIR 代码"""
@@ -105,6 +146,7 @@ class EinsumGraph:
         doc += ", ".join(param_doc)
         doc += ")\n"
 
+        # 打印graph
         for prim in self.nodes:
             if isinstance(prim, MapPrimitive):
                 lhs = prim.inputs[0]
@@ -117,7 +159,7 @@ class EinsumGraph:
                     rhs=nameof(rhs),
                     einsum_str=prim.einsum_str,
                     map_dims=", ".join(
-                        ['"{}"'.format(letter) for letter in prim.ranks_to_map]
+                        ['"{}"'.format(letter) for letter in prim.dims_to_map]
                     ),
                     op=prim.op.name,
                 )
@@ -131,7 +173,7 @@ class EinsumGraph:
                     ret=nameof(ret),
                     inp=nameof(inp),
                     einsum_str=prim.einsum_str,
-                    reduce_dims=prim.reduce_rank,
+                    reduce_dims=prim.dims_to_reduce,
                     op=prim.op.name,
                 )
                 doc += "\t"
@@ -142,4 +184,17 @@ class EinsumGraph:
         doc += "\treturn "
         outputs = [nameof(out) for out in self.outputs]
         doc += ", ".join(outputs)
+        doc += "\n"
+
+        # 打印value并查集
+        doc += "\nSymbolic Dim Set(\n"
+        for value_dim_set in set(self.sym_dim_set.dim_set_dict.values()):
+            dim_name_list = []
+            for dim in value_dim_set.dim_set:
+                tensor_name = nameof(dim.get_fake_tensor())
+                dim_idx = dim.get_index()
+                dim_name = f"{tensor_name}.dim{dim_idx}"
+                dim_name_list.append(dim_name)
+            doc += "\t({}),\n".format(", ".join(dim_name_list))
+        doc += ")\n"
         return doc

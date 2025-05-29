@@ -21,44 +21,23 @@ from mlir.dialects import tensor
 class Visitor(ABC):
 
     @abstractmethod
-    def visit_map(self, node: MapPrimitive) -> Any:
+    def visit_MapPrimitive(self, node: MapPrimitive) -> Any:
         pass
 
     @abstractmethod
-    def visit_reduce(self, node: ReducePrimitive) -> Any:
+    def visit_ReducePrimitive(self, node: ReducePrimitive) -> Any:
         pass
 
     @abstractmethod
-    def visit_populate(self, node: PopulatePrimitive) -> Any:
+    def visit_PopulatePrimitive(self, node: PopulatePrimitive) -> Any:
         pass
 
     @abstractmethod
-    def visit_unary(self, node: UnaryPrimitive) -> Any:
+    def visit_UnaryPrimitive(self, node: UnaryPrimitive) -> Any:
         pass
 
 
 class MLIRCodeGenVisitor(Visitor):
-    _AIPILER_TO_MLIR: Dict[dtypes.DataType, str] = {
-        dtypes.f32: ir.F32Type.get(),
-        dtypes.boolean: ir.IntegerType.get_signless(1),
-    }
-
-    _MLIR_TO_AIPILER: Dict[str, dtypes.DataType] = {
-        ir.F32Type.get(): dtypes.f32,
-        ir.IntegerType.get_signless(1): dtypes.boolean,
-    }
-
-    @classmethod
-    def from_dtype(dtype: dtypes.DataType):
-        if dtype not in MLIRCodeGenVisitor._AIPILER_TO_MLIR:
-            raise RuntimeError("Unsupported data type: {} now".format(dtype.name))
-        return MLIRCodeGenVisitor._AIPILER_TO_MLIR[dtype]
-
-    @classmethod
-    def to_dtype(mlirty: str) -> dtypes.DataType:
-        if mlirty not in MLIRCodeGenVisitor._MLIR_TO_AIPILER:
-            raise RuntimeError("Unsupported data type: {} now".format(mlirty))
-        return MLIRCodeGenVisitor._MLIR_TO_AIPILER[mlirty]
 
     def __init__(
         self, context: ir.Context, symbol_table: Dict[Tensor, ir.Value]
@@ -66,6 +45,26 @@ class MLIRCodeGenVisitor(Visitor):
         self.visited_nodes: List[EinsumPrimitive] = []
         self.symbol_table: Dict[Tensor, ir.Value] = symbol_table
         self.context: ir.Context = context
+        with self.context:
+            self._AIPILER_TO_MLIR: Dict[dtypes.DataType, str] = {
+                dtypes.f32: ir.F32Type.get(),
+                dtypes.boolean: ir.IntegerType.get_signless(1),
+            }
+
+            self._MLIR_TO_AIPILER: Dict[str, dtypes.DataType] = {
+                ir.F32Type.get(): dtypes.f32,
+                ir.IntegerType.get_signless(1): dtypes.boolean,
+            }
+
+    def from_dtype(self, dtype: dtypes.DataType):
+        if dtype not in self._AIPILER_TO_MLIR:
+            raise RuntimeError("Unsupported data type: {} now".format(dtype.name))
+        return self._AIPILER_TO_MLIR[dtype]
+
+    def to_dtype(self, mlirty: str) -> dtypes.DataType:
+        if mlirty not in self._MLIR_TO_AIPILER:
+            raise RuntimeError("Unsupported data type: {} now".format(mlirty))
+        return self._MLIR_TO_AIPILER[mlirty]
 
     def visit_MapPrimitive(
         self,
@@ -109,7 +108,7 @@ class MLIRCodeGenVisitor(Visitor):
             # TODO: 当前只支持加减乘数,不能写死
             C[output_indices] = A[lhs_indices] * B[rhs_indices]
 
-        mlir_dtype = MLIRCodeGenVisitor.from_dtype(node.output.dtype)
+        mlir_dtype = self.from_dtype(node.output.dtype)
         # TODO: 需要处理symbolic shape
         init_result = tensor.EmptyOp(node.output.shape, mlir_dtype)
         op = _map(
@@ -151,7 +150,7 @@ class MLIRCodeGenVisitor(Visitor):
             # TODO: 当前只支持加减乘数,不能写死
             OUTPUT[output_indices] += INPUT[input_indices]
 
-        mlir_dtype = MLIRCodeGenVisitor.from_dtype(node.output.dtype)
+        mlir_dtype = self.from_dtype(node.output.dtype)
         # TODO: 需要处理symbolic shape
         init_result = tensor.EmptyOp(node.output.shape, mlir_dtype)
         op = _map(
