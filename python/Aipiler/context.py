@@ -6,7 +6,7 @@ from Aipiler.graph import EinsumGraph
 from typing import List, Union, Optional
 
 
-class Runtime:
+class Context:
     """
     Runime is responsible for compiling and executing the model.
     It takes an ExportedProgram and compiles it into an EinsumGraph.
@@ -39,7 +39,7 @@ class Runtime:
                 inputs = [inputs]
             else:
                 inputs = list(inputs)
-        return EinsumGraph(outputs, inputs)
+        return EinsumGraph(outputs, inputs).update_nodes()
 
     def _get_einsum_graph(self, example_inputs) -> EinsumGraph:
         inputs: List[Tensor] = []

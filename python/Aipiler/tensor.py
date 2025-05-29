@@ -7,6 +7,12 @@ from Aipiler.runtime import Storage
 from Aipiler.runtime.device import Device, to_device
 
 
+class FakeTensor:
+    def __init__(self, symbolic_shape: Sequence[Dim], dtype: DataType):
+        self.symbolic_shape = symbolic_shape
+        self.dtype = dtype
+
+
 # TODO: data layout
 class Tensor:
     def __init__(

@@ -2,10 +2,10 @@ from typing import List, Dict, Any, Optional, Set, Tuple, Union, Type, Sequence
 from Aipiler.tensor import Tensor
 from Aipiler.primitive import EinsumPrimitive, MapPrimitive, ReducePrimitive
 from Aipiler.visitor import MLIRCodeGenVisitor
-from Aipiler.datatype import DtypeMapper
 from mlir.dialects import arith, builtin, func, linalg, tensor
 from mlir.dialects.linalg.opdsl.lang import *
 from mlir.ir import *
+from Aipiler.dim import Dim, DisjointSetUnion
 
 
 class EinsumGraph:
@@ -16,12 +16,13 @@ class EinsumGraph:
     ):
         self.outputs = list(outputs)
         self.inputs: Optional[List[Tensor]] = list(inputs) if inputs else []
-        self.nodes: List[EinsumPrimitive] = self.update_nodes()
+        self.nodes: List[EinsumPrimitive] = []
         self._mlir_context = ir.Context()
         self._module = ir.Module.create()
         self._func_name = "main"
         self._symbol_table: Dict[Tensor, Value] = {}
         self.visitor = MLIRCodeGenVisitor(self._mlir_context, self._symbol_table)
+        self.disjointSetUnion: DisjointSetUnion = DisjointSetUnion()
 
     def update_nodes(self):
         nodes: List[EinsumPrimitive] = []
@@ -35,7 +36,40 @@ class EinsumGraph:
                 else:
                     if i not in self.inputs:
                         self.inputs.append(i)
-        return nodes
+
+        self.nodes = nodes
+        self.update_dim_value_set()
+
+    def update_dim_value_set(self):
+        """
+        更新图中所有节点的维度值集合
+        """
+        for node in self.nodes:
+            input_scripts = node.input_scripts
+            output_scripts = node.output_scripts
+
+            input_tensors = node.inputs
+            output_tensor = node.output
+
+            idx_dim_dict: Dict[str, List[Dim]] = {}
+            for input_script, input_tensor in zip(input_scripts, input_tensors):
+                for input_idx, input_dim in zip(
+                    input_script, input_tensor.symbolic_shape
+                ):
+                    if input_idx not in idx_dim_dict:
+                        idx_dim_dict[input_idx] = []
+                    idx_dim_dict[input_idx].append(input_dim)
+
+            for output_script, output_dim in zip(
+                output_scripts, output_tensor.symbolic_shape
+            ):
+                if output_script not in idx_dim_dict:
+                    idx_dim_dict[output_script] = []
+                idx_dim_dict[output_script].append(output_dim)
+
+            # 更新维度值集合
+            for script, dim_list in idx_dim_dict.items():
+                self.disjointSetUnion.union(*dim_list)
 
     def codegen(self):
         """生成 MLIR 代码"""

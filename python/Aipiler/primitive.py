@@ -1,6 +1,6 @@
-from Aipiler.tensor import Tensor
+from Aipiler.tensor import FakeTensor
 from Aipiler.basic_operator import BaseOperator
-from Aipiler.dim import Dim, AffineDimExpr
+from Aipiler.dim import Dim
 from typing import List, Union, Sequence, Dict, Any
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
@@ -8,50 +8,29 @@ from Aipiler.utils import parse_einsum_str
 
 
 class EinsumPrimitive(ABC):
-    def __init__(self, inputs: List[Tensor], einsum_str: str) -> None:
+    def __init__(self, inputs: List[FakeTensor], einsum_str: str) -> None:
         self.inputs = inputs
         self.einsum_str = einsum_str
-        self.output: Tensor = None
+        self.output: FakeTensor = None
+        self.input_scripts, self.output_scripts = parse_einsum_str(self.einsum_str)
 
     def run(self):
         """
         check inputs and einsum, generate symbolic outputs
         """
-        from .utils import parse_einsum_str
-
-        input_scripts, output_scripts = parse_einsum_str(self.einsum_str)
 
         # get map of `str -> dim obj`
 
         # create output
-        assert len(self.inputs) == len(input_scripts)
-        tensor_shape: List[Dim] = []
-        for output_script in output_scripts:
-            # affine expr of dim object
-            affine_exprs = []
-            for input_, tensor_input in zip(input_scripts, self.inputs):
-                for idx, input_script in enumerate(input_):
-                    # if script appear in both output_script and input_script
-                    if output_script == input_script:
-                        # construct AffineDimExpr
-                        input_dim = tensor_input.symbolic_shape[idx]
-                        if input_dim.affine_exprs:
-                            affine_exprs += input_dim.affine_exprs
-                            affine_exprs = list(set(affine_exprs))
-                        else:
-                            affine_expr = AffineDimExpr(input_dim)
-                            affine_exprs.append(affine_expr)
+        assert len(self.inputs) == len(self.input_scripts)
+        fake_tensor_shape: List[Dim] = []
+        for output_script in self.output_scripts:
             # construct dim obj
-            assert affine_exprs
-            tensor_shape.append(Dim(affine_exprs))
+            fake_tensor_shape.append(Dim())
         dtype = self.inputs[0].dtype
-        device = self.inputs[0].device
-        return Tensor(
-            symbolic_shape=tensor_shape,
+        return FakeTensor(
+            symbolic_shape=fake_tensor_shape,
             dtype=dtype,
-            device=device,
-            storage=None,
-            trace=self,
         )
 
     def accept(self, visitor) -> None:
@@ -69,8 +48,8 @@ class EinsumPrimitive(ABC):
 class MapPrimitive(EinsumPrimitive):
     def __init__(
         self,
-        lhs: Tensor,
-        rhs: Tensor,
+        lhs: FakeTensor,
+        rhs: FakeTensor,
         einsum_str: str,
         dims_to_map: Union[str, Sequence[str]],
         op: BaseOperator,
@@ -93,7 +72,7 @@ class ReducePrimitive(EinsumPrimitive):
 
     def __init__(
         self,
-        x: Tensor,
+        x: FakeTensor,
         einsum_str: str,
         dims_to_reduce: Union[str, Sequence[str]],
         op: BaseOperator,
@@ -121,7 +100,7 @@ class PopulatePrimitive(EinsumPrimitive):
 
 class UnaryPrimitive(EinsumPrimitive):
 
-    def __init__(self, x: Tensor, op: BaseOperator):
+    def __init__(self, x: FakeTensor, op: BaseOperator):
         super().__init__(inputs=[x], einsum_str="")
         self.op = op
         self.output = self.run()
@@ -135,21 +114,25 @@ class EinsumBuilder:
 
     @staticmethod
     def map(
-        lhs: Tensor, rhs: Tensor, einsum_str: str, dims_to_map: str, op: BaseOperator
-    ) -> Tensor:
+        lhs: FakeTensor,
+        rhs: FakeTensor,
+        einsum_str: str,
+        dims_to_map: str,
+        op: BaseOperator,
+    ) -> FakeTensor:
         m = MapPrimitive(lhs, rhs, einsum_str, dims_to_map, op)
         return m.output
 
     @staticmethod
     def reduce(
-        x: Tensor, einsum_str: str, dim_to_reduce: str, op: BaseOperator
-    ) -> Tensor:
+        x: FakeTensor, einsum_str: str, dim_to_reduce: str, op: BaseOperator
+    ) -> FakeTensor:
         return ReducePrimitive(x, einsum_str, dim_to_reduce, op).output
 
     @staticmethod
-    def populate() -> Tensor:
+    def populate() -> FakeTensor:
         pass
 
     @staticmethod
-    def unary(x: Tensor, op: BaseOperator) -> Tensor:
+    def unary(x: FakeTensor, op: BaseOperator) -> FakeTensor:
         return UnaryPrimitive(x, op).output

@@ -1,6 +1,6 @@
 from typing import Dict, Any, Callable, Optional, Tuple, Set, List, Type
 from Aipiler.registry import Registry
-from Aipiler.tensor import Tensor, from_torch_tensor
+from Aipiler.tensor import Tensor, from_torch
 import logging
 import inspect
 import torch
@@ -98,7 +98,7 @@ class Interpreter:
                         )
                     attr = getattr(attr, atom)
                 aipiler_env[node.name] = (
-                    from_torch_tensor(attr) if isinstance(attr, torch.Tensor) else attr
+                    from_torch(attr) if isinstance(attr, torch.Tensor) else attr
                 )
             elif node.op == "call_function":
                 exec_func = self._lookup_aipiler_function(node.target)
