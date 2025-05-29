@@ -20,13 +20,16 @@ example_args = (X, W)
 
 model = Matmul()
 
-exported_program: torch.export.ExportedProgram = export(model, args=example_args)
-print("Exported Program:", exported_program)
-print("Graph: ", exported_program.graph)
-print("Graph_signature: ", exported_program.graph_signature)
-print("State_dict: ", exported_program.state_dict)
-print("Range_constraints: ", exported_program.range_constraints)
+# exported_program: torch.export.ExportedProgram = export(model, args=example_args)
+# print("Exported Program:", exported_program)
+# print("Graph: ", exported_program.graph)
+# print("Graph_signature: ", exported_program.graph_signature)
+# print("State_dict: ", exported_program.state_dict)
+# print("Range_constraints: ", exported_program.range_constraints)
 
+from Aipiler.dynamo_backend import aipiler_backend
 
-g = Context().compile(exported_program)
-print("Compiled Graph:", g)
+# g = Context(exported_program).compile()
+model = torch.compile(model=model, backend=aipiler_backend, fullgraph=True)
+model(X, W)
+# print("Compiled Graph:", g)

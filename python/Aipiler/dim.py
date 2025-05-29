@@ -22,15 +22,34 @@ class SymBoolArgument:
 
 
 class Dim:
-    def __init__(self, fake_tensor):
+    def __init__(
+        self,
+    ):
+        self.fake_tensor = None
+        self.idx = None
+
+    def set_fake_tensor(self, fake_tensor, idx: int):
         from Aipiler.tensor import FakeTensor
 
+        if not isinstance(fake_tensor, FakeTensor):
+            raise TypeError(f"Expected FakeTensor, got {type(fake_tensor)}")
         self.fake_tensor = fake_tensor
+        self.idx = idx
+
+    def get_fake_tensor(self):
+        if self.fake_tensor is None:
+            raise ValueError("Fake tensor is not set.")
+        return self.fake_tensor
+
+    def get_index(self) -> int:
+        if self.idx is None:
+            raise ValueError("Index is not set.")
+        return self.idx
 
 
 class ValueDimSet:
-    def __init__(self, dim_set: Optional[Set] = None, value: Optional[int] = None):
-        self.dim_set = dim_set if dim_set is not None else set()
+    def __init__(self, dim_set: Optional[Set[Dim]] = None, value: Optional[int] = None):
+        self.dim_set: Optional[Set[Dim]] = dim_set if dim_set is not None else set()
         self.value = value
 
     def add(self, dim: Dim):
@@ -46,14 +65,10 @@ class ValueDimSet:
         else:
             raise TypeError(f"Expected Dim, got {type(dim)}")
 
-    def union(self, other: "ValueDimSet") -> "ValueDimSet":
-        if isinstance(other, ValueDimSet):
-            return ValueDimSet(
-                dim_set=self.dim_set | other.dim_set,
-                value=self.value if self.value is not None else other.value,
-            )
-        else:
-            raise TypeError(f"Expected DimSet, got {type(other)}")
+    def union(self, other: "ValueDimSet"):
+        if not isinstance(other, ValueDimSet):
+            raise TypeError(f"Expected ValueDimSet, got {type(other)}")
+        self.dim_set |= other.dim_set
 
 
 class DisjointSetUnion:
@@ -73,10 +88,12 @@ class DisjointSetUnion:
         for element in elements:
             if not isinstance(element, Dim):
                 raise TypeError(f"Expected Dim, got {type(element)}")
-            if element not in self.dim_set_dict:
-                self.dim_set_dict[element] = ValueDimSet()
-            value_dim_set = value_dim_set.union(self.dim_set_dict[element])
-            self.dim_set_dict[element] = value_dim_set
+            element_set = self.find(element)
+            if element_set is None:
+                element_set = ValueDimSet({element})
+            value_dim_set.union(element_set)
+            for dim in element_set.dim_set:
+                self.dim_set_dict[dim] = value_dim_set
 
     def is_connected(self, element1: Dim, element2: Dim) -> bool:
         if element1 not in self.dim_set_dict or element2 not in self.dim_set_dict:

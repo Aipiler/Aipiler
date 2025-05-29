@@ -28,10 +28,7 @@ class EinsumPrimitive(ABC):
             # construct dim obj
             fake_tensor_shape.append(Dim())
         dtype = self.inputs[0].dtype
-        return FakeTensor(
-            symbolic_shape=fake_tensor_shape,
-            dtype=dtype,
-        )
+        return FakeTensor(symbolic_shape=fake_tensor_shape, dtype=dtype, trace=self)
 
     def accept(self, visitor) -> None:
         """
@@ -61,7 +58,7 @@ class MapPrimitive(EinsumPrimitive):
         self.iteration_scripts = set(
             self.lhs_scripts + self.rhs_scripts + self.output_scripts
         )
-        self.ranks_to_map = (
+        self.dims_to_map = (
             [dims_to_map] if isinstance(dims_to_map, str) else list(dims_to_map)
         )
         self.op = op
@@ -81,7 +78,7 @@ class ReducePrimitive(EinsumPrimitive):
         self.x_scripts = parse_einsum_str(einsum_str)[0][0]  # only one input
         self.output_scripts = parse_einsum_str(einsum_str)[1]
         self.iteration_scripts = set(self.x_scripts + self.output_scripts)
-        self.ranks_to_reduce = (
+        self.dims_to_reduce = (
             [dims_to_reduce]
             if isinstance(dims_to_reduce, str)
             else list(dims_to_reduce)

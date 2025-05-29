@@ -34,6 +34,7 @@ def register_method(method: Callable):
     return decorator
 
 
+@register_function(torch.ops.aten.matmul.default)
 @register_function(torch.matmul)
 def matmul(A: Tensor, B: Tensor):
     return ops.special.matmul(A, B)

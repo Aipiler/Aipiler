@@ -1,6 +1,6 @@
 from typing import Dict, Any, Callable, Optional, Tuple, Set, List, Type
 from Aipiler.registry import Registry
-from Aipiler.tensor import Tensor, from_torch
+from Aipiler.tensor import FakeTensor, from_torch_to_fake_tensor
 import logging
 import inspect
 import torch
@@ -86,7 +86,9 @@ class Interpreter:
 
             if node.op == "placeholder":
                 arg = next(args_iter)
-                assert isinstance(arg, Tensor), "input tensor must be aipiler Tensor"
+                assert isinstance(
+                    arg, FakeTensor
+                ), "input tensor must be aipiler Tensor"
                 aipiler_env[node.name] = arg
             elif node.op == "get_attr":
                 target_atoms = node.target.split(".")
@@ -98,7 +100,9 @@ class Interpreter:
                         )
                     attr = getattr(attr, atom)
                 aipiler_env[node.name] = (
-                    from_torch(attr) if isinstance(attr, torch.Tensor) else attr
+                    from_torch_to_fake_tensor(attr)
+                    if isinstance(attr, torch.Tensor)
+                    else attr
                 )
             elif node.op == "call_function":
                 exec_func = self._lookup_aipiler_function(node.target)
