@@ -18,26 +18,7 @@ from mlir.dialects import linalg
 from mlir.dialects import tensor
 
 
-class Visitor(ABC):
-
-    @abstractmethod
-    def visit_MapPrimitive(self, node: MapPrimitive) -> Any:
-        pass
-
-    @abstractmethod
-    def visit_ReducePrimitive(self, node: ReducePrimitive) -> Any:
-        pass
-
-    @abstractmethod
-    def visit_PopulatePrimitive(self, node: PopulatePrimitive) -> Any:
-        pass
-
-    @abstractmethod
-    def visit_UnaryPrimitive(self, node: UnaryPrimitive) -> Any:
-        pass
-
-
-class MLIRCodeGenVisitor(Visitor):
+class MLIRCodeGenVisitor:
 
     def __init__(
         self, context: ir.Context, symbol_table: Dict[Tensor, ir.Value]

@@ -5,9 +5,9 @@ from collections import defaultdict
 
 import Aipiler
 
-import Aipiler.runtime
+import Aipiler.runtime_Aipiler
 
-import Aipiler.runtime.device
+import Aipiler.runtime_Aipiler.device
 from .device import Device, to_device
 
 
@@ -201,7 +201,7 @@ class Storage:
         Allocate a new storage on the given device.
         """
         if isinstance(device, str):
-            device = Aipiler.runtime.device.to_device(device)
+            device = Aipiler.runtime_Aipiler.device.to_device(device)
         else:
             if not isinstance(device, Device):
                 raise TypeError(
