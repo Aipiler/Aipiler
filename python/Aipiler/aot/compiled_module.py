@@ -33,23 +33,23 @@ from .support.procedural import (
 )
 
 from .support.procedural.exported_program import (
-    # import_exported_program,
+    import_exported_program,
     import_einsum_graph,
 )
 
-# from .support.ir_utils import (
-#     ModuleBuilder,
-#     ModuleBuilderOptions,
-# )
+from .support.ir_utils import (
+    ModuleBuilder,
+    ModuleBuilderOptions,
+)
 
-# from .tensor_traits import DeviceAffinity
+from .tensor_traits import DeviceAffinity
 
 
-# from Aipiler.interpreter import Interpreter
-# from Aipiler.tensor import FakeTensor, from_torch_to_fake_tensor
-# from Aipiler.dim import Dim
-# from Aipiler.graph import EinsumGraph
-# import torch
+from Aipiler.interpreter import Interpreter
+from Aipiler.tensor import FakeTensor, from_torch_to_fake_tensor
+from Aipiler.dim import Dim
+from Aipiler.graph import EinsumGraph
+import torch
 
 __all__ = [
     "CompiledModule",

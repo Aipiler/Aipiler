@@ -2,9 +2,6 @@ from typing import List, Dict, Any, Optional, Set, Tuple, Union, Type, Sequence
 from Aipiler.tensor import FakeTensor
 from Aipiler.primitive import EinsumPrimitive, MapPrimitive, ReducePrimitive
 from Aipiler.visitor import MLIRCodeGenVisitor
-from mlir.dialects import arith, builtin, func, linalg, tensor
-from mlir.dialects.linalg.opdsl.lang import *
-from mlir.ir import *
 from Aipiler.dim import Dim, DisjointSetUnion
 
 
@@ -71,56 +68,56 @@ class EinsumGraph:
                     continue
                 self.sym_dim_set.union(*dim_list)
 
-    def codegen(self):
-        """生成 MLIR 代码"""
+    # def codegen(self):
+    #     """生成 MLIR 代码"""
 
-        # 遍历所有输入张量，生成对应的 MLIR Tensor
-        for input_tensor in self.inputs:
-            pass
+    #     # 遍历所有输入张量，生成对应的 MLIR Tensor
+    #     for input_tensor in self.inputs:
+    #         pass
 
-        with ir.InsertionPoint(self._module.body):
-            arguments = []
-            for inpur_tensor in self.inputs:
-                # TODO：暂时使用tensor的shape，后期再使用symbolic_shape
-                shape_list = list(inpur_tensor.shape)
-                mlir_dtype = DtypeMapper.to_mlir(input_tensor.dtype)
-                tensor_arg = ir.RankedTensorType.get(shape_list, mlir_dtype)
-                arguments.append(tensor_arg)
+    #     with ir.InsertionPoint(self._module.body):
+    #         arguments = []
+    #         for inpur_tensor in self.inputs:
+    #             # TODO：暂时使用tensor的shape，后期再使用symbolic_shape
+    #             shape_list = list(inpur_tensor.shape)
+    #             mlir_dtype = DtypeMapper.to_mlir(input_tensor.dtype)
+    #             tensor_arg = ir.RankedTensorType.get(shape_list, mlir_dtype)
+    #             arguments.append(tensor_arg)
 
-            @func.FuncOp.from_py_func(*arguments, name=self._func_name)
-            def generated_func(*args):
-                # 建立输入参数的符号表
-                args_list = list(args)
-                for i, arg in enumerate(args_list):
-                    self._symbol_table[self.inputs[i]] = arg
+    #         @func.FuncOp.from_py_func(*arguments, name=self._func_name)
+    #         def generated_func(*args):
+    #             # 建立输入参数的符号表
+    #             args_list = list(args)
+    #             for i, arg in enumerate(args_list):
+    #                 self._symbol_table[self.inputs[i]] = arg
 
-                # 遍历所有节点，生成对应的 MLIR 操作
-                for node in self.nodes:
-                    op_ret: ir.Operation | ir.Value | tuple | List | ir.OpResult = (
-                        node.accept(self.visitor)
-                    )
+    #             # 遍历所有节点，生成对应的 MLIR 操作
+    #             for node in self.nodes:
+    #                 op_ret: ir.Operation | ir.Value | tuple | List | ir.OpResult = (
+    #                     node.accept(self.visitor)
+    #                 )
 
-                    if isinstance(op_ret, tuple | List):
-                        for i, operation in enumerate(op_ret):
-                            if isinstance(operation, ir.Operation) or isinstance(
-                                operation, ir.OpView
-                            ):
-                                self._symbol_table[node.output] = operation.result
-                            elif isinstance(operation, ir.OpResult):
-                                self._symbol_table[node.output] = operation
-                            else:
-                                raise NotImplementedError
-                    elif isinstance(op_ret, ir.OpResult):
-                        self._symbol_table[node.output] = op_ret
-                    else:
-                        for i, result in enumerate(op_ret.results):
-                            self._symbol_table[node.output] = result
+    #                 if isinstance(op_ret, tuple | List):
+    #                     for i, operation in enumerate(op_ret):
+    #                         if isinstance(operation, ir.Operation) or isinstance(
+    #                             operation, ir.OpView
+    #                         ):
+    #                             self._symbol_table[node.output] = operation.result
+    #                         elif isinstance(operation, ir.OpResult):
+    #                             self._symbol_table[node.output] = operation
+    #                         else:
+    #                             raise NotImplementedError
+    #                 elif isinstance(op_ret, ir.OpResult):
+    #                     self._symbol_table[node.output] = op_ret
+    #                 else:
+    #                     for i, result in enumerate(op_ret.results):
+    #                         self._symbol_table[node.output] = result
 
-                # 获得函数的所有输出
-                outputs = (self._symbol_table.get(out) for out in self.outputs)
-                return outputs
+    #             # 获得函数的所有输出
+    #             outputs = (self._symbol_table.get(out) for out in self.outputs)
+    #             return outputs
 
-        print(self._module)
+    #     print(self._module)
 
     def __str__(self) -> str:
         tensors = []
