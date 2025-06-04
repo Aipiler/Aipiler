@@ -54,7 +54,7 @@ class MLP(nn.Module):
 
 model = MLP()
 example_x = torch.empty(97, 8, dtype=torch.float32)
-# exported = aot.export(model, example_x)
+exported = aot.export(model, example_x)
 # exported.print_readable()
 # compiled_binary = exported.compile(save_to=None)
 

@@ -9,13 +9,13 @@ from Aipiler.primitive import (
 )
 from Aipiler.tensor import Tensor
 from Aipiler import datatype as dtypes
-from mlir import ir
-from mlir.dialects.linalg.opdsl.lang import *
-from mlir.ir import *
-from mlir.dialects import builtin
-from mlir.dialects import func
-from mlir.dialects import linalg
-from mlir.dialects import tensor
+from iree.compiler import ir
+from iree.compiler.dialects.linalg.opdsl.lang import *
+from iree.compiler.ir import *
+from iree.compiler.dialects import builtin
+from iree.compiler.dialects import func
+from iree.compiler.dialects import linalg
+from iree.compiler.dialects import tensor
 
 
 class MLIRCodeGenVisitor:
