@@ -29,16 +29,16 @@ class FakeTensor:
 class Tensor:
     def __init__(
         self,
-        dtype: DataType,
+        shape: Sequence[int],
+        dtype: Union[DataType, str],
         device: Union[Device, str],
-        storage: Storage,
-        shape: Optional[Sequence[int]] = None,
+        storage: Storage
     ) -> None:
-
-        self.dtype = dtype
+        self._shape = list(shape)
+        self.dtype = dtypes.data_type(dtype) if isinstance(device, str) else dtype
         self.device = to_device(device) if isinstance(device, str) else device
         self.storage = storage
-        self._shape = shape
+
 
     @property
     def dim(self):
@@ -160,11 +160,9 @@ def empty(
     num_bytes = int(size * dtype.nbytes)
     storage = Storage.new(device, num_bytes)
 
-    symbolic_shape = [Dim() for _ in range(len(shape))]
     return Tensor(
-        symbolic_shape=symbolic_shape,
+        shape=shape,
         dtype=dtype,
         device=device,
         storage=storage,
-        shape=shape,
     )

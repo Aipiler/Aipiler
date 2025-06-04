@@ -243,10 +243,10 @@ def from_dlpack_capsule(dltensor) -> Tensor:
         pythonapi.PyCapsule_SetName(dltensor, b"used_dltensor")
 
         return Tensor(
+            shape=shape,
             dtype=dtype,
             device=device,
             storage=storage,
-            shape=shape,
         )
 
     raise RuntimeError("Expect a dltensor in PyCapsule and not been consumed before.")
