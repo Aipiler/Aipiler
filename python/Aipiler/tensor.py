@@ -3,8 +3,8 @@ from Aipiler.datatype import DataType
 import Aipiler.datatype as dtypes
 from typing import Optional, List, Dict, Sequence, Tuple, Union
 import numpy as np
-from Aipiler.runtime import Storage
-from Aipiler.runtime.device import Device, to_device
+from Aipiler.runtime_Aipiler import Storage
+from Aipiler.runtime_Aipiler.device import Device, to_device
 import torch
 
 

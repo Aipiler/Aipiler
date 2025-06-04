@@ -4,7 +4,5 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from .device import *
-from .invoke import *
-from .launch import *
-from . import op_reg
+from .base import *
+from . import impl_helper

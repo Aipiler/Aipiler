@@ -6,8 +6,8 @@ import Aipiler
 from Aipiler import datatype as dtypes
 from Aipiler.datatype import DataType, data_type
 from Aipiler.tensor import Tensor
-from Aipiler.runtime import Storage
-from Aipiler.runtime.device import Device
+from Aipiler.runtime_Aipiler import Storage
+from Aipiler.runtime_Aipiler.device import Device
 from Aipiler.dim import Dim
 from Aipiler.utils.utils import initialize
 

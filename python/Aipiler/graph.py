@@ -19,13 +19,6 @@ class EinsumGraph:
         self.outputs = list(outputs)
         self.inputs: Optional[List[FakeTensor]] = list(inputs) if inputs else []
         self.nodes: List[EinsumPrimitive] = []
-        self._mlir_context = ir.Context()
-        self._module = ir.Module.create(
-            loc=Location.unknown(context=self._mlir_context)
-        )
-        self._func_name = "main"
-        self._symbol_table: Dict[FakeTensor, Value] = {}
-        self.visitor = MLIRCodeGenVisitor(self._mlir_context, self._symbol_table)
         self.sym_dim_set: DisjointSetUnion = DisjointSetUnion()
 
     def update_nodes(self) -> "EinsumGraph":
