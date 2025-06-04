@@ -6,3 +6,7 @@
 	path = thirdparty/pybind11
 	url = https://github.com/pybind/pybind11.git
 	branch = master
+[submodule "thirdparty/iree"]
+	path = thirdparty/iree
+	url = https://github.com/iree-org/iree.git
+	branch = main
