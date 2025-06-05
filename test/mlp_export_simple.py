@@ -59,7 +59,7 @@ example_x = torch.empty(97, 8, dtype=torch.float32)
 # print("Range_constraints: ", exported_program.range_constraints)
 exported = aot.export(model, args=example_args)
 exported.print_readable()
-compiled_binary = exported.compile(save_to=None)
+compiled_binary = exported.compile(save_to="./tmp.bf")
 
 
 def run_inference() -> np.ndarray:

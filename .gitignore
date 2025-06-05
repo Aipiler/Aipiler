@@ -28,3 +28,5 @@ __pycache__/
 *.egg-info
 
 .env
+
+*.bf
