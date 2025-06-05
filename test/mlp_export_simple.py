@@ -32,7 +32,7 @@ class MLP(nn.Module):
         self.layer2 = nn.Linear(4, 2, bias=True)
         self.layer3 = nn.Linear(2, 2, bias=True)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the MLP model.
 
@@ -42,21 +42,24 @@ class MLP(nn.Module):
         Returns:
             torch.Tensor: Output tensor after forward pass.
         """
-        x = self.layer0(x)
-        x = torch.sigmoid(x)
-        x = self.layer1(x)
-        x = torch.sigmoid(x)
-        x = self.layer2(x)
-        x = torch.sigmoid(x)
-        x = self.layer3(x)
-        return x
+        out = torch.matmul(x, weight)
+        return out
 
 
 model = MLP()
+X = torch.randn(2, 2, dtype=torch.float32)
+W = torch.randn(2, 2, dtype=torch.float32)
+example_args = (X, W)
 example_x = torch.empty(97, 8, dtype=torch.float32)
-exported = aot.export(model, example_x)
-# exported.print_readable()
-# compiled_binary = exported.compile(save_to=None)
+# exported_program = torch.export.export(model, example_args)
+# print("Exported Program:", exported_program)
+# print("Graph: ", exported_program.graph)
+# print("Graph_signature: ", exported_program.graph_signature)
+# print("State_dict: ", exported_program.state_dict)
+# print("Range_constraints: ", exported_program.range_constraints)
+exported = aot.export(model, args=example_args)
+exported.print_readable()
+compiled_binary = exported.compile(save_to=None)
 
 
 def run_inference() -> np.ndarray:
@@ -71,8 +74,9 @@ def run_inference() -> np.ndarray:
         rt.VmModule.wrap_buffer(config.vm_instance, compiled_binary.map_memory()),
         config,
     )
-    x = np.random.rand(97, 8).astype(np.float32)
-    y = vmm.main(x)
+    x = np.random.rand(2, 2).astype(np.float32)
+    w = np.random.rand(2, 2).astype(np.float32)
+    y = vmm.main(x, w)
     logger.debug(f"Inference result: {y.to_host()}")
     return y.to_host()
 
@@ -83,11 +87,11 @@ class ModelTest(unittest.TestCase):
 
         self.assertIsNotNone(output, "inference output should not be None")
         self.assertEqual(
-            output.shape, (97, 2), "output shape doesn't match the expected (97, 2)"
+            output.shape, (2, 2), "output shape doesn't match the expected (97, 2)"
         )
 
 
-# if __name__ == "__main__":
-#     logging.basicConfig(level=logging.DEBUG)
-#     # Run unit tests
-#     unittest.main()
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
+    # Run unit tests
+    unittest.main()
