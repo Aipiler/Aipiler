@@ -130,12 +130,19 @@ class Einsum_importer:
             C[output_indices] = A[lhs_indices] * B[rhs_indices]
 
         mlir_dtype = self.from_dtype(node.output.dtype)
-        # TODO: 需要处理symbolic shape
-        init_result = tensor.EmptyOp((2, 2, 2), mlir_dtype)
+        shape_list = []
+        for d in node.output.symbolic_shapes:
+            if d.is_dynamic:
+                shape = ShapedType.get_dynamic_size()  # TODO: 这里应该是一个tensor.dim
+            else:
+                shape = d.get_size()
+            shape_list.append(shape)
+        # print(f"shape_list: {shape_list}")
+        init_result = tensor.empty(shape_list, mlir_dtype)
         op = _map(
             first_value,
             second_value,
-            outs=[init_result.result],
+            outs=[init_result],
         )
 
         return op
@@ -174,11 +181,17 @@ class Einsum_importer:
             OUTPUT[output_indices] += INPUT[input_indices]
 
         mlir_dtype = self.from_dtype(node.output.dtype)
-        # TODO: 需要处理symbolic shape
-        init_result = tensor.EmptyOp((2, 2), mlir_dtype)
+        shape_list = []
+        for s in node.output.symbolic_shapes:
+            if s.is_dynamic:
+                shape = ShapedType.get_dynamic_size()
+            else:
+                shape = s.size
+            shape_list.append(shape)
+        init_result = tensor.empty(shape_list, mlir_dtype)
         op = _map(
             input_value,
-            outs=[init_result.result],
+            outs=[init_result],
         )
 
         return op
@@ -204,9 +217,13 @@ class Einsum_importer:
             with self.module_builder.ip:
                 arguments = []
                 for inpur_tensor in graph.inputs:
-                    # TODO： 暂时全部使用symbolic shape
-                    # dyn = ShapedType.get_dynamic_size()  * len(inpur_tensor.symbolic_shape)
-                    shape_list = (2, 2)
+                    shape_list = []
+                    for d in inpur_tensor.symbolic_shapes:
+                        if d.is_dynamic:
+                            shape = ShapedType.get_dynamic_size()
+                        else:
+                            shape = d.get_size()
+                        shape_list.append(shape)
                     mlir_dtype = self.from_dtype(inpur_tensor.dtype)
                     tensor_arg = RankedTensorType.get(shape_list, mlir_dtype)
                     arguments.append(tensor_arg)

@@ -27,10 +27,10 @@ def test_mm():
 
     # ik, kj -> ij
     c = matmul(a, b)
-    assert len(c.symbolic_shape) == 2
+    assert len(c.symbolic_shapes) == 2
 
-    exprs1 = [expr.dim for expr in c.symbolic_shape[0].affine_exprs]
-    exprs2 = [expr.dim for expr in c.symbolic_shape[1].affine_exprs]
+    exprs1 = [expr.dim for expr in c.symbolic_shapes[0].affine_exprs]
+    exprs2 = [expr.dim for expr in c.symbolic_shapes[1].affine_exprs]
 
     assert a.symbolic_shape[0] in exprs1
     assert b.symbolic_shape[1] in exprs2

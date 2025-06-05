@@ -1,6 +1,8 @@
 from typing import Dict, Any, Callable, Optional, Tuple, Set, List, Type
 from Aipiler.registry import Registry
 from Aipiler.tensor import FakeTensor, from_torch_to_fake_tensor
+from Aipiler.dim import Dim
+import Aipiler.datatype as dtypes
 import logging
 import inspect
 import torch
@@ -23,8 +25,8 @@ class Interpreter:
 
         self._check_support()
 
-    def __call__(self, *args):
-        return self.forward(*args)
+    def __call__(self):
+        return self.forward()
 
     def _check_support(self):
         not_supported = set()
@@ -69,13 +71,16 @@ class Interpreter:
 
         return callable_name, filename, lineno
 
-    def forward(self, *args):
+    def forward(
+        self,
+    ) -> Tuple[List[FakeTensor], FakeTensor]:
         def load_arg(a, env):
             return torch.fx.graph.map_arg(a, lambda n: env[n.name])
 
+        inputs = []
+
         logger.info("start to interpret graph")
 
-        args_iter = iter(args)
         aipiler_env: Dict[str, Any] = {}
 
         graph_output: Optional[Any] = None
@@ -85,11 +90,29 @@ class Interpreter:
             logger.debug(f"interpreting node {idx}: {node.format_node()}")
 
             if node.op == "placeholder":
-                arg = next(args_iter)
-                assert isinstance(
-                    arg, FakeTensor
-                ), "input tensor must be aipiler Tensor"
-                aipiler_env[node.name] = arg
+                # 在这里创建FakeTensor
+                tensor_shape = node.meta["val"].shape
+                symbolic_shapes = []
+                for s in tensor_shape:
+                    d = Dim()
+                    if isinstance(s, int):
+                        d.set_size(s)
+                        symbolic_shapes.append(d)
+                    elif isinstance(s, torch.SymInt):
+                        d.set_size(str(s))
+                        symbolic_shapes.append(d)
+                    else:
+                        raise TypeError(
+                            f"Unsupported shape type {type(s)} in placeholder {node.name}"
+                        )
+
+                input_tensor = FakeTensor(
+                    symbolic_shapes=symbolic_shapes,
+                    dtype=dtypes.f32,
+                    trace=None,
+                )
+                inputs.append(input_tensor)
+                aipiler_env[node.name] = input_tensor
             elif node.op == "get_attr":
                 target_atoms = node.target.split(".")
                 attr = self.graph_module
@@ -125,4 +148,4 @@ class Interpreter:
                 assert False
 
         logger.info("finish interpreting graph")
-        return graph_output
+        return inputs, graph_output
