@@ -28,7 +28,7 @@ class EinsumPrimitive(ABC):
             # construct dim obj
             fake_tensor_shape.append(Dim())
         dtype = self.inputs[0].dtype
-        return FakeTensor(symbolic_shape=fake_tensor_shape, dtype=dtype, trace=self)
+        return FakeTensor(symbolic_shapes=fake_tensor_shape, dtype=dtype, trace=self)
 
     def accept(self, visitor) -> None:
         """

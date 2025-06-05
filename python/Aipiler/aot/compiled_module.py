@@ -191,13 +191,11 @@ class ExportedProgramDef:
         assert isinstance(ep, torch.export.ExportedProgram)
 
         graph_module = ep.graph_module
-        example_inputs = ep.example_inputs[0]
-        kwargs = ep.example_inputs[1]
 
         # get the interpreter for the subgraph
         interpreter = Interpreter(graph_module)
 
-        einsum_graph = self.get_einsum_graph(interpreter, example_inputs)
+        einsum_graph = self.get_einsum_graph(interpreter)
         del interpreter
         # print(str(einsum_graph))
         # TODO: compile and return Callable
@@ -205,7 +203,7 @@ class ExportedProgramDef:
 
     def trace_from(
         self,
-        outputs: Optional[List[FakeTensor]],
+        outputs: Optional[Union[FakeTensor, List[FakeTensor]]],
         inputs: Optional[Union[FakeTensor, List[FakeTensor]]] = None,
     ) -> EinsumGraph:
 
@@ -224,15 +222,8 @@ class ExportedProgramDef:
                 inputs = list(inputs)
         return EinsumGraph(outputs, inputs).update_nodes()
 
-    def get_einsum_graph(self, interpreter: Interpreter, example_inputs) -> EinsumGraph:
-        inputs: List[FakeTensor] = []
-        # prepare tensor input of einsum graph
-        for torch_input in example_inputs:
-            if isinstance(torch_input, torch.Tensor):
-                inputs.append(from_torch_to_fake_tensor(torch_input))
-
-        outputs = interpreter(*inputs)
-
+    def get_einsum_graph(self, interpreter: Interpreter) -> EinsumGraph:
+        inputs, outputs = interpreter()
         return self.trace_from(outputs, inputs=inputs)
 
     def __repr__(self):

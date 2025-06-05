@@ -20,7 +20,19 @@ class Context:
         self.interpreter: Interpreter = Interpreter(exported_program.graph_module)
         self.einsum_graph: Union[EinsumGraph, None] = None
 
-    def _trace_from(
+    def compile(self) -> EinsumGraph:
+        graph_module = self.exported_program.graph_module
+
+        # get the interpreter for the subgraph
+        interpreter = Interpreter(graph_module)
+
+        einsum_graph = self.get_einsum_graph(interpreter)
+        del interpreter
+        # print(str(einsum_graph))
+        # TODO: compile and return Callable
+        return einsum_graph
+
+    def trace_from(
         self,
         outputs: Optional[List[FakeTensor]],
         inputs: Optional[Union[FakeTensor, List[FakeTensor]]] = None,
@@ -41,16 +53,9 @@ class Context:
                 inputs = list(inputs)
         return EinsumGraph(outputs, inputs).update_nodes()
 
-    def _get_einsum_graph(self, example_inputs) -> EinsumGraph:
-        inputs: List[FakeTensor] = []
-        # prepare tensor input of einsum graph
-        for torch_input in example_inputs:
-            if isinstance(torch_input, torch.Tensor):
-                inputs.append(from_torch_to_fake_tensor(torch_input))
-
-        outputs = self.interpreter(*inputs)
-
-        return self._trace_from(outputs, inputs=inputs)
+    def get_einsum_graph(self, interpreter: Interpreter) -> EinsumGraph:
+        inputs, outputs = interpreter()
+        return self.trace_from(outputs, inputs=inputs)
 
     # TODO: execute接收pytorch的输入数据，返回pytorch的输出数据
     def execute(self, input_data):
@@ -58,18 +63,6 @@ class Context:
         Execute the model with the provided input data.
         """
         pass
-
-    # TODO: compile 函数应该返回一个python内的可调用对象
-    def compile(
-        self,
-    ):
-        example_inputs = self.exported_program.example_inputs[0]
-        kwargs = self.exported_program.example_inputs[1]
-
-        self.einsum_graph = self._get_einsum_graph(example_inputs)
-        print(str(self.einsum_graph))
-        # TODO: compile and return Callable
-        return self.einsum_graph
 
     # TODO: codegen 函数应该返回一个字符串或输出文件，表示编译后的代码。
     def codegen(self, file_path: str) -> str:

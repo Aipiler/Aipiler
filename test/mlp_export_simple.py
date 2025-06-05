@@ -47,8 +47,8 @@ class MLP(nn.Module):
 
 
 model = MLP()
-X = torch.randn(2, 2, dtype=torch.float32)
-W = torch.randn(2, 2, dtype=torch.float32)
+X = torch.randn(1024, 1024, dtype=torch.float32)
+W = torch.randn(1024, 1024, dtype=torch.float32)
 example_args = (X, W)
 example_x = torch.empty(97, 8, dtype=torch.float32)
 # exported_program = torch.export.export(model, example_args)
@@ -74,8 +74,8 @@ def run_inference() -> np.ndarray:
         rt.VmModule.wrap_buffer(config.vm_instance, compiled_binary.map_memory()),
         config,
     )
-    x = np.random.rand(2, 2).astype(np.float32)
-    w = np.random.rand(2, 2).astype(np.float32)
+    x = np.random.rand(1024, 1024).astype(np.float32)
+    w = np.random.rand(1024, 1024).astype(np.float32)
     y = vmm.main(x, w)
     logger.debug(f"Inference result: {y.to_host()}")
     return y.to_host()
@@ -87,7 +87,9 @@ class ModelTest(unittest.TestCase):
 
         self.assertIsNotNone(output, "inference output should not be None")
         self.assertEqual(
-            output.shape, (2, 2), "output shape doesn't match the expected (97, 2)"
+            output.shape,
+            (1024, 1024),
+            "output shape doesn't match the expected (97, 2)",
         )
 
 
