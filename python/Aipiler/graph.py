@@ -49,14 +49,14 @@ class EinsumGraph:
             idx_dim_dict: Dict[str, List[Dim]] = {}
             for input_script, input_tensor in zip(input_scripts, input_tensors):
                 for input_idx, input_dim in zip(
-                    input_script, input_tensor.symbolic_shape
+                    input_script, input_tensor.symbolic_shapes
                 ):
                     if input_idx not in idx_dim_dict:
                         idx_dim_dict[input_idx] = []
                     idx_dim_dict[input_idx].append(input_dim)
 
             for output_script, output_dim in zip(
-                output_scripts, output_tensor.symbolic_shape
+                output_scripts, output_tensor.symbolic_shapes
             ):
                 if output_script not in idx_dim_dict:
                     idx_dim_dict[output_script] = []
@@ -67,6 +67,9 @@ class EinsumGraph:
                 if len(dim_list) == 1:
                     continue
                 self.sym_dim_set.union(*dim_list)
+
+        for value_dim_set in self.sym_dim_set.get_all_value_dim_set():
+            value_dim_set.populate_dim_size()
 
     # def codegen(self):
     #     """生成 MLIR 代码"""

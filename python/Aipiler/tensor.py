@@ -12,15 +12,15 @@ class FakeTensor:
 
     def __init__(
         self,
-        symbolic_shape: Sequence[Dim],
+        symbolic_shapes: Sequence[Dim],
         dtype: DataType,
         trace=None,
     ):
         from Aipiler.primitive import EinsumPrimitive
 
-        self.symbolic_shape = symbolic_shape
+        self.symbolic_shapes = symbolic_shapes
         self.dtype = dtype
-        for idx, dim in enumerate(self.symbolic_shape):
+        for idx, dim in enumerate(self.symbolic_shapes):
             dim.set_fake_tensor(self, idx)
         self._trace: Optional[EinsumPrimitive] = trace
 
@@ -137,10 +137,9 @@ def from_torch(torch_tensor: torch.Tensor) -> Tensor:
 
 
 def from_torch_to_fake_tensor(torch_tensor: torch.Tensor) -> FakeTensor:
-    from Aipiler.utils.dlpack import DLDataType
 
     return FakeTensor(
-        symbolic_shape=[Dim() for _ in range(torch_tensor.dim())],
+        symbolic_shape=[Dim(torch_tensor.shape[i]) for i in range(torch_tensor.dim())],
         dtype=dtypes.f32,
         trace=None,
     )

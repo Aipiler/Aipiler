@@ -6,27 +6,12 @@ import inspect
 from abc import ABC, abstractmethod
 
 
-@dataclasses.dataclass
-class SymIntArgument:
-    name: str
-
-
-@dataclasses.dataclass
-class SymFloatArgument:
-    name: str
-
-
-@dataclasses.dataclass
-class SymBoolArgument:
-    name: str
-
-
 class Dim:
-    def __init__(
-        self,
-    ):
+    def __init__(self):
         self.fake_tensor = None
         self.idx = None
+        self.size: int | str = None
+        self.is_dynamic: bool = False
 
     def set_fake_tensor(self, fake_tensor, idx: int):
         from Aipiler.tensor import FakeTensor
@@ -36,21 +21,69 @@ class Dim:
         self.fake_tensor = fake_tensor
         self.idx = idx
 
-    def get_fake_tensor(self):
-        if self.fake_tensor is None:
-            raise ValueError("Fake tensor is not set.")
-        return self.fake_tensor
+    def set_size(self, size: int | str):
+        self.size = size
+        if isinstance(size, str):
+            self.is_dynamic = True
+        elif isinstance(size, int):
+            if size < 0:
+                raise ValueError("Size cannot be negative.")
+            self.is_dynamic = False
+        else:
+            raise TypeError(f"Expected int or str, got {type(size)}")
 
-    def get_index(self) -> int:
-        if self.idx is None:
-            raise ValueError("Index is not set.")
-        return self.idx
+    def get_size(self) -> Optional[int | str]:
+        """
+        Get the size of the dimension.
+        If the size is dynamic, raise an error.
+        """
+        return self.size
 
 
 class ValueDimSet:
-    def __init__(self, dim_set: Optional[Set[Dim]] = None, value: Optional[int] = None):
+    def __init__(self, dim_set: Optional[Set[Dim]] = None):
         self.dim_set: Optional[Set[Dim]] = dim_set if dim_set is not None else set()
-        self.value = value
+        self.value: int | str = None
+
+    def get_value(self) -> int | str:
+        """
+        Get the value of the dimension set.
+        If all dimensions have a fixed size, return the product of those sizes.
+        If any dimension is dynamic, return None.
+        """
+        if self.value is None:
+            self.update_value()
+        return self.value
+
+    def populate_dim_size(self):
+        """
+        Populate the sizes of the dimensions in the set.
+        If any dimension is dynamic, raise an error.
+        """
+        self.update_value()
+        for dim in self.dim_set:
+            if dim.size is None:
+                dim.set_size(self.value)
+            else:
+                if dim.size != self.value:
+                    raise ValueError(
+                        f"Dimension size mismatch: {dim.size} != {self.value}"
+                    )
+
+    def update_value(self):
+        """
+        Update the value of the dimension set based on the dimensions it contains.
+        If all dimensions have a fixed size, the value is the product of those sizes.
+        If any dimension is dynamic, the value is None.
+        """
+        if not self.dim_set:
+            self.value = None
+            return
+
+        for dim in self.dim_set:
+            if dim.get_size() is not None:
+                self.value = dim.size
+                return
 
     def add(self, dim: Dim):
 
@@ -101,3 +134,6 @@ class DisjointSetUnion:
                 f"One or both elements {element1}, {element2} are not in the disjoint set."
             )
         return self.dim_set_dict[element1] == self.dim_set_dict[element2]
+
+    def get_all_value_dim_set(self) -> list[ValueDimSet]:
+        return self.dim_set_dict.values()
