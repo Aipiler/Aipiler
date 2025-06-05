@@ -62,7 +62,7 @@ class ExportOutput:
         importer_uses_session: bool = False,
     ):
         self.session = session
-        self.session.set_flags("--iree-input-type=torch")
+        self.session.set_flags("--iree-input-type=auto")
         self.compiled_module = compiled_module
         self._importer_uses_session = importer_uses_session
 
@@ -180,6 +180,26 @@ def export(
     strict_export: bool = True,
     import_symbolic_shape_expressions: bool = False,
     arg_device: dict[int, DeviceAffinity] | None = None,
+) -> ExportOutput:
+    """Exports a torch.nn.Module.
+
+    This is done by first invoking torch.export.export with args, kwargs,
+    and dynamic_shapes.
+    """
+    ...
+
+
+@overload
+def export(
+    mdl: torch.nn.Module,
+    example_args: tuple[Any, ...],
+    kwargs: dict[str, Any] | None = None,
+    *,
+    dynamic_shapes: dict[str, Any] | tuple[Any] | list[Any] | None = None,
+    module_name: Optional[str] = None,
+    function_name: Optional[str] = None,
+    strict_export: bool = True,
+    preserve_module_call_signature: tuple[str, ...] = (),
 ) -> ExportOutput:
     """Exports a torch.nn.Module.
 

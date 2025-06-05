@@ -177,7 +177,7 @@ class ExportedProgramDef:
         self.exported_program = ep
         self.public = public
         self.arg_device = arg_device
-        self.einsum_graph = self.compile(ep)
+        self.einsum_graph = self.import_einsum_graph(ep)
 
     def copy(self) -> "ExportedProgramDef":
         return ExportedProgramDef(
@@ -187,7 +187,7 @@ class ExportedProgramDef:
             arg_device=self.arg_device,
         )
 
-    def compile(self, ep: torch.export.ExportedProgram) -> EinsumGraph:
+    def import_einsum_graph(self, ep: torch.export.ExportedProgram) -> EinsumGraph:
         assert isinstance(ep, torch.export.ExportedProgram)
 
         graph_module = ep.graph_module
@@ -197,11 +197,9 @@ class ExportedProgramDef:
         # get the interpreter for the subgraph
         interpreter = Interpreter(graph_module)
 
-        einsum_graph, inputs, outputs = self.get_einsum_graph(
-            interpreter, example_inputs
-        )
+        einsum_graph = self.get_einsum_graph(interpreter, example_inputs)
         del interpreter
-        print(str(einsum_graph))
+        # print(str(einsum_graph))
         # TODO: compile and return Callable
         return einsum_graph
 
@@ -226,7 +224,7 @@ class ExportedProgramDef:
                 inputs = list(inputs)
         return EinsumGraph(outputs, inputs).update_nodes()
 
-    def get_einsum_graph(self, interpreter: Interpreter, example_inputs):
+    def get_einsum_graph(self, interpreter: Interpreter, example_inputs) -> EinsumGraph:
         inputs: List[FakeTensor] = []
         # prepare tensor input of einsum graph
         for torch_input in example_inputs:
@@ -761,22 +759,22 @@ class CompiledModule(metaclass=CompiledModuleMeta):
         # in order to enable dependence.
         for key, ep_def in info.class_info.exported_programs:
 
-            # info.shadow_dict[key] = import_einsum_graph(
-            #     module_builder,
-            #     ep_def.exported_program,
-            #     ep_def.einsum_graph,
-            #     symbol_name=ep_def.export_name or "main",
-            #     symbol_visibility=None if ep_def.public else "private",
-            #     arg_device=ep_def.arg_device,
-            # )
-
-            info.shadow_dict[key] = import_exported_program(
+            info.shadow_dict[key] = import_einsum_graph(
                 module_builder,
                 ep_def.exported_program,
+                ep_def.einsum_graph,
                 symbol_name=ep_def.export_name or "main",
                 symbol_visibility=None if ep_def.public else "private",
                 arg_device=ep_def.arg_device,
             )
+
+            # info.shadow_dict[key] = import_exported_program(
+            #     module_builder,
+            #     ep_def.exported_program,
+            #     symbol_name=ep_def.export_name or "main",
+            #     symbol_visibility=None if ep_def.public else "private",
+            #     arg_device=ep_def.arg_device,
+            # )
 
         # Instantiate procs.
         # TODO: This should be done in two phases, first binding the symbols
