@@ -338,7 +338,9 @@ def export(
             from .decompositions import _patch_op_dispatch_for_export
 
             _patch_op_dispatch_for_export()
-            exported_program = exported_program.run_decompositions(current_decomps)
+            # TODO: Currently, we do not use decompositions.
+            # exported_program = exported_program.run_decompositions(current_decomps)
+            # print(f"IREE decompositions exported_program: {exported_program}")
 
         TransformedModule = CompiledModule.create_from_dict(
             "LambdaCompiledModule",
