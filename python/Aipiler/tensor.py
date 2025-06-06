@@ -32,13 +32,12 @@ class Tensor:
         shape: Sequence[int],
         dtype: Union[DataType, str],
         device: Union[Device, str],
-        storage: Storage
+        storage: Storage,
     ) -> None:
         self._shape = list(shape)
         self.dtype = dtypes.data_type(dtype) if isinstance(device, str) else dtype
         self.device = to_device(device) if isinstance(device, str) else device
         self.storage = storage
-
 
     @property
     def dim(self):

@@ -77,12 +77,10 @@ class Interpreter:
         def load_arg(a, env):
             return torch.fx.graph.map_arg(a, lambda n: env[n.name])
 
-        inputs = []
-
         logger.info("start to interpret graph")
 
         aipiler_env: Dict[str, Any] = {}
-
+        inputs = []
         graph_output: Optional[Any] = None
 
         for idx, node in enumerate(self.graph.nodes):

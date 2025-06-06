@@ -173,7 +173,7 @@ def max_op(x, y):
     return x if x >= y else y
 
 
-@operator_registry.register("pos", "unary", aliases=["+"])
+@operator_registry.register("pos", "unary")
 def pos_op(x):
     """正号操作"""
     return operator.pos(x)

@@ -1,0 +1,25 @@
+ExportedProgram:
+    class GraphModule(torch.nn.Module):
+        def forward(self, p_rmsnorm_weight: "f32[1024]", x: "f32[16, 1024]", weight: "f32[1024, 4096]"):
+             # File: /home/gaoshihao/project/Aipiler/test/test_RMSNorm_matmul.py:26 in forward, code: hidden_states = hidden_states.to(torch.float32)
+            to: "f32[16, 1024]" = torch.ops.aten.to.dtype(x, torch.float32);  x = None
+            
+             # File: /home/gaoshihao/project/Aipiler/test/test_RMSNorm_matmul.py:27 in forward, code: variance = hidden_states.pow(2).mean(-1, keepdim=True)
+            pow_1: "f32[16, 1024]" = torch.ops.aten.pow.Tensor_Scalar(to, 2)
+            mean: "f32[16, 1]" = torch.ops.aten.mean.dim(pow_1, [-1], True);  pow_1 = None
+            
+             # File: /home/gaoshihao/project/Aipiler/test/test_RMSNorm_matmul.py:28 in forward, code: hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+            add: "f32[16, 1]" = torch.ops.aten.add.Tensor(mean, 1e-06);  mean = None
+            rsqrt: "f32[16, 1]" = torch.ops.aten.rsqrt.default(add);  add = None
+            mul: "f32[16, 1024]" = torch.ops.aten.mul.Tensor(to, rsqrt);  to = rsqrt = None
+            
+             # File: /home/gaoshihao/project/Aipiler/test/test_RMSNorm_matmul.py:29 in forward, code: return self.weight * hidden_states.to(input_dtype)
+            to_1: "f32[16, 1024]" = torch.ops.aten.to.dtype(mul, torch.float32);  mul = None
+            mul_1: "f32[16, 1024]" = torch.ops.aten.mul.Tensor(p_rmsnorm_weight, to_1);  p_rmsnorm_weight = to_1 = None
+            
+             # File: /home/gaoshihao/project/Aipiler/test/test_RMSNorm_matmul.py:42 in forward, code: return torch.matmul(x, weight)
+            matmul: "f32[16, 4096]" = torch.ops.aten.matmul.default(mul_1, weight);  mul_1 = weight = None
+            return (matmul,)
+            
+Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_rmsnorm_weight'), target='rmsnorm.weight', persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='weight'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='matmul'), target=None)])
+Range constraints: {}

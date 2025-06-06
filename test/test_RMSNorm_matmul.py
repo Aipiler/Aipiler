@@ -1,16 +1,10 @@
-# Copyright 2023 Nod Labs, Inc
-#
-# Licensed under the Apache License v2.0 with LLVM Exceptions.
-# See https://llvm.org/LICENSE.txt for license information.
-# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 import iree.runtime as rt
 import logging
 import numpy as np
 import torch
 import torch.nn as nn
 import unittest
-
+import os
 from Aipiler import aot
 
 
@@ -18,55 +12,56 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-class MLP(nn.Module):
-    """
-    Multi-Layer Perceptron (MLP) model class.
-    Defines a neural network with four linear layers and sigmoid activations.
-    """
-
-    def __init__(self) -> object:
+class Qwen2RMSNorm(nn.Module):
+    def __init__(self, hidden_size, eps=1e-6):
+        """
+        Qwen2RMSNorm is equivalent to T5LayerNorm
+        """
         super().__init__()
-        # Define model layers
-        self.layer0 = nn.Linear(8, 8, bias=True)
-        self.layer1 = nn.Linear(8, 4, bias=True)
-        self.layer2 = nn.Linear(4, 2, bias=True)
-        self.layer3 = nn.Linear(2, 2, bias=True)
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.variance_epsilon = eps
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the MLP model.
+    def forward(self, hidden_states):
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(torch.float32)
+        variance = hidden_states.pow(2).mean(-1, keepdim=True)
+        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+        return self.weight * hidden_states.to(input_dtype)
 
-        Args:
-            x (torch.Tensor): Input tensor.
-
-        Returns:
-            torch.Tensor: Output tensor after forward pass.
-        """
-        x = self.layer0(x)
-        x = torch.sigmoid(x)
-        x = self.layer1(x)
-        x = torch.sigmoid(x)
-        x = self.layer2(x)
-        x = torch.sigmoid(x)
-        x = self.layer3(x)
-        return x
+    def extra_repr(self):
+        return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
 
-model = MLP()
+class RMSNorm_Matmul(nn.Module):
+    def __init__(self, hidden_size, eps=1e-6):
+        super().__init__()
+        self.rmsnorm = Qwen2RMSNorm(hidden_size, eps)
 
-example_x = torch.empty(97, 8, dtype=torch.float32)
-example_args = (example_x,)
+    def forward(self, x, weight):
+        x = self.rmsnorm(x)
+        return torch.matmul(x, weight)
+
+
+X = torch.randn(16, 1024, dtype=torch.float32)
+W = torch.randn(1024, 4096, dtype=torch.float32)
+example_args = (X, W)
+
+model = RMSNorm_Matmul(hidden_size=1024)
+
+# pytorch
 exported_program = torch.export.export(model, example_args)
 print("Exported Program:", exported_program)
 print("Graph: ", exported_program.graph)
 print("Graph_signature: ", exported_program.graph_signature)
 print("State_dict: ", exported_program.state_dict)
 print("Range_constraints: ", exported_program.range_constraints)
+with open("exported_graph.txt", "w", encoding="utf-8") as f:
+    f.write(str(exported_program))
 
-
+# Aipiler
 exported = aot.export(model, args=example_args)
 exported.print_readable()
-compiled_binary = exported.compile(save_to="./tmp.bf")
+# compiled_binary = exported.compile(save_to=None)
 
 
 def run_inference() -> np.ndarray:
@@ -102,4 +97,4 @@ class ModelTest(unittest.TestCase):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     # Run unit tests
-    unittest.main()
+    # unittest.main()

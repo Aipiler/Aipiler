@@ -1,4 +1,4 @@
-from typing import List, Union, Sequence, Optional, Set, Dict
+from typing import List, Union, Sequence, Optional, Set, Dict, Union, overload
 import dataclasses
 from enum import Enum, auto
 import sys
@@ -21,6 +21,12 @@ class Dim:
         self.fake_tensor = fake_tensor
         self.idx = idx
 
+    def get_fake_tensor(self):
+        return self.fake_tensor
+
+    def get_index(self):
+        return self.idx
+
     def set_size(self, size: int | str):
         self.size = size
         if isinstance(size, str):
@@ -38,6 +44,37 @@ class Dim:
         If the size is dynamic, raise an error.
         """
         return self.size
+
+
+def create_dim(size: int | str) -> Dim:
+    d = Dim()
+    d.set_size(size)
+    return d
+
+
+# 使用示例：
+# create_dims(3, 4)           # 多个参数
+# create_dims([3, 4])         # 序列参数
+# create_dims("w", "h")       # 多个字符串参数
+# create_dims(["w", "h"])     # 字符串序列参数
+
+
+@overload
+def create_dims(sizes: Sequence[Union[int, str]]) -> Sequence[Dim]: ...
+
+
+@overload
+def create_dims(*sizes: Union[int, str]) -> Sequence[Dim]: ...
+
+
+def create_dims(*args) -> Sequence[Dim]:
+    # 如果只有一个参数且是序列类型
+    if len(args) == 1 and isinstance(args[0], (list, tuple)):
+        sizes = args[0]
+    else:
+        sizes = args
+
+    return [create_dim(s) for s in sizes]
 
 
 class ValueDimSet:
