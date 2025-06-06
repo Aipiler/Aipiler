@@ -1,35 +1,35 @@
 from Aipiler.primitive import EinsumPrimitive, EinsumBuilder
-from Aipiler.tensor import Tensor
+from Aipiler.tensor import FakeTensor
 from Aipiler.basic_operator import operator_registry, BaseOperator
 from typing import List, Union, Sequence
 from functools import partial
 
 
 # TODO:
-def reduction(x: Tensor, dim: List[int], keepdim: bool, op: BaseOperator) -> Tensor:
-    l = len(x.symbolic_shape)
+def reduction(x: FakeTensor, target_dims: List[int], op: BaseOperator) -> FakeTensor:
+    l = len(x.symbolic_shapes)
+    x_dims = x.symbolic_shapes
     einsum_alphabet = "abcdefghijklmnopqrstuvwxyz"
     assert l < len(einsum_alphabet)
     letters = einsum_alphabet[:l]
-    dim = [d + l if d < 0 else d for d in dim]
-    assert all(0 <= d < l for d in dim), "Invalid dimension for reduction"
-    assert len(dim) > 0, "At least one dimension must be specified for reduction"
-    assert len(dim) < l, "Cannot reduce all dimensions"
+    target_dims = [d + l if d < 0 else d for d in target_dims]
+    assert all(0 <= d < l for d in target_dims), "Invalid dimension for reduction"
+    assert (
+        len(target_dims) > 0
+    ), "At least one dimension must be specified for reduction"
+    assert len(target_dims) < l, "Cannot reduce all dimensions"
 
     reduce_tensor = EinsumBuilder.reduce(
         x,
-        "{rhs_letters} -> {lhs_letters}".format(
-            rhs_letters="".join([letters[i] for i in dim]),
-            lhs_letters="".join([letters[i] for i in range(l) if i not in dim]),
+        "{lhs_letters} -> {rhs_letters}".format(
+            lhs_letters="".join([letters[i] for i in x_dims]),
+            rhs_letters="".join([letters[i] for i in range(l) if i not in x_dims]),
         ),
-        [letters[i] for i in range(l) if i in dim],
+        [letters[i] for i in range(l) if i in target_dims],
         op,
     )
 
-    if keepdim is True:
-        pass
-    else:
-        pass
+    return reduce_tensor
 
 
 def reduce_sum(x: Tensor, dim: List[int], keepdim: bool = False) -> Tensor:

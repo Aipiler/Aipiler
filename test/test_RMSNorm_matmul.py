@@ -55,8 +55,8 @@ print("Graph: ", exported_program.graph)
 print("Graph_signature: ", exported_program.graph_signature)
 print("State_dict: ", exported_program.state_dict)
 print("Range_constraints: ", exported_program.range_constraints)
-# with open("exported_graph.txt", "w", encoding="utf-8") as f:
-#     f.write(str(exported_program))
+with open("exported_graph.txt", "w", encoding="utf-8") as f:
+    f.write(str(exported_program))
 
 # Aipiler
 exported = aot.export(model, args=example_args)
