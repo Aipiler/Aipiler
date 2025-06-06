@@ -34,6 +34,8 @@ from . import decompositions
 
 from .tensor_traits import DeviceAffinity
 
+from Aipiler.graph import EinsumGraph
+
 __all__ = [
     "export",
     "ExportOutput",
@@ -47,6 +49,7 @@ ModuleLike = Union[
     Type[CompiledModule],
     torch.export.ExportedProgram,
     FxPrograms,
+    EinsumGraph,
 ]
 SaveableTarget = Union[str, Path, None, Output]
 
@@ -296,7 +299,6 @@ def export(
         )
 
     from .compiled_module import ExportTargetDef, EinsumGraphDef
-    from Aipiler.graph import EinsumGraph
 
     TransformedModule: Any
     current_decomps = decompositions.current_aot_decompositions()
