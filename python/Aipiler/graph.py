@@ -12,7 +12,9 @@ class EinsumGraph:
         self,
         outputs: Sequence[FakeTensor],
         inputs: Optional[Sequence[FakeTensor]] = None,
+        name: str = "main",
     ):
+        self.name = name
         self.outputs = list(outputs)
         self.inputs: Optional[List[FakeTensor]] = list(inputs) if inputs else []
         self.nodes: List[EinsumPrimitive] = []
