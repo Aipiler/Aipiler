@@ -295,7 +295,8 @@ def export(
             "This is an experimental feature in PyTorch that the IREE Turbine project is still evaluating. Please report issues or experiences."
         )
 
-    from .compiled_module import ExportTargetDef
+    from .compiled_module import ExportTargetDef, EinsumGraphDef
+    from Aipiler.graph import EinsumGraph
 
     TransformedModule: Any
     current_decomps = decompositions.current_aot_decompositions()
@@ -313,6 +314,15 @@ def export(
         TransformedModule = CompiledModule.create_from_dict(
             "LambdaCompiledModule",
             mdl.programs,
+            export_name=module_name or "module",
+            options=ModuleBuilderOptions(
+                import_symbolic_shape_expressions=import_symbolic_shape_expressions,
+            ),
+        )
+    elif isinstance(mdl, EinsumGraph):
+        TransformedModule = CompiledModule.create_from_dict(
+            "LambdaCompiledModule",
+            {(function_name or "main"): EinsumGraphDef(mdl)},
             export_name=module_name or "module",
             options=ModuleBuilderOptions(
                 import_symbolic_shape_expressions=import_symbolic_shape_expressions,

@@ -182,7 +182,6 @@ class ExportedProgramIntrinsic(CallableIntrinsic):
 
 def import_einsum_graph(
     module_builder: ModuleBuilder,
-    exported_program: torch.export.ExportedProgram,
     einsum_graph: EinsumGraph,
     symbol_name: str,
     symbol_visibility: Optional[str],
@@ -207,36 +206,9 @@ def import_einsum_graph(
         ),
     )
 
-    module_call_graph = exported_program.module_call_graph
-    assert len(module_call_graph) >= 1, "Expected at least one module call signature"
-    entry_module_call_entry = module_call_graph[0]
-    assert (
-        entry_module_call_entry.fqn == ""
-    ), "Expected first module call entry to be unnamed"
-
-    # We want additional torch-level metadata about any user outputs.
-    # This will help us create a true python fake without loss of information.
-    # TODO: It is unclear how much switchiness is actually needed here as
-    # modern use is pretty constrained. Potentially streamline the body of
-    # the for loop once done with full test cases available.
-    user_output_dtypes: list[Optional[torch.dtype]] = []
-    node_map: Dict[str, torch.fx.Node] = {
-        n.name: n for n in exported_program.graph.nodes
-    }
-    for user_output in exported_program.graph_signature.user_outputs:
-        output_node = node_map[user_output]
-        tensor_meta = output_node.meta.get("tensor_meta")
-        fake_val = output_node.meta.get("val")
-        dtype = None
-        if tensor_meta is not None:
-            dtype = tensor_meta.dtype
-        elif fake_val is not None:
-            dtype = fake_val.dtype
-        user_output_dtypes.append(dtype)
-
     return ExportedProgramIntrinsic(
-        entry_func_op, entry_module_call_entry.signature, user_output_dtypes
-    )
+        entry_func_op, None, None
+    )  # entry_module_call_entry.signature, user_output_dtypes
 
 
 def import_exported_program(

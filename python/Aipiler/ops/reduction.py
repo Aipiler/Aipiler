@@ -32,7 +32,7 @@ def reduction(x: FakeTensor, target_dims: List[int], op: BaseOperator) -> FakeTe
     return reduce_tensor
 
 
-def reduce_sum(x: Tensor, dim: List[int], keepdim: bool = False) -> Tensor:
+def reduce_sum(x: FakeTensor, dim: List[int], keepdim: bool = False) -> FakeTensor:
     pass
 
 

@@ -164,6 +164,18 @@ class ExportProcDef:
         return f"<def {self.export_name}({self.signature})>"
 
 
+class EinsumGraphDef:
+
+    def __init__(
+        self,
+        einsum_graph: EinsumGraph,
+    ):
+        self.einsum_graph = einsum_graph
+
+    def copy(self) -> "EinsumGraphDef":
+        return EinsumGraphDef(self.einsum_graph)
+
+
 class ExportedProgramDef:
     def __init__(
         self,
@@ -230,7 +242,9 @@ class ExportedProgramDef:
         return f"<exported_program {self.exported_program}>"
 
 
-Exportable = Union[ExportProcDef, ExportedProgramDef, PyOnlyDef, GlobalsDef]
+Exportable = Union[
+    ExportProcDef, ExportedProgramDef, PyOnlyDef, GlobalsDef, EinsumGraphDef
+]
 
 
 class CompiledModuleClassInfo:
@@ -263,6 +277,15 @@ class CompiledModuleClassInfo:
     ) -> Generator[Tuple[str, ExportedProgramDef], None, None]:
         return filter(
             lambda kv_tuple: isinstance(kv_tuple[1], ExportedProgramDef),
+            self.all_exports.items(),
+        )  # type: ignore
+
+    @property
+    def einsum_graph(
+        self,
+    ) -> Generator[Tuple[str, EinsumGraphDef], None, None]:
+        return filter(
+            lambda kv_tuple: isinstance(kv_tuple[1], EinsumGraphDef),
             self.all_exports.items(),
         )  # type: ignore
 
@@ -334,6 +357,10 @@ class CompiledModuleClassInfo:
                 value = value.copy()
                 value.export_name = key
             logging.debug("DEFINE EXPORTED_PROGRAM: %r", value.export_name)
+            self.add_export(key, value)
+            return value
+
+        if isinstance(value, EinsumGraphDef):
             self.add_export(key, value)
             return value
 
@@ -745,6 +772,16 @@ class CompiledModule(metaclass=CompiledModuleMeta):
         for key, py_def in info.class_info.py_only_defs:
             info.shadow_dict[key] = py_def.py_value
 
+        # Instantiate einsum graph
+        for key, einsum_graph_def in info.class_info.einsum_graph:
+            info.shadow_dict[key] = import_einsum_graph(
+                module_builder,
+                einsum_graph_def.einsum_graph,
+                symbol_name=einsum_graph_def.einsum_graph.name or "main",
+                symbol_visibility="public",
+                arg_device=None,
+            )
+
         # Instantiate exported programs.
         # TODO: This should be done in two phases along with export_procs
         # in order to enable dependence.
@@ -752,7 +789,6 @@ class CompiledModule(metaclass=CompiledModuleMeta):
 
             info.shadow_dict[key] = import_einsum_graph(
                 module_builder,
-                ep_def.exported_program,
                 ep_def.einsum_graph,
                 symbol_name=ep_def.export_name or "main",
                 symbol_visibility=None if ep_def.public else "private",

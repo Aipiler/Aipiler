@@ -38,7 +38,7 @@ class RMSNorm_Matmul(nn.Module):
         self.rmsnorm = Qwen2RMSNorm(hidden_size, eps)
 
     def forward(self, x, weight):
-        x = self.rmsnorm(x)
+        # x = self.rmsnorm(x)
         return torch.matmul(x, weight)
 
 
@@ -50,18 +50,18 @@ model = RMSNorm_Matmul(hidden_size=1024)
 
 # pytorch
 exported_program = torch.export.export(model, example_args)
-print("Exported Program:", exported_program)
-print("Graph: ", exported_program.graph)
-print("Graph_signature: ", exported_program.graph_signature)
-print("State_dict: ", exported_program.state_dict)
-print("Range_constraints: ", exported_program.range_constraints)
-with open("exported_graph.txt", "w", encoding="utf-8") as f:
-    f.write(str(exported_program))
+# print("Exported Program:", exported_program)
+# print("Graph: ", exported_program.graph)
+# print("Graph_signature: ", exported_program.graph_signature)
+# print("State_dict: ", exported_program.state_dict)
+# print("Range_constraints: ", exported_program.range_constraints)
+# with open("exported_graph.txt", "w", encoding="utf-8") as f:
+#     f.write(str(exported_program))
 
 # Aipiler
 exported = aot.export(model, args=example_args)
 exported.print_readable()
-# compiled_binary = exported.compile(save_to=None)
+compiled_binary = exported.compile(save_to=None)
 
 
 def run_inference() -> np.ndarray:
