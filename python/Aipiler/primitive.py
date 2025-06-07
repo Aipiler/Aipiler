@@ -1,5 +1,5 @@
 from Aipiler.tensor import FakeTensor
-from Aipiler.basic_operator import BaseOperator
+from Aipiler.basic_operator import ComputeOperator
 from Aipiler.dim import Dim
 from typing import List, Union, Sequence, Dict, Any
 from abc import ABC, abstractmethod
@@ -49,7 +49,7 @@ class MapPrimitive(EinsumPrimitive):
         rhs: FakeTensor,
         einsum_str: str,
         dims_to_map: Union[str, Sequence[str]],
-        op: BaseOperator,
+        op: ComputeOperator,
     ) -> None:
         super().__init__([lhs, rhs], einsum_str)
 
@@ -72,7 +72,7 @@ class ReducePrimitive(EinsumPrimitive):
         x: FakeTensor,
         einsum_str: str,
         dims_to_reduce: Union[str, Sequence[str]],
-        op: BaseOperator,
+        op: ComputeOperator,
     ) -> None:
         super().__init__([x], einsum_str)
         self.x_scripts = parse_einsum_str(einsum_str)[0][0]  # only one input
@@ -83,6 +83,8 @@ class ReducePrimitive(EinsumPrimitive):
             if isinstance(dims_to_reduce, str)
             else list(dims_to_reduce)
         )
+
+        # 自己组合出ReduceFu
         self.op = op
         self.output = self.run()
 
@@ -97,7 +99,7 @@ class PopulatePrimitive(EinsumPrimitive):
 
 class UnaryPrimitive(EinsumPrimitive):
 
-    def __init__(self, x: FakeTensor, op: BaseOperator):
+    def __init__(self, x: FakeTensor, op: ComputeOperator):
         super().__init__(inputs=[x], einsum_str="")
         self.op = op
         self.output = self.run()
@@ -115,14 +117,14 @@ class EinsumBuilder:
         rhs: FakeTensor,
         einsum_str: str,
         dims_to_map: str,
-        op: BaseOperator,
+        op: ComputeOperator,
     ) -> FakeTensor:
         m = MapPrimitive(lhs, rhs, einsum_str, dims_to_map, op)
         return m.output
 
     @staticmethod
     def reduce(
-        x: FakeTensor, einsum_str: str, dim_to_reduce: str, op: BaseOperator
+        x: FakeTensor, einsum_str: str, dim_to_reduce: str, op: ComputeOperator
     ) -> FakeTensor:
         return ReducePrimitive(x, einsum_str, dim_to_reduce, op).output
 
@@ -131,5 +133,5 @@ class EinsumBuilder:
         pass
 
     @staticmethod
-    def unary(x: FakeTensor, op: BaseOperator) -> FakeTensor:
+    def unary(x: FakeTensor, op: ComputeOperator) -> FakeTensor:
         return UnaryPrimitive(x, op).output

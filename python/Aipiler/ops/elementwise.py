@@ -1,10 +1,10 @@
 from Aipiler.primitive import EinsumPrimitive, EinsumBuilder
 from Aipiler.tensor import Tensor
-from Aipiler.basic_operator import operator_registry, BaseOperator
+from Aipiler.basic_operator import operator_registry, ComputeOperator
 from functools import partial
 
 
-def binary_elementwise(a: Tensor, b: Tensor, op: BaseOperator) -> Tensor:
+def binary_elementwise(a: Tensor, b: Tensor, op: ComputeOperator) -> Tensor:
     assert len(a.symbolic_shape) == len(b.symbolic_shape)
     l = len(a.symbolic_shape)
     einsum_alphabet = "abcdefghijklmnopqrstuvwxyz"

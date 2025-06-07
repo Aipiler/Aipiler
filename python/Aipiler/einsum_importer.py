@@ -51,13 +51,14 @@ from Aipiler.primitive import (
 from Aipiler.tensor import Tensor
 from Aipiler import datatype as dtypes
 from iree.compiler import ir
-from iree.compiler.dialects.linalg.opdsl.lang import *
+from Aipiler.lang import *
 from iree.compiler.dialects import builtin
 from iree.compiler.dialects import func
 from iree.compiler.dialects import linalg
 from iree.compiler.dialects import tensor
 from Aipiler.aot.support.ir_utils import ModuleBuilder
 from Aipiler.graph import EinsumGraph
+from Aipiler.basic_operator import operator_registry
 
 
 class Einsum_importer:
@@ -112,6 +113,9 @@ class Einsum_importer:
             symbol_defs[script] = getattr(S, script)
             domain_defs[script] = getattr(D, script)
 
+        # 获取map op
+        map_op = node.op.get_op_callable()
+
         @linalg_structured_op
         def _map(
             A=TensorDef(T, *(symbol_defs[s] for s in node.lhs_scripts)),
@@ -127,7 +131,7 @@ class Einsum_importer:
             lhs_indices = tuple(domain_defs[s] for s in node.lhs_scripts)
             rhs_indices = tuple(domain_defs[s] for s in node.rhs_scripts)
             # TODO: 当前只支持加减乘数,不能写死
-            C[output_indices] = A[lhs_indices] * B[rhs_indices]
+            C[output_indices] = map_op(A[lhs_indices], B[rhs_indices])
 
         mlir_dtype = self.from_dtype(node.output.dtype)
         shape_list = []
@@ -165,8 +169,11 @@ class Einsum_importer:
             symbol_defs[script] = getattr(S, script)
             domain_defs[script] = getattr(D, script)
 
+        # 获取reduce op
+        reduce_op = ReduceFnType(node.op.get_op_callable())
+
         @linalg_structured_op
-        def _map(
+        def _reduce(
             INPUT=TensorDef(T, *(symbol_defs[s] for s in node.x_scripts)),
             OUTPUT=TensorDef(
                 T,
@@ -177,8 +184,9 @@ class Einsum_importer:
             domain(*(domain_defs[s] for s in node.iteration_scripts))
             output_indices = tuple(domain_defs[s] for s in node.output_scripts)
             input_indices = tuple(domain_defs[s] for s in node.x_scripts)
+            target_dim_indices = tuple(domain_defs[s] for s in node.dims_to_reduce)
             # TODO: 当前只支持加减乘数,不能写死
-            OUTPUT[output_indices] += INPUT[input_indices]
+            OUTPUT[output_indices] = reduce_op[target_dim_indices](INPUT[input_indices])
 
         mlir_dtype = self.from_dtype(node.output.dtype)
         shape_list = []
@@ -189,7 +197,7 @@ class Einsum_importer:
                 shape = s.size
             shape_list.append(shape)
         init_result = tensor.empty(shape_list, mlir_dtype)
-        op = _map(
+        op = _reduce(
             input_value,
             outs=[init_result],
         )

@@ -1,12 +1,12 @@
 from Aipiler.primitive import EinsumPrimitive, EinsumBuilder
 from Aipiler.tensor import FakeTensor
-from Aipiler.basic_operator import operator_registry, BaseOperator
+from Aipiler.basic_operator import operator_registry, ComputeOperator
 from typing import List, Union, Sequence
 from functools import partial
 
 
 # TODO:
-def reduction(x: FakeTensor, target_dims: List[int], op: BaseOperator) -> FakeTensor:
+def reduction(x: FakeTensor, target_dims: List[int], op: ComputeOperator) -> FakeTensor:
     l = len(x.symbolic_shapes)
     x_dims = x.symbolic_shapes
     einsum_alphabet = "abcdefghijklmnopqrstuvwxyz"

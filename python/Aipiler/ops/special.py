@@ -1,6 +1,6 @@
 from Aipiler.primitive import EinsumPrimitive, EinsumBuilder
 from Aipiler.tensor import Tensor
-from Aipiler.basic_operator import BaseOperator, operator_registry
+from Aipiler.basic_operator import ComputeOperator, operator_registry
 
 
 def matmul(a: Tensor, b: Tensor):
