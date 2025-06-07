@@ -14,15 +14,22 @@ logger = logging.getLogger(__name__)
 
 
 @einsum
-def test(A: FakeTensor, B: FakeTensor):
+def reduce_max(A: FakeTensor):
+    B = reduce(A, "ij -> i", ["j"], "max")
+    return B
+
+
+@einsum
+def matmul(A: FakeTensor, B: FakeTensor):
     C = map(A, B, "ik, kj -> ikj", ["k"], "*")
     D = reduce(C, "ikj -> ij", ["k"], "+")
-    return D
+    E = reduce_max(D)
+    return E
 
 
 A = FakeTensor(create_dims(3, 4), f32)
 B = FakeTensor(create_dims(4, 5), f32)
-graph = einsum_env.compile(test, [A, B])
+graph = einsum_env.compile(matmul, [A, B])
 print("Graph: \n")
 print(graph)
 print("\n")
@@ -59,7 +66,7 @@ class ModelTest(unittest.TestCase):
         self.assertIsNotNone(output, "inference output should not be None")
         self.assertEqual(
             output.shape,
-            (3, 5),
+            (3,),
             "output shape doesn't match the expected (3, 5)",
         )
 
