@@ -33,6 +33,10 @@ class EinsumGraph:
                     else:
                         if i not in self.inputs:
                             self.inputs.append(i)
+                else:
+                    assert isinstance(i, FakeScalar)
+                    if i not in self.inputs:
+                        self.inputs.append(i)
 
         self.nodes = nodes
         self.update_dim_value_set()

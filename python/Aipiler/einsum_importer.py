@@ -92,20 +92,53 @@ class Einsum_importer:
     #         raise RuntimeError("Unsupported data type: {} now".format(mlirty))
     #     return self._MLIR_TO_AIPILER[mlirty]
 
+    def get_dyn_dim(self, d: Dim):
+        # get dynamic dim from known dims
+        # TODO: simplify this process, the same procedure appeared in `import_program``
+        recorded_dims: List[Dim] = []
+        for t in self.symbol_table.keys():
+            if isinstance(t, FakeTensor):
+                recorded_dims += t.symbolic_shape
+        eq_dim: Dim
+        for dim in recorded_dims:
+            if self.graph.sym_dim_set.is_connected(d, dim):
+                eq_dim = dim
+                break
+        assert eq_dim is not None
+        if eq_dim.is_dynamic:
+            _eq_tensor_mlir_val = self.symbol_table[eq_dim.fake_tensor]
+            idx = eq_dim.idx
+            idx_mlir_val = arith.constant(ir.IndexType.get(), idx)
+            shape = tensor.dim(_eq_tensor_mlir_val, idx_mlir_val)
+        else:
+            # else, create by arith.constant
+            shape = eq_dim.get_size()
+            assert isinstance(shape, (int, float))
+        return shape
+
+    def init_empty_tensor(self, output: FakeTensor):
+        """
+        build `tensor.empty` operation from FakeTensor
+        """
+        assert isinstance(output, FakeTensor)
+        mlir_dtype = self.from_dtype(output.dtype)
+        shape_list = []
+        for d in output.symbolic_shape:
+            if d.is_dynamic:
+                shape = self.get_dyn_dim(d)
+            else:
+                shape = d.get_size()
+                assert isinstance(shape, (int, float))
+            shape_list.append(shape)
+        # print(f"shape_list: {shape_list}")
+        init_result = tensor.empty(shape_list, mlir_dtype)
+        return init_result
+
     def import_MapPrimitive(
         self,
         node: MapPrimitive,
     ) -> ir.Value:
         self.visited_nodes.append(node)
-
-        # 从符号表中找到输入张量的value
-        input_tensors = node.inputs
-        first_value = self.symbol_table[input_tensors[0]]
-        second_value = self.symbol_table[input_tensors[1]]
-        if first_value is None or second_value is None:
-            raise ValueError(
-                f"Input tensor {input_tensors[0]} or {input_tensors[1]} not found in symbol table."
-            )
 
         # 根据einsum_str 构建linalg.generic op
         symbol_defs = {}
@@ -151,18 +184,16 @@ class Einsum_importer:
             C[output_indices] = map_op(A[lhs_indices], B)
 
         if all(isinstance(inp, FakeTensor) for inp in node.inputs):
-            mlir_dtype = self.from_dtype(node.output.dtype)
-            shape_list = []
-            for d in node.output.symbolic_shapes:
-                if d.is_dynamic:
-                    shape = (
-                        ShapedType.get_dynamic_size()
-                    )  # TODO: 这里应该是一个tensor.dim
-                else:
-                    shape = d.get_size()
-                shape_list.append(shape)
-            # print(f"shape_list: {shape_list}")
-            init_result = tensor.empty(shape_list, mlir_dtype)
+            # 从符号表中找到输入张量的value
+            input_tensors = node.inputs
+            first_value = self.symbol_table[input_tensors[0]]
+            second_value = self.symbol_table[input_tensors[1]]
+            if first_value is None or second_value is None:
+                raise ValueError(
+                    f"Input tensor {input_tensors[0]} or {input_tensors[1]} not found in symbol table."
+                )
+
+            init_result = self.init_empty_tensor(node.output)
             op = _map_tensor_tensor(
                 first_value,
                 second_value,
@@ -176,7 +207,6 @@ class Einsum_importer:
             raise NotImplementedError("Unsupport for map for scalar.")
         else:
             # scalar operate tensor
-
             # distinguish scalar and tensor
             _scalar: FakeScalar
             _tensor: FakeTensor
@@ -189,35 +219,7 @@ class Einsum_importer:
             _scalar_mlir_value = self.symbol_table[_scalar]
 
             # create init empty tensor from output tensor
-            mlir_dtype = self.from_dtype(node.output.dtype)
-            shape_list = []
-            assert isinstance(node.output, FakeTensor)
-            for idx, d in enumerate(node.output.symbolic_shape):
-                if d.is_dynamic:
-                    # get dynamic dim from known dims
-                    # TODO: simplify this process, the same procedure appeared in `import_program``
-                    recorded_dims: List[Dim] = []
-                    for t in self.symbol_table.keys():
-                        if isinstance(t, FakeTensor):
-                            recorded_dims += t.symbolic_shape
-                    eq_dim: Dim
-                    for dim in recorded_dims:
-                        if self.graph.sym_dim_set.is_connected(d, dim):
-                            eq_dim = dim
-                            break
-                    assert eq_dim is not None
-                    if eq_dim.is_dynamic:
-                        _eq_tensor_mlir_val = self.symbol_table[eq_dim.fake_tensor]
-                        idx = eq_dim.idx
-                        idx_mlir_val = arith.constant(ir.IndexType.get(), idx)
-                        shape = tensor.dim(_eq_tensor_mlir_val, idx_mlir_val)
-                    else:
-                        # else, create by arith.constant
-                        shape = eq_dim.get_size()
-                else:
-                    shape = d.get_size()
-                shape_list.append(shape)
-            init_result = tensor.empty(shape_list, mlir_dtype)
+            init_result = self.init_empty_tensor(node.output)
             op = _map_tensor_scalar(
                 _tensor_mlir_val,
                 _scalar_mlir_value,
@@ -263,15 +265,7 @@ class Einsum_importer:
             # TODO: 当前只支持加减乘数,不能写死
             OUTPUT[output_indices] = reduce_op[target_dim_indices](INPUT[input_indices])
 
-        mlir_dtype = self.from_dtype(node.output.dtype)
-        shape_list = []
-        for s in node.output.symbolic_shapes:
-            if s.is_dynamic:
-                shape = ShapedType.get_dynamic_size()
-            else:
-                shape = s.size
-            shape_list.append(shape)
-        init_result = tensor.empty(shape_list, mlir_dtype)
+        init_result = self.init_empty_tensor(node.output)
         op = _reduce(
             input_value,
             outs=[init_result],
