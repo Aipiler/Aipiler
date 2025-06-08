@@ -7,8 +7,8 @@ from functools import partial
 
 # TODO:
 def reduction(x: FakeTensor, target_dims: List[int], op: ComputeOperator) -> FakeTensor:
-    l = len(x.symbolic_shapes)
-    x_dims = x.symbolic_shapes
+    l = len(x.symbolic_shape)
+    x_dims = x.symbolic_shape
     einsum_alphabet = "abcdefghijklmnopqrstuvwxyz"
     assert l < len(einsum_alphabet)
     letters = einsum_alphabet[:l]

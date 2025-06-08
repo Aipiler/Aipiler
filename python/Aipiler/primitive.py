@@ -1,4 +1,4 @@
-from Aipiler.tensor import FakeTensor
+from Aipiler.tensor import FakeTensor, FakeData
 from Aipiler.basic_operator import ComputeOperator
 from Aipiler.dim import Dim
 from typing import List, Union, Sequence, Dict, Any
@@ -8,10 +8,10 @@ from Aipiler.utils import parse_einsum_str
 
 
 class EinsumPrimitive(ABC):
-    def __init__(self, inputs: List[FakeTensor], einsum_str: str) -> None:
+    def __init__(self, inputs: List[FakeData], einsum_str: str) -> None:
         self.inputs = inputs
         self.einsum_str = einsum_str
-        self.output: FakeTensor = None
+        self.output: FakeData = None
         self.input_scripts, self.output_scripts = parse_einsum_str(self.einsum_str)
 
     def run(self):
@@ -22,9 +22,8 @@ class EinsumPrimitive(ABC):
         # get map of `str -> dim obj`
 
         # create output
-        assert len(self.inputs) == len(self.input_scripts)
         fake_tensor_shape: List[Dim] = []
-        for output_script in self.output_scripts:
+        for _ in self.output_scripts:
             # construct dim obj
             fake_tensor_shape.append(Dim())
         dtype = self.inputs[0].dtype
@@ -45,22 +44,28 @@ class EinsumPrimitive(ABC):
 class MapPrimitive(EinsumPrimitive):
     def __init__(
         self,
-        lhs: FakeTensor,
-        rhs: FakeTensor,
+        lhs: FakeData,
+        rhs: FakeData,
         einsum_str: str,
         dims_to_map: Union[str, Sequence[str]],
         op: ComputeOperator,
     ) -> None:
         super().__init__([lhs, rhs], einsum_str)
 
-        self.lhs_scripts, self.rhs_scripts = parse_einsum_str(einsum_str)[0]
-        self.output_scripts = parse_einsum_str(einsum_str)[1]
+        # init scripts
+        assert len(self.input_scripts) == 2
+        self.lhs_scripts, self.rhs_scripts = self.input_scripts
+        for scripts in (self.lhs_scripts, self.rhs_scripts, self.output_scripts):
+            if scripts[0] == "_" and len(scripts) == 1:
+                scripts.clear()
         self.iteration_scripts = set(
             self.lhs_scripts + self.rhs_scripts + self.output_scripts
         )
         self.dims_to_map = (
             [dims_to_map] if isinstance(dims_to_map, str) else list(dims_to_map)
         )
+        self.lhs = lhs
+        self.rhs = rhs
         self.op = op
         self.output = self.run()
 
@@ -69,14 +74,18 @@ class ReducePrimitive(EinsumPrimitive):
 
     def __init__(
         self,
-        x: FakeTensor,
+        x: FakeData,
         einsum_str: str,
         dims_to_reduce: Union[str, Sequence[str]],
         op: ComputeOperator,
     ) -> None:
         super().__init__([x], einsum_str)
-        self.x_scripts = parse_einsum_str(einsum_str)[0][0]  # only one input
-        self.output_scripts = parse_einsum_str(einsum_str)[1]
+        assert len(self.input_scripts) == 1
+        self.x_scripts = self.input_scripts[0]  # only one input
+        for scripts in (self.x_scripts, self.output_scripts):
+            if scripts[0] == "_" and len(scripts) == 1:
+                scripts.clear()
+
         self.iteration_scripts = set(self.x_scripts + self.output_scripts)
         self.dims_to_reduce = (
             [dims_to_reduce]
@@ -99,7 +108,7 @@ class PopulatePrimitive(EinsumPrimitive):
 
 class UnaryPrimitive(EinsumPrimitive):
 
-    def __init__(self, x: FakeTensor, op: ComputeOperator):
+    def __init__(self, x: FakeData, op: ComputeOperator):
         super().__init__(inputs=[x], einsum_str="")
         self.op = op
         self.output = self.run()
@@ -113,25 +122,26 @@ class EinsumBuilder:
 
     @staticmethod
     def map(
-        lhs: FakeTensor,
-        rhs: FakeTensor,
+        lhs: FakeData,
+        rhs: FakeData,
         einsum_str: str,
         dims_to_map: str,
         op: ComputeOperator,
-    ) -> FakeTensor:
+    ) -> FakeData:
+        assert lhs.dtype == rhs.dtype
         m = MapPrimitive(lhs, rhs, einsum_str, dims_to_map, op)
         return m.output
 
     @staticmethod
     def reduce(
-        x: FakeTensor, einsum_str: str, dim_to_reduce: str, op: ComputeOperator
-    ) -> FakeTensor:
+        x: FakeData, einsum_str: str, dim_to_reduce: str, op: ComputeOperator
+    ) -> FakeData:
         return ReducePrimitive(x, einsum_str, dim_to_reduce, op).output
 
     @staticmethod
-    def populate() -> FakeTensor:
+    def populate() -> FakeData:
         pass
 
     @staticmethod
-    def unary(x: FakeTensor, op: ComputeOperator) -> FakeTensor:
+    def unary(x: FakeData, op: ComputeOperator) -> FakeData:
         return UnaryPrimitive(x, op).output

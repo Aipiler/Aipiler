@@ -8,8 +8,26 @@ from Aipiler.runtime_Aipiler.device import Device, to_device
 import torch
 
 
-class FakeTensor:
+class FakeData:
+    def __init__(self, dtype: DataType):
+        self._dtype = dtype
 
+    @property
+    def dtype(self):
+        return self._dtype
+
+
+class FakeScalar(FakeData):
+    def __init__(self, sym_val: Union[Dim, int, float], dtype: DataType):
+        super().__init__(dtype=dtype)
+        self._sym_val = sym_val
+
+    @property
+    def sym_val(self):
+        return self._sym_val
+
+
+class FakeTensor(FakeData):
     def __init__(
         self,
         symbolic_shapes: Sequence[Dim],
@@ -18,9 +36,10 @@ class FakeTensor:
     ):
         from Aipiler.primitive import EinsumPrimitive
 
-        self.symbolic_shapes = symbolic_shapes
-        self.dtype = dtype
-        for idx, dim in enumerate(self.symbolic_shapes):
+        super().__init__(dtype=dtype)
+
+        self.symbolic_shape = symbolic_shapes
+        for idx, dim in enumerate(self.symbolic_shape):
             dim.set_fake_tensor(self, idx)
         self._trace: Optional[EinsumPrimitive] = trace
 

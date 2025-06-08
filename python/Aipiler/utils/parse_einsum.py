@@ -18,7 +18,7 @@ def parse_einsum_str(
         equation (str): 符合上述规则的einsum方程字符串
 
     Returns:
-        Tuple[List[List[str]], List[str]]: 三元组，包含:
+        Tuple[List[List[str]], List[str]]: 二元组，包含:
             - input_subscripts: 每个输入操作数的下标列表
             - output_subscripts: 输出的下标列表
     """
@@ -69,7 +69,14 @@ def parse_einsum_str(
             raise ValueError(f"第{i+1}个操作数的下标不能为空，0维张量请使用'_'表示")
 
     # ['ab', 'bc'] -> [['a', 'b'], ['b', 'c']]
-    inputs = [list(input_subscript) for input_subscript in input_subscripts]
+    inputs = []
+    for input_subscript in input_subscripts:
+        input_subscript_list = list(input_subscript)
+        for idx in input_subscript_list:
+            if idx == "_" and len(input_subscript_list) != 1:
+                raise ValueError(f"错误的输入{input_subscript}")
+        inputs.append(input_subscript_list)
+    # inputs = [list(input_subscript) for input_subscript in input_subscripts]
 
     if "," in output_part:
         raise ValueError(f'","不应该出现在输出字符串中')
@@ -77,7 +84,9 @@ def parse_einsum_str(
     # 第九步：处理输出下标
     # 将输出部分转换为字符列表，例如： "ac" -> ['a','c']
     outputs: List[str] = list(output_part)
-
+    for idx in outputs:
+        if idx == "_" and len(outputs) != 1:
+            raise ValueError(f"错误的输入{output_part}")
     # 第十步：验证输出下标合法性
     # 确保每个输出下标在输入中出现过（除了特殊的'_'标记）
     subscript_counts = []

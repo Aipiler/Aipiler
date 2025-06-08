@@ -1,5 +1,5 @@
 from Aipiler.dsl import map, reduce, unary, einsum_env, einsum
-from Aipiler.tensor import FakeTensor
+from Aipiler.tensor import FakeTensor, FakeScalar
 from Aipiler.dim import create_dim, create_dims
 from Aipiler.datatype import DataType, f32
 from Aipiler import aot
@@ -25,6 +25,25 @@ def matmul(A: FakeTensor, B: FakeTensor):
     D = reduce(C, "ikj -> ij", ["k"], "+")
     E = reduce_max(D)
     return E
+
+
+# @einsum
+# def mean_keep_dim(A: FakeTensor, axis: int):
+#     dims_letters = "abcdefghijklmnopqrstuvwxyz"
+#     if len(A.symbolic_shapes) > len(dims_letters):
+#         raise ValueError("Dim of input is to LONG!")
+#     A_dim = len(A.symbolic_shapes)
+#     A_dim_letters = dims_letters[:A_dim]
+#     reduce_dim = A_dim_letters[axis]
+#     ret_dim_letters = A_dim_letters.replace(reduce_dim, "")
+
+#     t0 = reduce(
+#         A,
+#         f"{A_dim_letters} -> {ret_dim_letters}",
+#         target_dim=[reduce_dim],
+#         compute_op_str="+",
+#     )
+#     dim_size = FakeTensor
 
 
 A = FakeTensor(create_dims(3, 4), f32)

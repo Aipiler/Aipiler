@@ -1,5 +1,5 @@
 from Aipiler.primitive import EinsumBuilder
-from Aipiler.tensor import FakeTensor
+from Aipiler.tensor import FakeTensor, FakeData
 from Aipiler.dim import Dim, create_dim
 from Aipiler.basic_operator import operator_registry
 from Aipiler.graph import EinsumGraph
@@ -11,32 +11,32 @@ import sys
 
 
 def map(
-    A: FakeTensor,
-    B: FakeTensor,
+    A: FakeData,
+    B: FakeData,
     einsum_str: str,
     target_dim: list[str],
     compute_op_str: str,
-) -> FakeTensor:
+) -> FakeData:
     return EinsumBuilder.map(
         A, B, einsum_str, target_dim, operator_registry.get(compute_op_str)
     )
 
 
 def reduce(
-    A: FakeTensor,
+    A: FakeData,
     einsum_str: str,
     target_dim: list[str],
     compute_op_str: str,
-) -> FakeTensor:
+) -> FakeData:
     return EinsumBuilder.reduce(
         A, einsum_str, target_dim, operator_registry.get(compute_op_str)
     )
 
 
 def unary(
-    A: FakeTensor,
+    A: FakeData,
     unary_op_str: str,
-) -> FakeTensor:
+) -> FakeData:
     return EinsumBuilder.unary(A, operator_registry.get(unary_op_str))
 
 
