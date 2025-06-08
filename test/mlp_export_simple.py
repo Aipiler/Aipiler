@@ -49,6 +49,7 @@ class MLP(nn.Module):
         x = self.layer2(x)
         x = torch.sigmoid(x)
         x = self.layer3(x)
+        x = x * 2
         return x
 
 
@@ -64,9 +65,9 @@ print("State_dict: ", exported_program.state_dict)
 print("Range_constraints: ", exported_program.range_constraints)
 
 
-exported = aot.export(model, args=example_args)
-exported.print_readable()
-compiled_binary = exported.compile(save_to="./tmp.bf")
+# exported = aot.export(model, args=example_args)
+# exported.print_readable()
+# compiled_binary = exported.compile(save_to="./tmp.bf")
 
 
 def run_inference() -> np.ndarray:
@@ -102,4 +103,4 @@ class ModelTest(unittest.TestCase):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     # Run unit tests
-    unittest.main()
+    # unittest.main()

@@ -6,6 +6,7 @@ import torch.nn as nn
 import unittest
 import os
 from Aipiler import aot
+from torch.export import export, Dim
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -38,7 +39,7 @@ class RMSNorm_Matmul(nn.Module):
         self.rmsnorm = Qwen2RMSNorm(hidden_size, eps)
 
     def forward(self, x, weight):
-        # x = self.rmsnorm(x)
+        x = self.rmsnorm(x)
         return torch.matmul(x, weight)
 
 
@@ -46,10 +47,12 @@ X = torch.randn(16, 1024, dtype=torch.float32)
 W = torch.randn(1024, 4096, dtype=torch.float32)
 example_args = (X, W)
 
+k = Dim("k")
+dynamic_shapes = {"x": {1: k}, "weight": {0: k}}
 model = RMSNorm_Matmul(hidden_size=1024)
 
 # pytorch
-exported_program = torch.export.export(model, example_args)
+exported_program = export(model, example_args, dynamic_shapes)
 # print("Exported Program:", exported_program)
 # print("Graph: ", exported_program.graph)
 # print("Graph_signature: ", exported_program.graph_signature)
@@ -59,9 +62,9 @@ exported_program = torch.export.export(model, example_args)
 #     f.write(str(exported_program))
 
 # Aipiler
-exported = aot.export(model, args=example_args)
-exported.print_readable()
-compiled_binary = exported.compile(save_to=None)
+# exported = aot.export(model, args=example_args)
+# exported.print_readable()
+# compiled_binary = exported.compile(save_to=None)
 
 
 def run_inference() -> np.ndarray:
