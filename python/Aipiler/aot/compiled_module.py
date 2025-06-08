@@ -642,7 +642,9 @@ class CompiledModule(metaclass=CompiledModuleMeta):
             elif phase == ImportPhase.CUSTOM_OP_EXPANSION:
                 CompiledModule.expand_custom_ops(inst)
             elif phase == ImportPhase.IREE_INTERNAL:
-                CompiledModule.run_pass_pipeline(inst, "builtin.module(torch-to-iree)")
+                CompiledModule.run_pass_pipeline(
+                    inst, "builtin.module(torch-to-iree)", enable_ir_printing=True
+                )
             else:
                 assert False, f"Phase {phase} not handled in switch"
             info.current_import_phase = phase

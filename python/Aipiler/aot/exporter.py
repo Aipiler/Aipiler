@@ -9,7 +9,7 @@ import io
 from pathlib import Path
 import platform
 import warnings
-
+from enum import Enum
 import torch
 
 from iree.compiler.api import (
@@ -105,10 +105,7 @@ class ExportOutput:
         CompiledModule.run_import(self.compiled_module, import_to)
 
     def compile(
-        self,
-        save_to: SaveableTarget,
-        *,
-        target_backends: Union[str, Sequence[str], None] = ("llvm-cpu",),
+        self, save_to: SaveableTarget, *, target_backend: str | None = "host"
     ) -> Optional[memoryview]:
         """Compiles the exported program to an executable binary.
 
@@ -117,8 +114,12 @@ class ExportOutput:
               None: outputs to a memory buffer and return the API Output.
               (str, Path): Outputs to a file
               Output: Raw compiler API Output object to save to.
-            target_backends: A comma-delimitted string of IREE target backends or
+            target_backends: A string of IREE target backends or
               a sequence of strings.
+              Options:
+                - host
+                - rvv
+                - ...
               If `None` does not specify any target backend.
               Then the user must set other appropriate compiler flags e.g.
               `export_output.session.set_flags("--iree-hal-target-device=llvm-cpu")`
@@ -152,13 +153,50 @@ class ExportOutput:
         inv.enable_console_diagnostics()
 
         # TODO: Don't use flags to set the target backends: set module attributes.
-        if target_backends is not None:
-            target_backends = (
-                target_backends
-                if isinstance(target_backends, str)
-                else ",".join(target_backends)
-            )
-            self.session.set_flags(f"--iree-hal-target-backends={target_backends}")
+        # if target_backends is not None:
+        #     target_backends = (
+        #         target_backends
+        #         if isinstance(target_backends, str)
+        #         else ",".join(target_backends)
+        #     )
+        #     self.session.set_flags(f"--iree-hal-target-backends={target_backends}")
+
+        legal_backend = ["host", "rvv"]
+
+        host_pass_pipeline = [
+            "--iree-hal-target-device=local",
+            "--iree-hal-local-target-device-backends=llvm-cpu",
+            "--iree-llvmcpu-target-cpu=host",
+            "--iree-opt-level=O3",
+        ]
+
+        rvv_pass_pipeline = [
+            "--iree-hal-target-device=local",
+            "--iree-hal-local-target-device-backends=llvm-cpu",
+            "--iree-llvmcpu-target-triple=riscv64",
+            "--iree-llvmcpu-target-abi=lp64d",
+            "--iree-llvmcpu-target-cpu-features=+m,+a,+f,+d,+zvl512b,+v",
+            "--iree-opt-level=O3",
+        ]
+
+        if target_backend is not None:
+            assert isinstance(target_backend, str)
+
+            pass_pipeline = []
+
+            if target_backend == "rvv":
+                pass_pipeline = rvv_pass_pipeline
+            elif target_backend == "host":
+                pass_pipeline = host_pass_pipeline
+            else:
+                raise KeyError(
+                    f"Target backend: {target_backend} isn't in legal_backend: {legal_backend}"
+                )
+            print(pass_pipeline)
+            # Add flags
+            for pass_str in pass_pipeline:
+                self.session.set_flags(pass_str)
+
         if not inv.execute():
             raise RuntimeError("Compilation failed: See diagnostics")
 
