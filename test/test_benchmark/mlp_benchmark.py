@@ -44,6 +44,7 @@ class MLP(nn.Module):
         out = torch.matmul(x, weight)
         return out
 
+
 if __name__ == "__main__":
     model = MLP()
     X = torch.randn(2, 2, dtype=torch.float32)
@@ -51,4 +52,5 @@ if __name__ == "__main__":
     example_args = (X, W)
     exported = aot.export(model, args=example_args)
     exported.print_readable()
-    exported.compile(save_to="./mlp.bf")
+
+    exported.compile(save_to="./mlp_O1.vmfb", target_backend="rvv")
