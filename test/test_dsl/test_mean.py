@@ -24,7 +24,7 @@ def mean(A: FakeTensor):
     return t1
 
 
-A = FakeTensor(create_dims("i", "j"), f32)
+A = FakeTensor(create_dims(4, 3), f32)
 graph = einsum_env.compile(mean, [A])
 print("Graph: \n")
 print(graph)
@@ -48,8 +48,8 @@ def run_inference() -> np.ndarray:
         rt.VmModule.wrap_buffer(config.vm_instance, compiled_binary.map_memory()),
         config,
     )
-    # x = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]]).astype(np.float32)
-    x = np.random.rand(10, 3).astype(np.float32)
+    x = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]]).astype(np.float32)
+    # x = np.random.rand(10, 3).astype(np.float32)
     y = vmm.main(x)
     logger.info(f"Inference result: {y.to_host()}")
     return y.to_host()

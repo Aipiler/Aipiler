@@ -108,7 +108,9 @@ class Einsum_importer:
         if eq_dim.is_dynamic:
             _eq_tensor_mlir_val = self.symbol_table[eq_dim.fake_tensor]
             idx = eq_dim.idx
-            idx_mlir_val = arith.constant(ir.IndexType.get(), idx)
+            idx_mlir_val = arith.constant(
+                ir.IndexType.get(), IntegerAttr.get(ir.IndexType.get(), idx)
+            )
             shape = tensor.dim(_eq_tensor_mlir_val, idx_mlir_val)
         else:
             # else, create by arith.constant
@@ -116,10 +118,21 @@ class Einsum_importer:
             assert isinstance(shape, (int, float))
         return shape
 
-    def init_empty_tensor(self, output: FakeTensor):
+    def constant_scalar(self, dtype: dtypes.DataType, scalar: Union[int, float]):
+        if isinstance(dtype, dtypes.integer.IntegerType):
+            size_attr = IntegerAttr.get(self.from_dtype(dtype), scalar)
+        else:
+            assert isinstance(dtype, dtypes.float.FloatType)
+            size_attr = FloatAttr.get(self.from_dtype(dtype), scalar)
+
+        return arith.constant(self.from_dtype(dtype), size_attr)
+
+    def init_empty_tensor(self, output: FakeTensor, init: Union[int, float] = 0):
         """
         build `tensor.empty` operation from FakeTensor
         """
+        from iree.compiler.dialects.linalg.opdsl.ops.core_named_ops import fill
+
         assert isinstance(output, FakeTensor)
         mlir_dtype = self.from_dtype(output.dtype)
         shape_list = []
@@ -132,7 +145,9 @@ class Einsum_importer:
             shape_list.append(shape)
         # print(f"shape_list: {shape_list}")
         init_result = tensor.empty(shape_list, mlir_dtype)
-        return init_result
+        cst = self.constant_scalar(output.dtype, init)
+        filled = fill(cst, outs=[init_result])
+        return filled
 
     def import_MapPrimitive(
         self,
@@ -352,7 +367,10 @@ class Einsum_importer:
                             if _eq_dim.is_dynamic:
                                 _eq_tensor_mlir_val = self.symbol_table[_eq_tensor]
                                 idx = _eq_dim.idx
-                                idx_mlir_val = arith.constant(ir.IndexType.get(), idx)
+                                idx_mlir_val = arith.constant(
+                                    ir.IndexType.get(),
+                                    IntegerAttr.get(ir.IndexType.get(), idx),
+                                )
                                 _scalar_mlir_val_index = tensor.dim(
                                     _eq_tensor_mlir_val, idx_mlir_val
                                 )
@@ -395,8 +413,18 @@ class Einsum_importer:
 
                         else:
                             assert isinstance(scalar.sym_val, (int, float))
+                            if isinstance(scalar.dtype, dtypes.integer.IntegerType):
+                                sym_attr = IntegerAttr.get(
+                                    self.from_dtype(scalar.dtype), scalar.sym_val
+                                )
+                            else:
+                                assert isinstance(scalar.dtype, dtypes.float.FloatType)
+                                sym_attr = FloatAttr.get(
+                                    self.from_dtype(scalar.dtype), scalar.sym_val
+                                )
+
                             scalar_mlir_value = arith.constant(
-                                self.from_dtype(scalar.dtype), scalar.sym_val
+                                self.from_dtype(scalar.dtype), sym_attr
                             )
                         # insert into symbol table
                         self.symbol_table[scalar] = scalar_mlir_value
