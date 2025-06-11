@@ -562,6 +562,10 @@ class _BodyBuilder:
             return arith.MinUIOp(lhs, rhs).result
         raise NotImplementedError("Unsupported 'min_unsigned' operands: {lhs}, {rhs}")
 
+    def _binary_powf(self, lhs: Value, rhs: Value) -> Value:
+        assert _is_floating_point_type(lhs.type)
+        return math.powf(lhs, rhs)
+
 
 def _infer_structured_outs(
     op_config: LinalgStructuredOpConfig,

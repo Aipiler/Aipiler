@@ -22,6 +22,8 @@ def parse_einsum_str(
             - input_subscripts: 每个输入操作数的下标列表
             - output_subscripts: 输出的下标列表
     """
+    if len(equation) == 0:  # Unary Prim
+        return None, None
     # 第一步：字符合法性检查
     # 创建包含所有允许字符的集合：小写字母a-z、下划线、逗号、箭头符号
     # TODO: support affine expression

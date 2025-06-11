@@ -288,11 +288,40 @@ class Einsum_importer:
 
         return op
 
-    def import_PopulatePrimitive(self, node: PopulatePrimitive) -> ir.Value:
-        self.visited_nodes.append(node)
-        return node.output
-
     def import_UnaryPrimitive(self, node: UnaryPrimitive) -> ir.Value:
+        self.visited_nodes.append(node)
+        # 获取map op
+        unary_op = node.op.get_op_callable()
+
+        # 从符号表中找到输入张量的value
+        input_tensors = node.inputs
+        input_val = self.symbol_table[input_tensors[0]]
+        if input_val is None:
+            raise ValueError(
+                f"Input tensor {input_tensors[0]} not found in symbol table."
+            )
+        if isinstance(input_val, FakeScalar):
+            raise NotImplementedError()
+
+        @linalg_structured_op
+        def elemwise_unary(
+            I=TensorDef(T),
+            O=TensorDef(U, output=True),
+            fun=UnaryFnAttrDef(default=UnaryFn.sqrt),
+            cast=TypeFnAttrDef(default=TypeFn.cast_signed),
+        ):
+            """Applies the unary function fun elementwise.
+
+            Numeric casting is performed on the input operand, promoting it to the same
+            data type as the accumulator/output.
+            """
+            O[None] = fun(cast(U, I[None]))
+
+        init_result = self.init_empty_tensor(node.output)
+        op = elemwise_unary(input_val, outs=[init_result], func=unary_op)
+        return op
+
+    def import_PopulatePrimitive(self, node: PopulatePrimitive) -> ir.Value:
         self.visited_nodes.append(node)
         return node.output
 
@@ -439,8 +468,12 @@ class Einsum_importer:
                             op_ret: (
                                 ir.Operation | ir.Value | tuple | List | ir.OpResult
                             ) = self.import_ReducePrimitive(node)
+                        elif isinstance(node, UnaryPrimitive):
+                            op_ret: (
+                                ir.Operation | ir.Value | tuple | List | ir.OpResult
+                            ) = self.import_UnaryPrimitive(node)
                         else:
-                            pass
+                            raise NotImplementedError()
 
                         if isinstance(op_ret, Sequence):
                             for i, operation in enumerate(op_ret):

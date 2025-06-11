@@ -177,7 +177,7 @@ def min_unsigned():
     return BinaryFn.min_unsigned
 
 
-@operator_registry.register("powf", category="binary")
+@operator_registry.register("powf", category="binary", aliases=["^"])
 def powf():
     """二元浮点数幂运算，映射到 `math.powf`。"""
     return BinaryFn.powf

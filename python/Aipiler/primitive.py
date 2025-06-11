@@ -1,4 +1,4 @@
-from Aipiler.tensor import FakeTensor, FakeData
+from Aipiler.tensor import FakeTensor, FakeData, FakeScalar
 from Aipiler.basic_operator import ComputeOperator
 from Aipiler.dim import Dim
 from typing import List, Union, Sequence, Dict, Any
@@ -13,6 +13,8 @@ class EinsumPrimitive(ABC):
         self.einsum_str = einsum_str
         self.output: FakeData = None
         self.input_scripts, self.output_scripts = parse_einsum_str(self.einsum_str)
+        if all(script is None for script in (self.input_scripts, self.output_scripts)):
+            assert self.__class__ is UnaryPrimitive
 
     def run(self):
         """
@@ -99,19 +101,25 @@ class ReducePrimitive(EinsumPrimitive):
 
 
 # TODO
+class UnaryPrimitive(EinsumPrimitive):
+
+    def __init__(self, x: FakeData, op: ComputeOperator):
+        super().__init__(inputs=[x], einsum_str="")
+        self.x = x
+        self.op = op
+        if isinstance(x, FakeTensor):
+            output_shape = [Dim() for _ in x.symbolic_shape]
+            output_dtype = x.dtype
+            self.output = FakeTensor(output_shape, output_dtype, self)
+        else:
+            assert NotImplementedError()
+
+
 class PopulatePrimitive(EinsumPrimitive):
 
     def __init__(self):
         super().__init__(inputs=[], einsum_str="")
         pass
-
-
-class UnaryPrimitive(EinsumPrimitive):
-
-    def __init__(self, x: FakeData, op: ComputeOperator):
-        super().__init__(inputs=[x], einsum_str="")
-        self.op = op
-        self.output = self.run()
 
 
 class EinsumBuilder:
@@ -139,9 +147,9 @@ class EinsumBuilder:
         return ReducePrimitive(x, einsum_str, dim_to_reduce, op).output
 
     @staticmethod
-    def populate() -> FakeData:
-        pass
-
-    @staticmethod
     def unary(x: FakeData, op: ComputeOperator) -> FakeData:
         return UnaryPrimitive(x, op).output
+
+    @staticmethod
+    def populate() -> FakeData:
+        pass
