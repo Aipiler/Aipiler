@@ -185,9 +185,7 @@ class DisjointSetUnion:
 
     def is_connected(self, element1: Dim, element2: Dim) -> bool:
         if element1 not in self.dim_set_dict or element2 not in self.dim_set_dict:
-            raise ValueError(
-                f"One or both elements {element1}, {element2} are not in the disjoint set."
-            )
+            return False
         return self.dim_set_dict[element1] == self.dim_set_dict[element2]
 
     def get_all_value_dim_set(self) -> list[ValueDimSet]:

@@ -2,6 +2,9 @@ import torch
 from torch import nn
 from torch.export import export
 import Aipiler
+from iree.turbine import aot
+import iree.runtime as rt
+import numpy as np
 
 
 class Qwen2RMSNorm(nn.Module):
@@ -38,15 +41,36 @@ X = torch.randn(16, 1024, dtype=torch.float32)
 W = torch.randn(1024, 4096, dtype=torch.float32)
 example_args = (X, W)
 
-model = RMSNorm_Matmul(hidden_size=1024)
+model = RMSNorm_Matmul(hidden_size=1024).cpu()
 
-exported_program: torch.export.ExportedProgram = export(model, args=example_args)
-print("Exported Program:", exported_program)
-print("Graph: ", exported_program.graph)
-print("Graph_signature: ", exported_program.graph_signature)
-print("State_dict: ", exported_program.state_dict)
-print("Range_constraints: ", exported_program.range_constraints)
+# exported_program: torch.export.ExportedProgram = export(model, args=example_args)
 
+exported = aot.export(model, args=example_args)
+compiled_binary = exported.compile(save_to=None)
 
-g = Aipiler.compile(exported_program)
-print("Compiled Graph:", g)
+config = rt.Config("local-task")
+vmm = rt.load_vm_module(
+    rt.VmModule.copy_buffer(config.vm_instance, compiled_binary.map_memory()),
+    config,
+)
+
+i = 16
+hidden_size = 1024
+j = 4096
+
+a = np.random.rand(i, hidden_size).astype(np.float32)
+w_rms = np.random.rand(hidden_size).astype(np.float32)
+w_mm = np.random.rand(hidden_size, j).astype(np.float32)
+
+y = vmm.main(a, w_mm).to_host()
+torch_y = model(torch.from_numpy(a), torch.from_numpy(w_mm))
+np_y = torch_y.detach().numpy()
+
+print("最大绝对误差：\t", np.max(np.abs(np_y - y)))
+
+safe_div = np.where(np.abs(np_y) > 0, np.abs(np_y), 1)
+rel_error_safe = np.abs(np_y - y) / safe_div
+print("最大相对误差：\t", np.max(rel_error_safe))
+# TODO: 误差较大
+# ​绝对误差​：不超过 1e-6（理想目标 1e-7）
+# ​相对误差​：不超过 1e-5（严格目标 1e-6）
