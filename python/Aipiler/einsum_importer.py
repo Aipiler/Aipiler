@@ -106,15 +106,15 @@ class Einsum_importer:
                 break
         assert eq_dim is not None
         if eq_dim.is_dynamic:
-            _eq_tensor_mlir_val = self.symbol_table[eq_dim.fake_tensor]
-            idx = eq_dim.idx
+            _eq_tensor_mlir_val = self.symbol_table[eq_dim._fake_tensor]
+            idx = eq_dim._idx_in_tensor
             idx_mlir_val = arith.constant(
                 ir.IndexType.get(), IntegerAttr.get(ir.IndexType.get(), idx)
             )
             shape = tensor.dim(_eq_tensor_mlir_val, idx_mlir_val)
         else:
             # else, create by arith.constant
-            shape = eq_dim.get_size()
+            shape = eq_dim.size
             assert isinstance(shape, (int, float))
         return shape
 
@@ -140,7 +140,7 @@ class Einsum_importer:
             if d.is_dynamic:
                 shape = self.get_dyn_dim(d)
             else:
-                shape = d.get_size()
+                shape = d.size
                 assert isinstance(shape, (int, float))
             shape_list.append(shape)
         # print(f"shape_list: {shape_list}")
@@ -356,7 +356,7 @@ class Einsum_importer:
                                 # kdynamic if dim is dynamic
                                 shape = ShapedType.get_dynamic_size()
                             else:
-                                shape = d.get_size()
+                                shape = d.size
                             shape_list.append(shape)
                         mlir_dtype = self.from_dtype(input_tensor.dtype)
                         tensor_arg_type = RankedTensorType.get(shape_list, mlir_dtype)
@@ -384,9 +384,9 @@ class Einsum_importer:
                             # search equivalent dim and its fake tensor
                             _eq_dim: Dim
                             _eq_tensor: FakeTensor
-                            if scalar.sym_val.fake_tensor in self.symbol_table:
+                            if scalar.sym_val._fake_tensor in self.symbol_table:
                                 _eq_dim = scalar.sym_val
-                                _eq_tensor = scalar.sym_val.fake_tensor
+                                _eq_tensor = scalar.sym_val._fake_tensor
                             else:
                                 # get equivalent dim from disjoint set
                                 for input_tensor in tensor_args:
@@ -403,7 +403,7 @@ class Einsum_importer:
                             # if _eq_dim is dynamic, get by op: tensor.dim
                             if _eq_dim.is_dynamic:
                                 _eq_tensor_mlir_val = self.symbol_table[_eq_tensor]
-                                idx = _eq_dim.idx
+                                idx = _eq_dim._idx_in_tensor
                                 idx_mlir_val = arith.constant(
                                     ir.IndexType.get(),
                                     IntegerAttr.get(ir.IndexType.get(), idx),
@@ -430,7 +430,7 @@ class Einsum_importer:
                                     raise NotImplementedError()
                             else:
                                 # else, create by arith.constant
-                                size = _eq_dim.get_size()
+                                size = _eq_dim.size
                                 assert isinstance(size, (int, float))
                                 if isinstance(scalar.dtype, dtypes.integer.IntegerType):
                                     size_attr = IntegerAttr.get(

@@ -81,8 +81,6 @@ class EinsumGraph:
 
             # 更新维度值集合
             for script, dim_list in idx_dim_dict.items():
-                if len(dim_list) == 1:
-                    continue
                 self.sym_dim_set.union(*dim_list)
 
         for value_dim_set in self.sym_dim_set.get_all_value_dim_set():
@@ -145,8 +143,9 @@ class EinsumGraph:
         def nameof(t):
             if isinstance(t, FakeScalar):
                 if isinstance(t.sym_val, Dim):
-                    src_tensor_name = nameof(t.sym_val.fake_tensor)
-                    dim_idx = t.sym_val.idx
+                    # find
+                    src_tensor_name = nameof(t.sym_val._fake_tensor)
+                    dim_idx = t.sym_val._idx_in_tensor
                     return f"{src_tensor_name}.dim{dim_idx}"
                 else:
                     return f"{t.sym_val}"
@@ -158,7 +157,13 @@ class EinsumGraph:
         doc = "Graph("
         tensors += self.inputs
         param_doc = []
-        for inp in self.inputs:
+        input_tensors = [t for t in self.inputs if isinstance(t, FakeTensor)]
+        input_scalars = [t for t in self.inputs if isinstance(t, FakeScalar)]
+        # print tensor first because of scalar maybe dim
+        for inp in input_tensors:
+            n = nameof(inp)
+            param_doc.append(n)
+        for inp in input_scalars:
             n = nameof(inp)
             param_doc.append(n)
         doc += ", ".join(param_doc)
@@ -221,8 +226,8 @@ class EinsumGraph:
         for value_dim_set in set(self.sym_dim_set.dim_set_dict.values()):
             dim_name_list = []
             for dim in value_dim_set.dim_set:
-                tensor_name = nameof(dim.get_fake_tensor())
-                dim_idx = dim.get_index()
+                tensor_name = nameof(dim.fake_tensor)
+                dim_idx = dim.index_in_tensor
                 dim_name = f"{tensor_name}.dim{dim_idx}"
                 dim_name_list.append(dim_name)
             doc += "\t({}),\n".format(", ".join(dim_name_list))

@@ -1,6 +1,6 @@
 from Aipiler.dsl import map, reduce, unary, einsum_env, einsum
 from Aipiler.tensor import FakeTensor, FakeScalar
-from Aipiler.dim import create_dim, create_dims
+from Aipiler.dim import dim, dims
 from Aipiler.datatype import DataType, f32
 from Aipiler import aot
 import iree.runtime as rt
@@ -46,8 +46,8 @@ def matmul(A: FakeTensor, B: FakeTensor):
 #     dim_size = FakeTensor
 
 
-A = FakeTensor(create_dims(3, 4), f32)
-B = FakeTensor(create_dims(4, 5), f32)
+A = FakeTensor(dims(3, 4), f32)
+B = FakeTensor(dims(4, 5), f32)
 graph = einsum_env.compile(matmul, [A, B])
 print("Graph: \n")
 print(graph)

@@ -1,6 +1,6 @@
 from Aipiler.primitive import EinsumBuilder
 from Aipiler.tensor import FakeTensor, FakeData
-from Aipiler.dim import Dim, create_dim
+from Aipiler.dim import Dim, dim
 from Aipiler.basic_operator import operator_registry
 from Aipiler.graph import EinsumGraph
 import inspect

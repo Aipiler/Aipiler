@@ -1,6 +1,6 @@
 from Aipiler.dsl import map, reduce, unary, einsum_env, einsum
 from Aipiler.tensor import FakeTensor, FakeScalar
-from Aipiler.dim import create_dim, create_dims
+from Aipiler.dim import dim, dims
 from Aipiler.datatype import DataType, f32
 from Aipiler import aot
 import iree.runtime as rt
@@ -24,7 +24,7 @@ def mean(A: FakeTensor):
     return t1
 
 
-A = FakeTensor(create_dims(4, 3), f32)
+A = FakeTensor(dims(4, 3), f32)
 graph = einsum_env.compile(mean, [A])
 print("Graph: \n")
 print(graph)

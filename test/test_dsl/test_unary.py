@@ -1,6 +1,6 @@
 from Aipiler.dsl import map, reduce, unary, einsum_env, einsum
 from Aipiler.tensor import FakeTensor, FakeScalar
-from Aipiler.dim import create_dim, create_dims
+from Aipiler.dim import dim, dims
 from Aipiler.datatype import DataType, f32
 from Aipiler import aot
 import iree.runtime as rt
@@ -18,7 +18,7 @@ def rsqrt(A: FakeTensor):
     return unary(A, "rsqrt")
 
 
-A = FakeTensor(create_dims("i", "j", "k"), f32)
+A = FakeTensor(dims("i", "j", "k"), f32)
 graph = einsum_env.compile(rsqrt, [A])
 print("Graph: \n")
 print(graph)

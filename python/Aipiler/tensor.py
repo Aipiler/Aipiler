@@ -40,7 +40,8 @@ class FakeTensor(FakeData):
 
         self.symbolic_shape = symbolic_shapes
         for idx, dim in enumerate(self.symbolic_shape):
-            dim.set_fake_tensor(self, idx)
+            dim._fake_tensor = self
+            dim._idx_in_tensor = idx
         self._trace: Optional[EinsumPrimitive] = trace
 
 

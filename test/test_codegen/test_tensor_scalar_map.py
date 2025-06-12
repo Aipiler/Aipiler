@@ -1,6 +1,6 @@
 from Aipiler.dsl import map, reduce, unary, einsum_env, einsum
 from Aipiler.tensor import FakeTensor, FakeScalar
-from Aipiler.dim import create_dim, create_dims
+from Aipiler.dim import dim, dims
 from Aipiler.datatype import DataType, f32
 from Aipiler import aot
 
@@ -11,7 +11,7 @@ def tensor_scalar_map(A: FakeTensor, B: FakeScalar):
 
 
 def test_scalar_from_constant():
-    A = FakeTensor(create_dims(12, 15), f32)
+    A = FakeTensor(dims(12, 15), f32)
     B = FakeScalar(10, f32)
     graph = einsum_env.compile(tensor_scalar_map, [A, B])
     print(graph)
@@ -24,7 +24,7 @@ def test_scalar_from_constant():
 
 
 def test_scalar_from_dim():
-    A = FakeTensor(create_dims(12, 15), f32)
+    A = FakeTensor(dims(12, 15), f32)
     B = FakeScalar(A.symbolic_shape[0], f32)
     graph = einsum_env.compile(tensor_scalar_map, [A, B])
     print(graph)
@@ -37,7 +37,7 @@ def test_scalar_from_dim():
 
 
 def test_scalar_from_dyn_dim():
-    A = FakeTensor(create_dims("A.dim0", 15), f32)
+    A = FakeTensor(dims("A.dim0", 15), f32)
     B = FakeScalar(A.symbolic_shape[0], f32)
     graph = einsum_env.compile(tensor_scalar_map, [A, B])
     print(graph)

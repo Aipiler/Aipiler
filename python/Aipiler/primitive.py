@@ -1,6 +1,6 @@
 from Aipiler.tensor import FakeTensor, FakeData, FakeScalar
 from Aipiler.basic_operator import ComputeOperator
-from Aipiler.dim import Dim
+from Aipiler.dim import Dim, dims
 from typing import List, Union, Sequence, Dict, Any
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
@@ -32,10 +32,7 @@ class EinsumPrimitive(ABC):
         # get map of `str -> dim obj`
 
         # create output
-        fake_tensor_shape: List[Dim] = []
-        for _ in self.output_scripts:
-            # construct dim obj
-            fake_tensor_shape.append(Dim())
+        fake_tensor_shape: List[Dim] = dims(self.output_scripts)
         dtype = self.inputs[0].dtype
         return FakeTensor(symbolic_shapes=fake_tensor_shape, dtype=dtype, trace=self)
 
@@ -103,15 +100,10 @@ class UnaryPrimitive(EinsumPrimitive):
     def __init__(self, x: FakeData, einsum_str: str, op: ComputeOperator):
         super().__init__(inputs=[x], einsum_str=einsum_str)
         self.x = x
-        self.op = op
         assert len(self.input_scripts) == 1
         self.x_scripts = self.input_scripts[0]  # only one input
-        if isinstance(x, FakeTensor):
-            output_shape = [Dim() for _ in x.symbolic_shape]
-            output_dtype = x.dtype
-            self.output = FakeTensor(output_shape, output_dtype, self)
-        else:
-            assert NotImplementedError()
+        self.op = op
+        self.output = self.run()
 
 
 class PopulatePrimitive(EinsumPrimitive):

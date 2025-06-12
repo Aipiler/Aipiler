@@ -1,7 +1,7 @@
 from typing import Dict, Any, Callable, Optional, Tuple, Set, List, Type
 from Aipiler.registry import Registry
 from Aipiler.tensor import FakeTensor, from_torch_to_fake_tensor
-from Aipiler.dim import Dim
+from Aipiler.dim import Dim, dim
 import Aipiler.datatype as dtypes
 import logging
 import inspect
@@ -92,12 +92,12 @@ class Interpreter:
                 tensor_shape = node.meta["val"].shape
                 symbolic_shapes = []
                 for s in tensor_shape:
-                    d = Dim()
+                    d: Dim
                     if isinstance(s, int):
-                        d.set_size(s)
+                        d = dim(s)
                         symbolic_shapes.append(d)
                     elif isinstance(s, torch.SymInt):
-                        d.set_size(str(s))
+                        d = dim(str(s))
                         symbolic_shapes.append(d)
                     else:
                         raise TypeError(
