@@ -13,8 +13,16 @@ class EinsumPrimitive(ABC):
         self.einsum_str = einsum_str
         self.output: FakeData = None
         self.input_scripts, self.output_scripts = parse_einsum_str(self.einsum_str)
-        if all(script is None for script in (self.input_scripts, self.output_scripts)):
-            assert self.__class__ is UnaryPrimitive
+        # update scripts
+        for scripts in (*self.input_scripts, self.output_scripts):
+            if scripts[0] == "_" and len(scripts) == 1:
+                scripts.clear()
+        # iter scripts
+        _ = []
+        for sp in self.input_scripts:
+            _ += sp
+        _ += self.output_scripts
+        self.iteration_scripts = set(_)
 
     def run(self):
         """
@@ -57,12 +65,6 @@ class MapPrimitive(EinsumPrimitive):
         # init scripts
         assert len(self.input_scripts) == 2
         self.lhs_scripts, self.rhs_scripts = self.input_scripts
-        for scripts in (self.lhs_scripts, self.rhs_scripts, self.output_scripts):
-            if scripts[0] == "_" and len(scripts) == 1:
-                scripts.clear()
-        self.iteration_scripts = set(
-            self.lhs_scripts + self.rhs_scripts + self.output_scripts
-        )
         self.dims_to_map = (
             [dims_to_map] if isinstance(dims_to_map, str) else list(dims_to_map)
         )
@@ -84,11 +86,7 @@ class ReducePrimitive(EinsumPrimitive):
         super().__init__([x], einsum_str)
         assert len(self.input_scripts) == 1
         self.x_scripts = self.input_scripts[0]  # only one input
-        for scripts in (self.x_scripts, self.output_scripts):
-            if scripts[0] == "_" and len(scripts) == 1:
-                scripts.clear()
 
-        self.iteration_scripts = set(self.x_scripts + self.output_scripts)
         self.dims_to_reduce = (
             [dims_to_reduce]
             if isinstance(dims_to_reduce, str)
@@ -100,13 +98,14 @@ class ReducePrimitive(EinsumPrimitive):
         self.output = self.run()
 
 
-# TODO
 class UnaryPrimitive(EinsumPrimitive):
 
-    def __init__(self, x: FakeData, op: ComputeOperator):
-        super().__init__(inputs=[x], einsum_str="")
+    def __init__(self, x: FakeData, einsum_str: str, op: ComputeOperator):
+        super().__init__(inputs=[x], einsum_str=einsum_str)
         self.x = x
         self.op = op
+        assert len(self.input_scripts) == 1
+        self.x_scripts = self.input_scripts[0]  # only one input
         if isinstance(x, FakeTensor):
             output_shape = [Dim() for _ in x.symbolic_shape]
             output_dtype = x.dtype
@@ -147,8 +146,8 @@ class EinsumBuilder:
         return ReducePrimitive(x, einsum_str, dim_to_reduce, op).output
 
     @staticmethod
-    def unary(x: FakeData, op: ComputeOperator) -> FakeData:
-        return UnaryPrimitive(x, op).output
+    def unary(x: FakeData, einsum_str: str, op: ComputeOperator) -> FakeData:
+        return UnaryPrimitive(x, einsum_str, op).output
 
     @staticmethod
     def populate() -> FakeData:

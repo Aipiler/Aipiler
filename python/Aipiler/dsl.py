@@ -37,7 +37,13 @@ def unary(
     A: FakeData,
     unary_op_str: str,
 ) -> FakeData:
-    return EinsumBuilder.unary(A, operator_registry.get(unary_op_str))
+    assert isinstance(A, FakeTensor)
+    dim_str = ""
+    for i in range(len(A.symbolic_shape)):
+        dim_str += chr(ord("a") + i)
+    return EinsumBuilder.unary(
+        A, f"{dim_str} -> {dim_str}", operator_registry.get(unary_op_str)
+    )
 
 
 # 全局环境配置

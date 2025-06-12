@@ -59,34 +59,25 @@ class EinsumGraph:
             output_tensor = node.output
 
             idx_dim_dict: Dict[str, List[Dim]] = {}
-            if isinstance(node, UnaryPrimitive):
-                assert isinstance(node.x, FakeTensor)
-                assert isinstance(node.output, FakeTensor)
-                for idx, (input_dim, output_dim) in enumerate(
-                    zip(node.x.symbolic_shape, node.output.symbolic_shape)
+            for input_script, input_tensor in zip(input_scripts, input_tensors):
+                if not input_script:  # this input is scalar
+                    continue
+                assert isinstance(input_tensor, FakeTensor)
+                for input_idx, input_dim in zip(
+                    input_script, input_tensor.symbolic_shape
                 ):
-                    c = chr(ord("a") + idx)
-                    idx_dim_dict[c] = [input_dim, output_dim]
-            else:
-                for input_script, input_tensor in zip(input_scripts, input_tensors):
-                    if not input_script:  # this input is scalar
-                        continue
-                    assert isinstance(input_tensor, FakeTensor)
-                    for input_idx, input_dim in zip(
-                        input_script, input_tensor.symbolic_shape
-                    ):
-                        if input_idx not in idx_dim_dict:
-                            idx_dim_dict[input_idx] = []
-                        idx_dim_dict[input_idx].append(input_dim)
+                    if input_idx not in idx_dim_dict:
+                        idx_dim_dict[input_idx] = []
+                    idx_dim_dict[input_idx].append(input_dim)
 
-                if output_scripts:
-                    assert isinstance(output_tensor, FakeTensor)
-                    for output_script, output_dim in zip(
-                        output_scripts, output_tensor.symbolic_shape
-                    ):
-                        if output_script not in idx_dim_dict:
-                            idx_dim_dict[output_script] = []
-                        idx_dim_dict[output_script].append(output_dim)
+            if output_scripts:
+                assert isinstance(output_tensor, FakeTensor)
+                for output_script, output_dim in zip(
+                    output_scripts, output_tensor.symbolic_shape
+                ):
+                    if output_script not in idx_dim_dict:
+                        idx_dim_dict[output_script] = []
+                    idx_dim_dict[output_script].append(output_dim)
 
             # 更新维度值集合
             for script, dim_list in idx_dim_dict.items():
@@ -205,8 +196,20 @@ class EinsumGraph:
                 )
                 doc += "\t"
                 doc += prim_doc
+            elif isinstance(prim, UnaryPrimitive):
+                inp = prim.inputs[0]
+                ret = prim.output
+                tensors.append(ret)
+                prim_doc = '{ret} = unary({inp}, "{einsum_str}", "{op}")'.format(
+                    ret=nameof(ret),
+                    inp=nameof(inp),
+                    einsum_str=prim.einsum_str,
+                    op=prim.op.name,
+                )
+                doc += "\t"
+                doc += prim_doc
             else:
-                doc += prim.__str__()
+                doc += "Unstringify Primitive: " + prim.__class__.__name__
             doc += "\n"
         doc += "\treturn "
         outputs = [nameof(out) for out in self.outputs]

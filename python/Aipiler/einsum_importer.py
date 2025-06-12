@@ -290,6 +290,14 @@ class Einsum_importer:
 
     def import_UnaryPrimitive(self, node: UnaryPrimitive) -> ir.Value:
         self.visited_nodes.append(node)
+
+        # 根据einsum_str 构建linalg.generic op
+        symbol_defs = {}
+        domain_defs = {}
+        for script in node.iteration_scripts:
+            symbol_defs[script] = getattr(S, script)
+            domain_defs[script] = getattr(D, script)
+
         # 获取map op
         unary_op = node.op.get_op_callable()
 
@@ -305,8 +313,8 @@ class Einsum_importer:
 
         @linalg_structured_op
         def elemwise_unary(
-            I=TensorDef(T),
-            O=TensorDef(U, output=True),
+            I=TensorDef(T, *(symbol_defs[s] for s in node.x_scripts)),
+            O=TensorDef(U, *(symbol_defs[s] for s in node.output_scripts), output=True),
             fun=UnaryFnAttrDef(default=UnaryFn.sqrt),
             cast=TypeFnAttrDef(default=TypeFn.cast_signed),
         ):
@@ -318,7 +326,7 @@ class Einsum_importer:
             O[None] = fun(cast(U, I[None]))
 
         init_result = self.init_empty_tensor(node.output)
-        op = elemwise_unary(input_val, outs=[init_result], func=unary_op)
+        op = elemwise_unary(input_val, outs=[init_result], fun=unary_op)
         return op
 
     def import_PopulatePrimitive(self, node: PopulatePrimitive) -> ir.Value:

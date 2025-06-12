@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 @einsum
 def rsqrt(A: FakeTensor):
-    return unary(A, "sqrt")
+    return unary(A, "rsqrt")
 
 
-A = FakeTensor(create_dims("i", "j"), f32)
+A = FakeTensor(create_dims("i", "j", "k"), f32)
 graph = einsum_env.compile(rsqrt, [A])
 print("Graph: \n")
-# print(graph)
+print(graph)
 print("\n")
 exported = aot.export(graph)
 print("MLIR: \n")
@@ -42,7 +42,7 @@ def run_inference() -> np.ndarray:
         rt.VmModule.wrap_buffer(config.vm_instance, compiled_binary.map_memory()),
         config,
     )
-    x = np.array([[4, 4]]).astype(np.float32)
+    x = np.array([[[4, 4]]]).astype(np.float32)
     # x = np.random.rand(10, 3).astype(np.float32)
     y = vmm.main(x)
     logger.info(f"Inference result: {y.to_host()}")
