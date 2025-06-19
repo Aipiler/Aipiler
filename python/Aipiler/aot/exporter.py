@@ -69,6 +69,26 @@ class ExportOutput:
         self.compiled_module = compiled_module
         self._importer_uses_session = importer_uses_session
 
+        self.BACKEND_FLAGS = {
+            "host": [
+                "--iree-hal-target-backends=llvm-cpu",
+                "--iree-llvmcpu-target-cpu-features=host",
+                "--iree-opt-level=O3",
+            ],
+            "rvv": [
+                "--iree-hal-target-backends=llvm-cpu",
+                "--iree-llvmcpu-target-triple=riscv64",
+                "--iree-llvmcpu-target-abi=lp64d",
+                "--iree-llvmcpu-target-cpu-features=+m,+a,+f,+d,+zvl512b,+v",
+                "--iree-opt-level=O3",
+            ],
+            "cuda": [
+                "--iree-hal-target-device=cuda",
+                "--iree-cuda-target=rtx3090",
+                "--iree-opt-level=O3",
+            ],
+        }
+
     @property
     def mlir_module(self) -> Operation:
         """Gets the MLIR module resulting from the last compilation phase."""
@@ -128,6 +148,7 @@ class ExportOutput:
           Ouptut object. It can be queried for its backing memory via its `map_memory()`
           method.
         """
+        # --- 1. 设置输出目标 ---
         return_memory_view = False
         if save_to is None:
             output = Output.open_membuffer()
@@ -139,7 +160,25 @@ class ExportOutput:
             output = save_to
             assert isinstance(output, Output)
 
+        # --- 2. 设置编译标志 ---
+        # 改进点 a: 使用更清晰的变量名
+        compiler_flags = self.BACKEND_FLAGS.get(target_backend)
+        if compiler_flags is None:
+            raise KeyError(
+                f"Target backend '{target_backend}' is not defined. "
+                f"Available backends: {list(self.BACKEND_FLAGS.keys())}"
+            )
+
+        # 关键错误修正：一次性设置所有标志
+        # print(
+        #     f"🚀 Using compiler flags for backend '{target_backend}': {compiler_flags}"
+        # )
+        self.session.set_flags(*compiler_flags)
+
+        # --- 3. 执行编译 --
         inv = self.session.invocation()
+
+        # 导入/解析源文件
         if self._importer_uses_session:
             inv.import_module(self.mlir_module)
         else:
@@ -161,44 +200,13 @@ class ExportOutput:
         #     )
         #     self.session.set_flags(f"--iree-hal-target-backends={target_backends}")
 
-        legal_backend = ["host", "rvv"]
-
-        host_pass_pipeline = [
-            "--iree-hal-target-device=local",
-            "--iree-hal-local-target-device-backends=llvm-cpu",
-            "--iree-llvmcpu-target-cpu=host",
-            "--iree-opt-level=O3",
-        ]
-
-        rvv_pass_pipeline = [
-            "--iree-hal-target-device=local",
-            "--iree-hal-local-target-device-backends=llvm-cpu",
-            "--iree-llvmcpu-target-triple=riscv64",
-            "--iree-llvmcpu-target-abi=lp64d",
-            "--iree-llvmcpu-target-cpu-features=+m,+a,+f,+d,+zvl512b,+v",
-            "--iree-opt-level=O3",
-        ]
-
-        if target_backend is not None:
-            assert isinstance(target_backend, str)
-
-            pass_pipeline = []
-
-            if target_backend == "rvv":
-                pass_pipeline = rvv_pass_pipeline
-            elif target_backend == "host":
-                pass_pipeline = host_pass_pipeline
-            else:
-                raise KeyError(
-                    f"Target backend: {target_backend} isn't in legal_backend: {legal_backend}"
-                )
-            print(pass_pipeline)
-            # Add flags
-            for pass_str in pass_pipeline:
-                self.session.set_flags(pass_str)
-
+        # --- 4. 输出产物 ---
         if not inv.execute():
             raise RuntimeError("Compilation failed: See diagnostics")
+        # if not inv.execute_text_pass_pipeline("one-shot-bufferize"):
+        #     raise RuntimeError("Compilation failed: See diagnostics")
+        # print(self.session.get_flags(True))
+        # inv.output_ir(output)
 
         inv.output_vm_bytecode(output)
         output.keep()

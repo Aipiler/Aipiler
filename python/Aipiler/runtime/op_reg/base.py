@@ -83,7 +83,7 @@ def default_dispatch_keys() -> list[str]:
 # All such custom kernels are registered in the 'turbine' library/namespace.
 # We also allow extending existing libraries outside of this, but that is
 # the non default case.
-TURBINE_LIBRARY = def_library("turbine")
+TURBINE_LIBRARY = def_library("Aipiler")
 
 # Set of all programmatically registered op names in libraries we manage.
 # This is used to detect name collisions eagerly and providing name uniqueing.

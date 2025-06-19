@@ -136,7 +136,7 @@ class Einsum_importer:
         assert isinstance(output, FakeTensor)
         mlir_dtype = self.from_dtype(output.dtype)
         shape_list = []
-        for d in output.symbolic_shape:
+        for d in output.symbolic_shapes:
             if d.is_dynamic:
                 shape = self.get_dyn_dim(d)
             else:
@@ -351,7 +351,7 @@ class Einsum_importer:
                 for input_tensor in graph.inputs:
                     if isinstance(input_tensor, FakeTensor):
                         shape_list = []
-                        for d in input_tensor.symbolic_shape:
+                        for d in input_tensor.symbolic_shapes:
                             if d.is_dynamic:
                                 # kdynamic if dim is dynamic
                                 shape = ShapedType.get_dynamic_size()
@@ -390,7 +390,7 @@ class Einsum_importer:
                             else:
                                 # get equivalent dim from disjoint set
                                 for input_tensor in tensor_args:
-                                    for dim in input_tensor.symbolic_shape:
+                                    for dim in input_tensor.symbolic_shapes:
                                         if graph.sym_dim_set.is_connected(
                                             scalar.sym_val, dim
                                         ):

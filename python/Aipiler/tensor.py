@@ -38,11 +38,19 @@ class FakeTensor(FakeData):
 
         super().__init__(dtype=dtype)
 
-        self.symbolic_shape = symbolic_shapes
-        for idx, dim in enumerate(self.symbolic_shape):
+        self.symbolic_shapes = symbolic_shapes
+        for idx, dim in enumerate(self.symbolic_shapes):
             dim._fake_tensor = self
             dim._idx_in_tensor = idx
         self._trace: Optional[EinsumPrimitive] = trace
+
+    def get_dim(self, idx: int) -> Dim:
+        return self.symbolic_shapes[idx]
+
+    def replace_dim(self, idx: int, dim: Dim):
+        dim._fake_tensor = self
+        dim._idx_in_tensor = idx
+        self.symbolic_shapes[idx] = dim
 
 
 # TODO: data layout
