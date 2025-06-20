@@ -186,17 +186,17 @@ class EinsumGraph:
         doc += ", ".join(outputs)
         doc += "\n"
 
-        # # 打印value并查集
-        # doc += "\nSymbolic Dim Set(\n"
-        # for value_dim_set in set(self.sym_dim_set.dim_set_dict.values()):
-        #     dim_name_list = []
-        #     for dim in value_dim_set.dim_set:
-        #         tensor_name = nameof(dim.fake_tensor)
-        #         dim_idx = dim.index_in_tensor
-        #         dim_name = f"{tensor_name}.dim{dim_idx}"
-        #         dim_name_list.append(dim_name)
-        #     doc += "\t({}),\n".format(", ".join(dim_name_list))
-        # doc += ")\n\n"
+        # 打印value并查集
+        doc += "\nSymbolic Dim Set(\n"
+        for value_dim_set in set(self.sym_dim_set.dim_set_dict.values()):
+            dim_name_list = []
+            for dim in value_dim_set.dim_set:
+                tensor_name = nameof(dim.fake_tensor)
+                dim_idx = dim.index_in_tensor
+                dim_name = f"{tensor_name}.dim{dim_idx}"
+                dim_name_list.append(dim_name)
+            doc += "\t({}),\n".format(", ".join(dim_name_list))
+        doc += ")\n\n"
 
         for i, c_doc in enumerate(cascade_docs):
             doc += "cascade{}:\n".format(i)

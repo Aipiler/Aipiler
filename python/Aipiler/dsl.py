@@ -1,5 +1,5 @@
 from Aipiler.primitive import EinsumBuilder
-from Aipiler.tensor import FakeTensor, FakeData
+from Aipiler.tensor import FakeTensor, FakeData, FakeScalar
 from Aipiler.dim import Dim, dim
 from Aipiler.basic_operator import operator_registry
 from Aipiler.graph import EinsumGraph
@@ -87,9 +87,18 @@ def cascade(func: FunctionType):
         cascade_inputs = args
         subgraph_inputs = []
         for cascade_input in cascade_inputs:
-            subgraph_input = copy(cascade_input)
-            if isinstance(subgraph_input, FakeTensor):
-                subgraph_input._trace = None
+            if isinstance(cascade_input, FakeTensor):
+                symbolic_shapes = []
+                for d in cascade_input.symbolic_shapes:
+                    symbolic_shapes.append(dim(d.size))
+                subgraph_input = FakeTensor(
+                    symbolic_shapes=symbolic_shapes,
+                    dtype=cascade_input.dtype,
+                    trace=None,
+                )
+            else:
+                assert isinstance(cascade_input, FakeScalar)
+                subgraph_input = copy(cascade_input)
             subgraph_inputs.append(subgraph_input)
         # run
         result = func(*subgraph_inputs, **kwargs)
