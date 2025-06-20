@@ -64,7 +64,7 @@ class EinsumGraph:
                     continue
                 assert isinstance(input_tensor, FakeTensor)
                 for input_idx, input_dim in zip(
-                    input_script, input_tensor.symbolic_shape
+                    input_script, input_tensor.symbolic_shapes
                 ):
                     if input_idx not in idx_dim_dict:
                         idx_dim_dict[input_idx] = []
@@ -73,7 +73,7 @@ class EinsumGraph:
             if output_scripts:
                 assert isinstance(output_tensor, FakeTensor)
                 for output_script, output_dim in zip(
-                    output_scripts, output_tensor.symbolic_shape
+                    output_scripts, output_tensor.symbolic_shapes
                 ):
                     if output_script not in idx_dim_dict:
                         idx_dim_dict[output_script] = []

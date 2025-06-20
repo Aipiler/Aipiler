@@ -1,9 +1,0 @@
-ExportedProgram:
-    class GraphModule(torch.nn.Module):
-        def forward(self, x: "f32[16, 1024]", weight: "f32[1024, 4096]"):
-             # File: /home/gaoshihao/project/Aipiler/test/test_RMSNorm_matmul.py:42 in forward, code: return torch.matmul(x, weight)
-            matmul: "f32[16, 4096]" = torch.ops.aten.matmul.default(x, weight);  x = weight = None
-            return (matmul,)
-            
-Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='weight'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='matmul'), target=None)])
-Range constraints: {}

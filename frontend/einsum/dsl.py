@@ -472,7 +472,7 @@ def einsum(func, *, debug=False):
             einsum_env.debug_mode = True
 
         if einsum_env.debug_mode:
-            print(f"开始执行函数 {func.__name__}")
+            # print(f"开始执行函数 {func.__name__}")
 
         # 绑定参数
         signature = inspect.signature(func)
