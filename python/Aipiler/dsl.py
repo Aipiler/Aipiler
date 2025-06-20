@@ -3,11 +3,13 @@ from Aipiler.tensor import FakeTensor, FakeData
 from Aipiler.dim import Dim, dim
 from Aipiler.basic_operator import operator_registry
 from Aipiler.graph import EinsumGraph
+from Aipiler.aot import export, CompiledModule
 import inspect
 import ast
 import functools
 from typing import Dict, List, Set, Tuple, Any, Optional, Callable, Union, Sequence
 import sys
+import os
 
 
 def map(
@@ -39,7 +41,7 @@ def unary(
 ) -> FakeData:
     assert isinstance(A, FakeTensor)
     dim_str = ""
-    for i in range(len(A.symbolic_shape)):
+    for i in range(len(A.symbolic_shapes)):
         dim_str += chr(ord("a") + i)
     return EinsumBuilder.unary(
         A, f"{dim_str} -> {dim_str}", operator_registry.get(unary_op_str)
@@ -171,9 +173,39 @@ def einsum(func, *, debug=False):
     def wrapper(*args, **kwargs):
         # 记录当前运行环境，用于支持嵌套调用
 
-        print(f"开始执行函数 {func.__name__}，参数为 {args}, {kwargs}")
+        # print(f"开始执行函数 {func.__name__}，参数为 {args}, {kwargs}")
         result = func(*args, **kwargs)
-        print(f"结束执行函数 {func.__name__}")
+        # print(f"结束执行函数 {func.__name__}")
         return result
 
     return wrapper
+
+
+def compile_module(
+    entry_point: functools,
+    example_args: list[FakeTensor],
+    *,
+    dynamic: bool = False,
+    save: bool = False,
+    target_backend: str = "host",
+) -> CompiledModule | None:
+    """编译模块 - 统一的编译函数"""
+
+    if dynamic:
+        prefix = "dyn"
+    else:
+        prefix = "static"
+
+    graph = einsum_env.compile(entry_point, example_args)
+    exported = export(graph)
+
+    if not save:
+        return exported.compile(save_to=None, target_backend=target_backend)
+    else:
+        save_dir = f"einsum_{prefix}_vmfb"
+        os.makedirs(save_dir, exist_ok=True)
+        module_filepath = os.path.join(
+            save_dir, f"{entry_point.__name__}_{prefix}_{target_backend}.vmfb"
+        )
+        exported.compile(save_to=module_filepath, target_backend=target_backend)
+        return None
