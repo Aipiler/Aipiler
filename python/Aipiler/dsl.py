@@ -8,8 +8,10 @@ import inspect
 import ast
 import functools
 from typing import Dict, List, Set, Tuple, Any, Optional, Callable, Union, Sequence
+from types import FunctionType
 import sys
 import os
+from copy import copy
 
 
 def map(
@@ -46,6 +48,63 @@ def unary(
     return EinsumBuilder.unary(
         A, f"{dim_str} -> {dim_str}", operator_registry.get(unary_op_str)
     )
+
+
+def cascade(func: FunctionType):
+    R"""
+    cascade is a black box / subgraph in einsum graph
+    example (all map prims are element-wise add):
+                (E)
+                |                                  (E)
+            |map|      # map3                     |
+            /   \                             [cascade] ij,ij->ij
+        |map|   |map|  # map1  map2  ==>     /   | |   \  
+        /   \   /  \                        /   |   |   \ 
+        (C)   |map|  (D) # map0             (C)  (A) (B)  (D)
+                / \ 
+            (A) (B)                             
+    
+    @einsum
+    def test():
+        ... # prepare A, B, C, D
+        @cascade
+        def four_add(A, B, C, D):
+            t0 = map(A, B, "ij, ij -> ij", "+")
+            t1 = map(C, t0, "ij, ij -> ij", "+")
+            t2 = map(t0, D, "ij, ij -> ij", "+")
+            t3 = map(t1, t2, "ij, ij -> ij", "+")
+            return t3
+        E = four_add(A, B, C, D)
+        ...
+    """
+    debug = False
+    if not einsum_env.initialized:
+        einsum_env.initialize(debug)
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # copy args
+        cascade_inputs = args
+        subgraph_inputs = []
+        for cascade_input in cascade_inputs:
+            subgraph_input = copy(cascade_input)
+            if isinstance(subgraph_input, FakeTensor):
+                subgraph_input._trace = None
+            subgraph_inputs.append(subgraph_input)
+        # run
+        result = func(*subgraph_inputs, **kwargs)
+        # trace graph
+        subgraph = einsum_env.trace_from(result, inputs=subgraph_inputs)
+        # create prim
+        outputs = EinsumBuilder.cascade(
+            *cascade_inputs, subgraph=subgraph, einsum_str=subgraph.summary_einsum_str()
+        )
+        if len(outputs) == 1:
+            return outputs[0]
+        else:
+            return tuple(outputs)
+
+    return wrapper
 
 
 # 全局环境配置
@@ -89,7 +148,13 @@ class EinsumEnvironment:
         outputs: Optional[Union[FakeTensor, Sequence[FakeTensor]]],
         inputs: Optional[Union[FakeTensor, Sequence[FakeTensor]]] = None,
     ) -> EinsumGraph:
-
+        """
+        TODO: trace einsumgraph with `inputs` and `outputs`. If inputs are None, trace until leaves of whole graph.
+        for example:
+        the whole graph is: t1=reduce(t0=map(A, B, ...), ...);
+        if inputs = [t0], outputs = [t1], then the result of trace_from has nodes: [reduce]
+        elif inputs= [A, B], outputs= [t1], then the result of trace_from has nodes: [reduce, map]
+        """
         if isinstance(outputs, FakeTensor):
             if outputs._trace is None:
                 raise ValueError("trace_from expects symbol tensor(s)")

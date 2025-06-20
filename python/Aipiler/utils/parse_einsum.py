@@ -1,9 +1,28 @@
 from typing import Tuple, List, Set, Dict
 
 
+def parse_subscripts_part(part: str):
+    # "ab,bc" -> ['ab', 'bc']
+    part_subscripts = part.split(",")
+    # 确保每个操作数都有下标，0维张量必须用'_'而不是空字符串
+    for i, subscripts in enumerate(part_subscripts):
+        if not subscripts:
+            raise ValueError(f"第{i+1}个操作数的下标不能为空，0维张量请使用'_'表示")
+
+    # ['ab', 'bc'] -> [['a', 'b'], ['b', 'c']]
+    rets = []
+    for part_subscript in part_subscripts:
+        part_subscript_list = list(part_subscript)
+        for idx in part_subscript_list:
+            if idx == "_" and len(part_subscript_list) != 1:
+                raise ValueError(f"错误的输入{part_subscript}")
+        rets.append(part_subscript_list)
+    return rets
+
+
 def parse_einsum_str(
     equation: str,
-) -> Tuple[List[List[str]], List[str]]:
+) -> Tuple[List[List[str]], List[List[str]]]:
     """
     解析einsum方程字符串，遵循严格的格式要求
 
@@ -18,12 +37,10 @@ def parse_einsum_str(
         equation (str): 符合上述规则的einsum方程字符串
 
     Returns:
-        Tuple[List[List[str]], List[str]]: 二元组，包含:
-            - input_subscripts: 每个输入操作数的下标列表
-            - output_subscripts: 输出的下标列表
+        Tuple[List[List[str]], List[List[str]]]: 二元组，包含:
+            - input_subscripts:  每个输入操作数的下标列表
+            - output_subscripts: 每个输出的下标列表
     """
-    if len(equation) == 0:  # Unary Prim
-        return None, None
     # 第一步：字符合法性检查
     # 创建包含所有允许字符的集合：小写字母a-z、下划线、逗号、箭头符号
     # TODO: support affine expression
@@ -45,58 +62,21 @@ def parse_einsum_str(
 
     # 第三步：拆分方程为输入和输出部分
     # 例如："ab,bc->ac" 分割为 "ab,bc" 和 "ac"
-    input_part: str
-    output_part: str
-    input_part, output_part = equation.split("->")
+    inputs_part: str
+    outputs_part: str
+    inputs_part, outputs_part = equation.split("->")
+    inputs = parse_subscripts_part(inputs_part)
+    outputs = parse_subscripts_part(outputs_part)
 
-    # 第四步：验证输出部分
-    # 输出部分不能为空，0维标量必须用'_'表示而不是留空
-    if not output_part:
-        raise ValueError("输出部分不能为空，0维张量请使用'_'表示")
-
-    # 第五步：验证操作数数量
-    # 通过计算逗号数量来判断输入操作数数量，最多支持两个操作数（一个逗号）
-    comma_count: int = input_part.count(",")
-    if comma_count > 1:
-        raise ValueError("只支持一个或两个操作数，发现多个逗号")
-
-    # 第六步：解析输入操作数下标
-    # 按逗号分割并转换为字符列表，例如："ab,bc" -> ['ab', 'bc']
-    input_subscripts = input_part.split(",")
-
-    # 第七步：验证每个操作数的下标
-    # 确保每个操作数都有下标，0维张量必须用'_'而不是空字符串
-    for i, subscripts in enumerate(input_subscripts):
-        if not subscripts:
-            raise ValueError(f"第{i+1}个操作数的下标不能为空，0维张量请使用'_'表示")
-
-    # ['ab', 'bc'] -> [['a', 'b'], ['b', 'c']]
-    inputs = []
-    for input_subscript in input_subscripts:
-        input_subscript_list = list(input_subscript)
-        for idx in input_subscript_list:
-            if idx == "_" and len(input_subscript_list) != 1:
-                raise ValueError(f"错误的输入{input_subscript}")
-        inputs.append(input_subscript_list)
-    # inputs = [list(input_subscript) for input_subscript in input_subscripts]
-
-    if "," in output_part:
-        raise ValueError(f'","不应该出现在输出字符串中')
-
-    # 第九步：处理输出下标
-    # 将输出部分转换为字符列表，例如： "ac" -> ['a','c']
-    outputs: List[str] = list(output_part)
-    for idx in outputs:
-        if idx == "_" and len(outputs) != 1:
-            raise ValueError(f"错误的输入{output_part}")
     # 第十步：验证输出下标合法性
     # 确保每个输出下标在输入中出现过（除了特殊的'_'标记）
     subscript_counts = []
     for input_subscript in inputs:
         subscript_counts += input_subscript
 
-    for subscript in outputs:
-        if subscript != "_" and subscript not in subscript_counts:
-            # 如果输出中有未在输入中出现过的下标，报错
-            raise ValueError(f"输出下标 '{subscript}' 未在任何输入操作数中出现")
+    for subscript_list in outputs:
+        for sp in subscript_list:
+            if sp != "_" and sp not in subscript_counts:
+                # 如果输出中有未在输入中出现过的下标，报错
+                raise ValueError(f"输出下标 '{sp}' 未在任何输入操作数中出现")
     return inputs, outputs

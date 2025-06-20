@@ -5,9 +5,12 @@ from Aipiler.primitive import (
     MapPrimitive,
     ReducePrimitive,
     UnaryPrimitive,
+    CascadePrimitive,
 )
 from Aipiler.visitor import MLIRCodeGenVisitor
 from Aipiler.dim import Dim, DisjointSetUnion
+
+EINSUM_ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
 
 class EinsumGraph:
@@ -22,8 +25,8 @@ class EinsumGraph:
         self.name = name
         self.outputs = list(outputs)
         self.inputs = list(inputs)
-        self.nodes: List[EinsumPrimitive] = []
-        self.sym_dim_set: DisjointSetUnion = DisjointSetUnion()
+        self.nodes: List[EinsumPrimitive]
+        self.sym_dim_set: DisjointSetUnion
 
     def update_nodes(self) -> "EinsumGraph":
         nodes: List[EinsumPrimitive] = []
@@ -32,34 +35,33 @@ class EinsumGraph:
             op = stack.pop()
             nodes.insert(0, op)
             for i in op.inputs:
+                if i in self.inputs:
+                    continue
                 if isinstance(i, FakeTensor):
-                    if i._trace and i not in self.inputs:
-                        stack.append(i._trace)
-                    else:
-                        if i not in self.inputs:
-                            self.inputs.append(i)
+                    assert i._trace is not None
+                    stack.append(i._trace)
                 else:
                     assert isinstance(i, FakeScalar)
-                    if i not in self.inputs:
-                        self.inputs.append(i)
+                    self.inputs.append(i)
 
         self.nodes = nodes
-        self.update_dim_value_set()
+        self.sym_dim_set = self.update_dim_value_set()
         return self
 
     def update_dim_value_set(self):
         """
         更新图中所有节点的维度值集合
         """
+        sym_dim_set = DisjointSetUnion()
         for node in self.nodes:
-            input_scripts = node.input_scripts
-            output_scripts = node.output_scripts
+            inputs_scripts = node.inputs_scripts
+            outputs_scripts = node.outputs_scripts
 
             input_tensors = node.inputs
-            output_tensor = node.output
+            output_tensor = node.outputs
 
             idx_dim_dict: Dict[str, List[Dim]] = {}
-            for input_script, input_tensor in zip(input_scripts, input_tensors):
+            for input_script, input_tensor in zip(inputs_scripts, input_tensors):
                 if not input_script:  # this input is scalar
                     continue
                 assert isinstance(input_tensor, FakeTensor)
@@ -70,75 +72,26 @@ class EinsumGraph:
                         idx_dim_dict[input_idx] = []
                     idx_dim_dict[input_idx].append(input_dim)
 
-            if output_scripts:
+            for output_script, output_tensor in zip(outputs_scripts, output_tensor):
                 assert isinstance(output_tensor, FakeTensor)
-                for output_script, output_dim in zip(
-                    output_scripts, output_tensor.symbolic_shapes
+                for output_idx, output_dim in zip(
+                    output_script, output_tensor.symbolic_shapes
                 ):
-                    if output_script not in idx_dim_dict:
-                        idx_dim_dict[output_script] = []
-                    idx_dim_dict[output_script].append(output_dim)
+                    if output_idx not in idx_dim_dict:
+                        idx_dim_dict[output_idx] = []
+                    idx_dim_dict[output_idx].append(output_dim)
 
             # 更新维度值集合
             for script, dim_list in idx_dim_dict.items():
-                self.sym_dim_set.union(*dim_list)
+                sym_dim_set.union(*dim_list)
 
-        for value_dim_set in self.sym_dim_set.get_all_value_dim_set():
+        for value_dim_set in sym_dim_set.get_all_value_dim_set():
             value_dim_set.populate_dim_size()
-
-    # def codegen(self):
-    #     """生成 MLIR 代码"""
-
-    #     # 遍历所有输入张量，生成对应的 MLIR Tensor
-    #     for input_tensor in self.inputs:
-    #         pass
-
-    #     with ir.InsertionPoint(self._module.body):
-    #         arguments = []
-    #         for inpur_tensor in self.inputs:
-    #             # TODO：暂时使用tensor的shape，后期再使用symbolic_shape
-    #             shape_list = list(inpur_tensor.shape)
-    #             mlir_dtype = DtypeMapper.to_mlir(input_tensor.dtype)
-    #             tensor_arg = ir.RankedTensorType.get(shape_list, mlir_dtype)
-    #             arguments.append(tensor_arg)
-
-    #         @func.FuncOp.from_py_func(*arguments, name=self._func_name)
-    #         def generated_func(*args):
-    #             # 建立输入参数的符号表
-    #             args_list = list(args)
-    #             for i, arg in enumerate(args_list):
-    #                 self._symbol_table[self.inputs[i]] = arg
-
-    #             # 遍历所有节点，生成对应的 MLIR 操作
-    #             for node in self.nodes:
-    #                 op_ret: ir.Operation | ir.Value | tuple | List | ir.OpResult = (
-    #                     node.accept(self.visitor)
-    #                 )
-
-    #                 if isinstance(op_ret, tuple | List):
-    #                     for i, operation in enumerate(op_ret):
-    #                         if isinstance(operation, ir.Operation) or isinstance(
-    #                             operation, ir.OpView
-    #                         ):
-    #                             self._symbol_table[node.output] = operation.result
-    #                         elif isinstance(operation, ir.OpResult):
-    #                             self._symbol_table[node.output] = operation
-    #                         else:
-    #                             raise NotImplementedError
-    #                 elif isinstance(op_ret, ir.OpResult):
-    #                     self._symbol_table[node.output] = op_ret
-    #                 else:
-    #                     for i, result in enumerate(op_ret.results):
-    #                         self._symbol_table[node.output] = result
-
-    #             # 获得函数的所有输出
-    #             outputs = (self._symbol_table.get(out) for out in self.outputs)
-    #             return outputs
-
-    #     print(self._module)
+        return sym_dim_set
 
     def __str__(self) -> str:
         tensors = []
+        cascade_docs = []
 
         def nameof(t):
             if isinstance(t, FakeScalar):
@@ -213,6 +166,18 @@ class EinsumGraph:
                 )
                 doc += "\t"
                 doc += prim_doc
+            elif isinstance(prim, CascadePrimitive):
+                for ret in prim.outputs:
+                    tensors.append(ret)
+                prim_doc = '{ret} = cascade{i}({inp}, "{einsum_str}")'.format(
+                    ret=", ".join([nameof(ret) for ret in prim.outputs]),
+                    i=len(cascade_docs),
+                    inp=", ".join([nameof(inp) for inp in prim.inputs]),
+                    einsum_str=prim.einsum_str,
+                )
+                cascade_docs.append(str(prim.graph))
+                doc += "\t"
+                doc += prim_doc
             else:
                 doc += "Unstringify Primitive: " + prim.__class__.__name__
             doc += "\n"
@@ -221,38 +186,65 @@ class EinsumGraph:
         doc += ", ".join(outputs)
         doc += "\n"
 
-        # 打印value并查集
-        doc += "\nSymbolic Dim Set(\n"
-        for value_dim_set in set(self.sym_dim_set.dim_set_dict.values()):
-            dim_name_list = []
-            for dim in value_dim_set.dim_set:
-                tensor_name = nameof(dim.fake_tensor)
-                dim_idx = dim.index_in_tensor
-                dim_name = f"{tensor_name}.dim{dim_idx}"
-                dim_name_list.append(dim_name)
-            doc += "\t({}),\n".format(", ".join(dim_name_list))
-        doc += ")\n"
+        # # 打印value并查集
+        # doc += "\nSymbolic Dim Set(\n"
+        # for value_dim_set in set(self.sym_dim_set.dim_set_dict.values()):
+        #     dim_name_list = []
+        #     for dim in value_dim_set.dim_set:
+        #         tensor_name = nameof(dim.fake_tensor)
+        #         dim_idx = dim.index_in_tensor
+        #         dim_name = f"{tensor_name}.dim{dim_idx}"
+        #         dim_name_list.append(dim_name)
+        #     doc += "\t({}),\n".format(", ".join(dim_name_list))
+        # doc += ")\n\n"
+
+        for i, c_doc in enumerate(cascade_docs):
+            doc += "cascade{}:\n".format(i)
+            doc += c_doc
         return doc
 
+    def summary_einsum_str(self):
+        """
+        summarize einsum str from graph
+        for example:
+            0: T = map(A, B, "ik, kj -> ikj", ...),
+            1: C = reduce(T, "ikj -> ij")
+        einsum of graph: "ik, kj -> ij"
+        """
+        from Aipiler.dim import ValueDimSet
 
-def trace_from(
-    outputs: List[FakeData],
-    inputs: List[FakeData],
-) -> EinsumGraph:
-    """
-    Trace Einsum Graph with `outputs` and `inputs`, tracing stops when `inputs` are attached
-    """
-    outputs = list(outputs)
-    inputs = list(inputs)
-    return EinsumGraph(outputs, inputs).update_nodes()
+        dim_map: Dict[ValueDimSet, str] = {}
+        dim_set_dict_set = set(self.sym_dim_set.dim_set_dict.values())
+        assert len(dim_set_dict_set) < len(EINSUM_ALPHABET)
+        for i, dim_set_dict in enumerate(dim_set_dict_set):
+            dim_map[dim_set_dict] = EINSUM_ALPHABET[i]
 
+        inp_strs = []
+        for inp in self.inputs:
+            inp_str = ""
+            if isinstance(inp, FakeScalar):
+                inp_str = "_"
+            else:
+                assert isinstance(inp, FakeTensor)
+                for d in inp.symbolic_shapes:
+                    dim_set_of_d = self.sym_dim_set.find(d)
+                    assert dim_set_of_d in dim_map
+                    inp_str += dim_map[dim_set_of_d]
+            inp_strs.append(inp_str)
 
-def einsum_str_from_graph(graph: EinsumGraph):
-    """
-    TODO: summarize einsum str from graph
-    for example:
-        0: T = map(A, B, "ik, kj -> ikj", ...),
-        1: C = reduce(T, "ikj -> ij")
-    einsum of graph: "ik, kj -> ij"
-    """
-    return ""
+        out_strs = []
+        for out in self.outputs:
+            out_str = ""
+            if isinstance(out, FakeScalar):
+                out_str = "_"
+            else:
+                assert isinstance(out, FakeTensor)
+                for d in out.symbolic_shapes:
+                    dim_set_of_d = self.sym_dim_set.find(d)
+                    assert dim_set_of_d in dim_map
+                    out_str += dim_map[dim_set_of_d]
+            out_strs.append(out_str)
+
+        return "{inputs_scripts}->{outputs_scripts}".format(
+            inputs_scripts=",".join(inp_strs), outputs_scripts=", ".join(out_strs)
+        )

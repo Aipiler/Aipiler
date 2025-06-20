@@ -1,4 +1,4 @@
-from Aipiler.dsl import map, reduce, unary, einsum_env, einsum
+from Aipiler.dsl import map, reduce, unary, einsum_env, einsum, cascade
 from Aipiler.tensor import FakeTensor, FakeScalar
 from Aipiler.dim import dim, dims
 from Aipiler.datatype import DataType, f32
@@ -19,38 +19,26 @@ def reduce_max(A: FakeTensor):
     return B
 
 
-@einsum
-def matmul(A: FakeTensor, B: FakeTensor):
+@cascade
+def matmul(A, B):
     C = map(A, B, "ik, kj -> ikj", ["k"], "*")
     D = reduce(C, "ikj -> ij", ["k"], "+")
-    E = reduce_max(D)
-    return E
+    return D
 
 
-# @einsum
-# def mean_keep_dim(A: FakeTensor, axis: int):
-#     dims_letters = "abcdefghijklmnopqrstuvwxyz"
-#     if len(A.symbolic_shapes) > len(dims_letters):
-#         raise ValueError("Dim of input is to LONG!")
-#     A_dim = len(A.symbolic_shapes)
-#     A_dim_letters = dims_letters[:A_dim]
-#     reduce_dim = A_dim_letters[axis]
-#     ret_dim_letters = A_dim_letters.replace(reduce_dim, "")
-
-#     t0 = reduce(
-#         A,
-#         f"{A_dim_letters} -> {ret_dim_letters}",
-#         target_dim=[reduce_dim],
-#         compute_op_str="+",
-#     )
-#     dim_size = FakeTensor
+@einsum
+def mm_max(A, B):
+    t0 = matmul(A, B)
+    t1 = reduce_max(t0)
+    return t1
 
 
 A = FakeTensor(dims(3, 4), f32)
 B = FakeTensor(dims(4, 5), f32)
-graph = einsum_env.compile(matmul, [A, B])
+graph = einsum_env.compile(mm_max, [A, B])
 print("Graph:")
 print(graph)
+exit(0)
 print("\n")
 exported = aot.export(graph)
 print("MLIR: \n")
