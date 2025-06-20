@@ -166,7 +166,7 @@ def from_torch(torch_tensor: torch.Tensor) -> Tensor:
 def from_torch_to_fake_tensor(torch_tensor: torch.Tensor) -> FakeTensor:
 
     return FakeTensor(
-        symbolic_shape=[Dim(torch_tensor.shape[i]) for i in range(torch_tensor.dim())],
+        symbolic_shapes=[Dim(torch_tensor.shape[i]) for i in range(torch_tensor.dim())],
         dtype=dtypes.f32,
         trace=None,
     )

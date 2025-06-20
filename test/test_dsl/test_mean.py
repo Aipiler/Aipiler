@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def mean(A: FakeTensor):
     t0 = reduce(A, "ij->i", "j", "+")
     dim = FakeScalar(
-        A.symbolic_shape[1],
+        A.symbolic_shapes[1],
         A.dtype,
     )
     t1 = map(t0, dim, "i, _ -> i", target_dim=["i"], compute_op_str="/")

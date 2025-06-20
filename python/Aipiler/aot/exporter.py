@@ -83,7 +83,8 @@ class ExportOutput:
                 "--iree-opt-level=O3",
             ],
             "cuda": [
-                "--iree-hal-target-device=cuda",
+                "--iree-hal-target-backends=cuda",
+                # "--iree-hal-target-device=cuda",
                 "--iree-cuda-target=rtx3090",
                 "--iree-opt-level=O3",
             ],

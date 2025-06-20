@@ -98,7 +98,7 @@ class Einsum_importer:
         recorded_dims: List[Dim] = []
         for t in self.symbol_table.keys():
             if isinstance(t, FakeTensor):
-                recorded_dims += t.symbolic_shape
+                recorded_dims += t.symbolic_shapes
         eq_dim: Dim
         for dim in recorded_dims:
             if self.graph.sym_dim_set.is_connected(d, dim):

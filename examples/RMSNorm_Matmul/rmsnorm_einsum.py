@@ -126,9 +126,9 @@ def do_bench(i: int, device: str = "host"):
     rms_weight = FakeTensor(dims(hidden_size), f32)
     mm_weight = FakeTensor(dims(hidden_size, j), f32)
 
-    # A = FakeTensor(dims("i", "hidden_size"), f32)
-    # rms_weight = FakeTensor(dims("hidden_size"), f32)
-    # mm_weight = FakeTensor(dims("hidden_size", "j"), f32)
+    A = FakeTensor(dims("i", "hidden_size"), f32)
+    rms_weight = FakeTensor(dims("hidden_size"), f32)
+    mm_weight = FakeTensor(dims("hidden_size", "j"), f32)
 
     compiled_binary = compile_module(
         rms_norm_mm,
@@ -161,14 +161,7 @@ def do_bench(i: int, device: str = "host"):
 
 if __name__ == "__main__":
     # i_list = (16, 32, 64, 128, 256, 512, 1024)
-    i_list = (
-        16,
-        32,
-        64,
-        128,
-        256,
-        512,
-    )
+    i_list = (16, 32, 64, 128, 256, 512, 1024)
     for i in i_list:
         print(f"i = {i}")
         do_bench(i, device="cuda")
