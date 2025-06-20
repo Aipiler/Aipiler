@@ -16,12 +16,12 @@ class EinsumGraph:
     def __init__(
         self,
         outputs: Sequence[FakeData],
-        inputs: Optional[Sequence[FakeData]] = None,
+        inputs: Sequence[FakeData],
         name: str = "main",
     ):
         self.name = name
         self.outputs = list(outputs)
-        self.inputs: Optional[List[FakeData]] = list(inputs) if inputs else []
+        self.inputs = list(inputs)
         self.nodes: List[EinsumPrimitive] = []
         self.sym_dim_set: DisjointSetUnion = DisjointSetUnion()
 
@@ -33,7 +33,7 @@ class EinsumGraph:
             nodes.insert(0, op)
             for i in op.inputs:
                 if isinstance(i, FakeTensor):
-                    if i._trace:
+                    if i._trace and i not in self.inputs:
                         stack.append(i._trace)
                     else:
                         if i not in self.inputs:
@@ -233,3 +233,26 @@ class EinsumGraph:
             doc += "\t({}),\n".format(", ".join(dim_name_list))
         doc += ")\n"
         return doc
+
+
+def trace_from(
+    outputs: List[FakeData],
+    inputs: List[FakeData],
+) -> EinsumGraph:
+    """
+    Trace Einsum Graph with `outputs` and `inputs`, tracing stops when `inputs` are attached
+    """
+    outputs = list(outputs)
+    inputs = list(inputs)
+    return EinsumGraph(outputs, inputs).update_nodes()
+
+
+def einsum_str_from_graph(graph: EinsumGraph):
+    """
+    TODO: summarize einsum str from graph
+    for example:
+        0: T = map(A, B, "ik, kj -> ikj", ...),
+        1: C = reduce(T, "ikj -> ij")
+    einsum of graph: "ik, kj -> ij"
+    """
+    return ""

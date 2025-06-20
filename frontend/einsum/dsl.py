@@ -576,8 +576,24 @@ def matmul(A: Tensor, B: Tensor) -> Tensor:
 matmul()
 2. analyze & fusion: some passes
 
+
+with cascade(A, B) as P:
+    X = map(A, B, "ik, kj -> ikj", ["k"], "*")
+    C = reduce(X, "ikj -> ij", ["k"], "+")
+    yield(C)
+
+C ...
+
 @einsum
 def matmul(A: Tensor, B: Tensor) -> Tensor:
+    @cascade
+    def mm(A, B):
+        t = map()
+        return reduce()
+    
+    return mm(A, B)
+    
+    
     C = einsum.cascade(A, B, ["i", "j", "k"]){
         X = map(A, B, "ik, kj -> ikj", ["k"], "*")
         C = reduce(X, "ikj -> ij", ["k"], "+")
