@@ -6,6 +6,7 @@ from Aipiler.primitive import (
     ReducePrimitive,
     PopulatePrimitive,
     UnaryPrimitive,
+    CascadePrimitive,
 )
 from Aipiler.tensor import Tensor
 from Aipiler import datatype as dtypes
@@ -147,4 +148,9 @@ class MLIRCodeGenVisitor:
 
     def visit_UnaryPrimitive(self, node: UnaryPrimitive) -> ir.Value:
         self.visited_nodes.append(node)
+        return node.output
+
+    def visit_CascadePrimitive(self, node: CascadePrimitive) -> ir.Value:
+        self.visited_nodes.append(node)
+
         return node.output

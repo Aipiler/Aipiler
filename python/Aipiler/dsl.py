@@ -54,7 +54,7 @@ def cascade(func: FunctionType):
                 (E)
                 |                                  (E)
             |map|      # map3                     |
-            /   \                             [cascade] ij,ij->ij
+            /   \                             [cascade] ij,ij,ij,ij->ij
         |map|   |map|  # map1  map2  ==>     /   | |   \  
         /   \   /  \                        /   |   |   \ 
         (C)   |map|  (D) # map0             (C)  (A) (B)  (D)
