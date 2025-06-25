@@ -54,7 +54,7 @@ def cascade(func: FunctionType):
                 (E)
                 |                                  (E)
             |map|      # map3                     |
-            /   \                             [cascade] ij,ij->ij
+            /   \                             [cascade] ij,ij,ij,ij->ij
         |map|   |map|  # map1  map2  ==>     /   | |   \  
         /   \   /  \                        /   |   |   \ 
         (C)   |map|  (D) # map0             (C)  (A) (B)  (D)
@@ -269,7 +269,8 @@ def compile_module(
 
     graph = einsum_env.compile(entry_point, example_args)
     exported = export(graph)
-
+    # print("MLIR:")
+    # exported.print_readable()
     if not save:
         return exported.compile(save_to=None, target_backend=target_backend)
     else:

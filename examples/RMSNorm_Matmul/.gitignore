@@ -1,3 +1,5 @@
 data/
 *vmfb
 benchmark_data/
+iree/
+dump/
