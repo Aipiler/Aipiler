@@ -52,6 +52,12 @@ class FakeTensor(FakeData):
         dim._idx_in_tensor = idx
         self.symbolic_shapes[idx] = dim
 
+    def dim(self):
+        """
+        Returns the number of dimensions of self tensor.
+        """
+        return len(self.symbolic_shapes)
+
 
 # TODO: data layout
 class Tensor:

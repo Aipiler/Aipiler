@@ -59,7 +59,6 @@ class MapPrimitive(EinsumPrimitive):
         lhs: FakeData,
         rhs: FakeData,
         einsum_str: str,
-        dims_to_map: Union[str, Sequence[str]],
         op: ComputeOperator,
     ) -> None:
         super().__init__([lhs, rhs], einsum_str)
@@ -67,9 +66,6 @@ class MapPrimitive(EinsumPrimitive):
         # init scripts
         assert len(self.inputs_scripts) == 2
         self.lhs_scripts, self.rhs_scripts = self.inputs_scripts
-        self.dims_to_map = (
-            [dims_to_map] if isinstance(dims_to_map, str) else list(dims_to_map)
-        )
         self.lhs = lhs
         self.rhs = rhs
         self.op = op
@@ -145,16 +141,18 @@ class EinsumBuilder:
         lhs: FakeData,
         rhs: FakeData,
         einsum_str: str,
-        dims_to_map: str,
         op: ComputeOperator,
     ) -> FakeData:
         assert lhs.dtype == rhs.dtype
-        m = MapPrimitive(lhs, rhs, einsum_str, dims_to_map, op)
+        m = MapPrimitive(lhs, rhs, einsum_str, op)
         return m.output
 
     @staticmethod
     def reduce(
-        x: FakeData, einsum_str: str, dim_to_reduce: str, op: ComputeOperator
+        x: FakeData,
+        einsum_str: str,
+        dim_to_reduce: Union[str, Sequence[str]],
+        op: ComputeOperator,
     ) -> FakeData:
         return ReducePrimitive(x, einsum_str, dim_to_reduce, op).output
 

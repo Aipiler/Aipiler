@@ -18,18 +18,15 @@ def map(
     A: FakeData,
     B: FakeData,
     einsum_str: str,
-    target_dim: list[str],
     compute_op_str: str,
 ) -> FakeData:
-    return EinsumBuilder.map(
-        A, B, einsum_str, target_dim, operator_registry.get(compute_op_str)
-    )
+    return EinsumBuilder.map(A, B, einsum_str, operator_registry.get(compute_op_str))
 
 
 def reduce(
     A: FakeData,
     einsum_str: str,
-    target_dim: list[str],
+    target_dim: Union[str, Sequence[str]],
     compute_op_str: str,
 ) -> FakeData:
     return EinsumBuilder.reduce(

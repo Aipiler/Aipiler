@@ -129,14 +129,11 @@ class EinsumGraph:
                 rhs = prim.inputs[1]
                 ret = prim.output
                 tensors.append(ret)
-                prim_doc = '{ret} = map({lhs}, {rhs}, "{einsum_str}", [{map_dims}], "{op}")'.format(
+                prim_doc = '{ret} = map({lhs}, {rhs}, "{einsum_str}", "{op}")'.format(
                     ret=nameof(ret),
                     lhs=nameof(lhs),
                     rhs=nameof(rhs),
                     einsum_str=prim.einsum_str,
-                    map_dims=", ".join(
-                        ['"{}"'.format(letter) for letter in prim.dims_to_map]
-                    ),
                     op=prim.op.name,
                 )
                 doc += "\t"
