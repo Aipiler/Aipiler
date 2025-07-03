@@ -4,6 +4,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 import os
 from torch.export import Dim, export
 import json
+import iree.runtime as rt
+from iree.turbine import aot
+import numpy as np
+from Aipiler.benchmark import BenchmarkConfig, BenchmarkResult, BenchmarkRunner
 
 
 def load_deepseek_model(local_model_path):
@@ -11,9 +15,10 @@ def load_deepseek_model(local_model_path):
     print("🚀 加载DeepSeek模型...")
 
     # 加载配置
-    config = AutoConfig.from_pretrained(local_model_path, local_files_only=True)
+    config = AutoConfig.from_pretrained(
+        local_model_path, local_files_only=True)
     print(f"模型配置: {config.model_type}")
-
+    
     # 加载tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
         local_model_path, local_files_only=True, trust_remote_code=True
@@ -22,10 +27,10 @@ def load_deepseek_model(local_model_path):
     # 加载模型
     model = AutoModelForCausalLM.from_pretrained(
         local_model_path,
-        torch_dtype=torch.float32,  # torch.export需要float32
         local_files_only=True,
-        device_map="cpu",  # torch.export需要在CPU上
         trust_remote_code=True,
+        attn_implementation="eager",
+        torch_dtype=torch.bfloat16   # 在这里指定权重数据类型为bfloat16
     )
 
     # 设置为评估模式
@@ -34,6 +39,7 @@ def load_deepseek_model(local_model_path):
     print(f"✅ 模型加载完成")
     print(f"   - 模型类型: {type(model).__name__}")
     print(f"   - 参数量: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"   - 参数类型: {model.parameters().__next__().dtype}")
     print(f"   - 词汇表大小: {tokenizer.vocab_size}")
 
     return model, tokenizer, config
@@ -58,8 +64,10 @@ def create_example_inputs(tokenizer, config, batch_size=1, seq_length=32):
     attention_mask = encoded.get("attention_mask", None)
 
     print(f"   - input_ids形状: {input_ids.shape}")
+    print(f"   - input_ids dtype: {input_ids.dtype}")
     if attention_mask is not None:
         print(f"   - attention_mask形状: {attention_mask.shape}")
+        print(f"   - attention_mask形状: {attention_mask.dtype}")
     print(f"   - 示例文本: {sample_text}")
 
     return input_ids, attention_mask
@@ -76,7 +84,8 @@ def export_model_with_torch_export(
         print("   - 测试前向传播...")
         with torch.no_grad():
             if attention_mask is not None:
-                output = model(input_ids=input_ids, attention_mask=attention_mask)
+                output = model(input_ids=input_ids,
+                               attention_mask=attention_mask)
                 print(f"   - 输出logits形状: {output.logits.shape}")
             else:
                 output = model(input_ids=input_ids)
@@ -264,7 +273,7 @@ def save_export_analysis(exported_program, output_dir="./export_analysis"):
 
 def main():
     """主函数"""
-    local_model_path = "/home/gaoshihao/project/DeepSeek-R1-Distill-Qwen-1.5B"
+    local_model_path = "/home/gsh/DeepSeek-R1-Distill-Qwen-1.5B"
 
     try:
         # 1. 加载模型
@@ -274,6 +283,32 @@ def main():
         input_ids, attention_mask = create_example_inputs(
             tokenizer, config, batch_size=1, seq_length=32  # 较小的序列长度
         )
+
+        # target_backend = "cuda"
+        # device = "cuda"
+
+        # example_args = (input_ids, attention_mask)
+        # exported = aot.export(model, args=example_args)
+        # # exported.print_readable()
+        # compiled_binary = exported.compile(
+        #     save_to=None, target_backends=target_backend)
+
+        # config = rt.Config(device)
+        # vm_module = rt.VmModule.copy_buffer(
+        #     config.vm_instance, compiled_binary.map_memory()
+        # )
+
+        # inputs = [input_ids.numpy(), attention_mask.numpy()]
+        # benchmark_config = BenchmarkConfig(num_runs=10)
+        # benchmarker = BenchmarkRunner(benchmark_config)
+        # result = benchmarker.run_benchmark(
+        #     vm_module,
+        #     "main",
+        #     inputs,
+        #     f"main",
+        #     device=device,
+        # )
+        # benchmarker.print_result_simple(result)
 
         # 3. 使用torch.export导出模型
         exported_program = export_model_with_torch_export(

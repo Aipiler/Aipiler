@@ -8,7 +8,7 @@ setup(
     packages=find_packages(where="python"),  # 自动发现python目录下的包
     python_requires=">=3.12.8",  # 指定Python版本要求
     install_requires=[
-        "torch==2.7.0",
+        # "torch==2.7.0",
         "numpy"
     ],
     entry_points={
