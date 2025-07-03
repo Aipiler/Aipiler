@@ -52,7 +52,7 @@ class FakeTensor(FakeData):
         dim._idx_in_tensor = idx
         self.symbolic_shapes[idx] = dim
 
-    def dim(self):
+    def dims(self):
         """
         Returns the number of dimensions of self tensor.
         """
@@ -60,7 +60,7 @@ class FakeTensor(FakeData):
 
 
 class Parameter(FakeTensor):
-    def __init__(self, shape: Sequence[Dim], dtype: DataType, storage: torch.Tensor):
+    def __init__(self, shape: Sequence[Dim], dtype: DataType = dtypes.float32, storage: torch.Tensor = None):
         for d in shape:
             if d.is_dynamic:
                 raise ValueError("Shape of FakeParameter can't be dynamic.")
