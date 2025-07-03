@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional, Set, Tuple, Union, Type, Sequence
-from Aipiler.tensor import FakeTensor, FakeScalar, FakeData
+from Aipiler.tensor import FakeTensor, FakeScalar, FakeData, Parameter
 from Aipiler.primitive import (
     EinsumPrimitive,
     MapPrimitive,
@@ -38,8 +38,11 @@ class EinsumGraph:
                 if i in self.inputs:
                     continue
                 if isinstance(i, FakeTensor):
-                    assert i._trace is not None
-                    stack.append(i._trace)
+                    if isinstance(i, Parameter) and i not in self.inputs:
+                        self.inputs.append(i)
+                    else:
+                        assert i._trace is not None
+                        stack.append(i._trace)
                 else:
                     assert isinstance(i, FakeScalar)
                     self.inputs.append(i)

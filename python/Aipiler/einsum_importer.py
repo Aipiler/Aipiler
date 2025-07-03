@@ -207,8 +207,8 @@ class Einsum_importer:
         if all(isinstance(inp, FakeTensor) for inp in node.inputs):
             # 从符号表中找到输入张量的value
             input_tensors = node.inputs
-            first_value = self.symbol_table[input_tensors[0]]
-            second_value = self.symbol_table[input_tensors[1]]
+            first_value = self._get_mlir_value(input_tensors[0])
+            second_value = self._get_mlir_value(input_tensors[1])
             if first_value is None or second_value is None:
                 raise ValueError(
                     f"Input tensor {input_tensors[0]} or {input_tensors[1]} not found in symbol table."
@@ -236,8 +236,8 @@ class Einsum_importer:
             else:
                 _scalar, _tensor = node.rhs, node.lhs
 
-            _tensor_mlir_val = self.symbol_table[_tensor]
-            _scalar_mlir_value = self.symbol_table[_scalar]
+            _tensor_mlir_val = self._get_mlir_value(input_tensors[0])
+            _scalar_mlir_value = self._get_mlir_value(_scalar)
 
             # create init empty tensor from output tensor
             init_result = self.init_empty_tensor(node.output)
@@ -254,7 +254,7 @@ class Einsum_importer:
 
         # 从符号表中找到输入张量的value
         input_tensors = node.inputs
-        input_value = self.symbol_table[input_tensors[0]]
+        input_value = self._get_mlir_value(input_tensors[0])
         if input_value is None:
             raise ValueError(
                 f"Input tensor {input_tensors[0]} not found in symbol table."
@@ -309,7 +309,7 @@ class Einsum_importer:
 
         # 从符号表中找到输入张量的value
         input_tensors = node.inputs
-        input_val = self.symbol_table[input_tensors[0]]
+        input_val = self._get_mlir_value(input_tensors[0])
         if input_val is None:
             raise ValueError(
                 f"Input tensor {input_tensors[0]} not found in symbol table."
@@ -339,6 +339,14 @@ class Einsum_importer:
         self.visited_nodes.append(node)
         return node.output
 
+    def _get_mlir_value(self, tensor: FakeTensor):
+        if tensor in self.symbol_table:
+            return self.symbol_table[tensor]
+        assert isinstance(tensor, Parameter), f"Can not find {tensor}."
+        mlir_value = self._lift_tensor_to_global(tensor)
+        self.symbol_table[tensor] = mlir_value
+        return mlir_value
+    
     def _lift_tensor_to_global(self, literal: Parameter) -> ir.Value:
         """lift tensor to module attribute and global declare
         Args:
@@ -515,9 +523,9 @@ class Einsum_importer:
                         self.symbol_table[scalar] = scalar_mlir_value
 
                     # for parameters
-                    for param in param_args:
-                        param_mlir_value = self._lift_tensor_to_global(param)
-                        self.symbol_table[param] = param_mlir_value 
+                    # for param in param_args:
+                    #     param_mlir_value = self._lift_tensor_to_global(param)
+                    #     self.symbol_table[param] = param_mlir_value 
 
                     # 遍历所有节点，生成对应的 MLIR 操作
                     for node in graph.nodes:

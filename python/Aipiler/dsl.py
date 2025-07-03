@@ -269,6 +269,7 @@ def compile_module(
 
     graph = einsum_env.compile(entry_point, example_args)
     exported = export(graph)
+    print(graph)
     print("MLIR:")
     exported.print_readable()
     if not save:
