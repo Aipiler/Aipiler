@@ -753,7 +753,6 @@ class CompiledModule(metaclass=CompiledModuleMeta):
 
         if not context:
             context = Context()
-
         if not module_op:
             with context:
                 loc = Location.unknown(context=context)

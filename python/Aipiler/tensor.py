@@ -59,6 +59,29 @@ class FakeTensor(FakeData):
         return len(self.symbolic_shapes)
 
 
+class Parameter(FakeTensor):
+    def __init__(self, shape: Sequence[Dim], dtype: DataType, storage: torch.Tensor):
+        for d in shape:
+            if d.is_dynamic:
+                raise ValueError("Shape of FakeParameter can't be dynamic.")
+        super().__init__(shape, dtype, trace=None)
+        # self._device = None
+        self._storage = storage
+    
+    @property
+    def shape(self):
+        return self.symbolic_shapes
+
+    @property
+    def numeric_shape(self):
+        s = [shape.size for shape in self.symbolic_shapes]
+        return s
+
+    @property
+    def storage(self):
+        return self._storage
+
+
 # TODO: data layout
 class Tensor:
     def __init__(
@@ -170,11 +193,17 @@ def from_torch(torch_tensor: torch.Tensor) -> Tensor:
 
 
 def from_torch_to_fake_tensor(torch_tensor: torch.Tensor) -> FakeTensor:
-
     return FakeTensor(
         symbolic_shapes=[Dim(torch_tensor.shape[i]) for i in range(torch_tensor.dim())],
         dtype=dtypes.f32,
         trace=None,
+    )
+
+def from_torch_to_parameter(torch_tensor: torch.Tensor) -> Parameter:
+    return Parameter(
+        shape=[Dim(torch_tensor.shape[i]) for i in range(torch_tensor.dim())],
+        dtype=dtypes.f32, # TODO
+        storage=torch_tensor
     )
 
 

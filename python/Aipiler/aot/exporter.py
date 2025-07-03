@@ -63,12 +63,12 @@ class ExportOutput:
         compiled_module: CompiledModule,
         *,
         importer_uses_session: bool = False,
+        context = None
     ):
         self.session = session
         self.session.set_flags("--iree-input-type=auto")
         self.compiled_module = compiled_module
         self._importer_uses_session = importer_uses_session
-
         self.BACKEND_FLAGS = {
             "host": [
                 "--iree-hal-target-backends=llvm-cpu",
@@ -89,7 +89,11 @@ class ExportOutput:
                 "--iree-opt-level=O3",
             ],
         }
+        self._mlir_context = context
 
+    def mlir_context(self):
+        return self._mlir_context 
+    
     @property
     def mlir_module(self) -> Operation:
         """Gets the MLIR module resulting from the last compilation phase."""
@@ -430,4 +434,4 @@ def export(
         context = Context()
 
     cm = TransformedModule(context=context, import_to="import")
-    return ExportOutput(session, cm, importer_uses_session=importer_uses_session)
+    return ExportOutput(session, cm, importer_uses_session=importer_uses_session, context=context)

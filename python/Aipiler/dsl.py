@@ -269,10 +269,13 @@ def compile_module(
 
     graph = einsum_env.compile(entry_point, example_args)
     exported = export(graph)
-    # print("MLIR:")
-    # exported.print_readable()
+    print("MLIR:")
+    exported.print_readable()
     if not save:
-        return exported.compile(save_to=None, target_backend=target_backend)
+        tmp = exported.compile(save_to=None, target_backend=target_backend)
+        ctx = exported.mlir_context()
+        del ctx
+        return tmp 
     else:
         save_dir = f"einsum_{prefix}_vmfb"
         os.makedirs(save_dir, exist_ok=True)
@@ -280,4 +283,6 @@ def compile_module(
             save_dir, f"{entry_point.__name__}_{prefix}_{target_backend}.vmfb"
         )
         exported.compile(save_to=module_filepath, target_backend=target_backend)
+        ctx = exported.mlir_context()
+        del ctx
         return None

@@ -48,7 +48,7 @@ from Aipiler.primitive import (
     PopulatePrimitive,
     UnaryPrimitive,
 )
-from Aipiler.tensor import Tensor, FakeData, FakeTensor, FakeScalar
+from Aipiler.tensor import Tensor, FakeData, FakeTensor, FakeScalar, Parameter
 from Aipiler import datatype as dtypes
 from iree.compiler import ir
 from Aipiler.lang import *
@@ -61,6 +61,9 @@ from Aipiler.graph import EinsumGraph
 from Aipiler.basic_operator import operator_registry
 from Aipiler.dim import Dim
 
+from Aipiler.support.ir_imports import util_d
+
+import numpy as np
 
 class Einsum_importer:
 
@@ -69,8 +72,11 @@ class Einsum_importer:
         module_builder: ModuleBuilder,
     ) -> None:
         self.visited_nodes: List[EinsumPrimitive] = []
+        self.parameter_table: Dict[str, Parameter] = {}
         self.symbol_table: Dict[FakeData, ir.Value] = {}
         self.module_builder: ModuleBuilder = module_builder
+        self.module_op: builtin.ModuleOp = module_builder.module_op
+        
 
         self._AIPILER_TO_MLIR: Dict[dtypes.DataType, Callable[[], IrType]] = {
             dtypes.f32: lambda: F32Type.get(),
@@ -333,6 +339,39 @@ class Einsum_importer:
         self.visited_nodes.append(node)
         return node.output
 
+    def _lift_tensor_to_global(self, literal: Parameter) -> ir.Value:
+        """lift tensor to module attribute and global declare
+        Args:
+            literal (Parameter): _tensor literal_
+
+        Returns:
+            ir.Value: _global operation_
+        """
+        name = "parameter_{}".format(len(self.parameter_table))
+        self.parameter_table[name] = literal
+        with InsertionPoint.at_block_begin(self.module_op.regions[0].blocks[0]), Location.unknown():
+            element_type = self.from_dtype(literal.dtype)
+            tensor_type = RankedTensorType.get(literal.numeric_shape, element_type)
+            ir_attrs = {
+                "sym_name": StringAttr.get(name),
+                "sym_visibility": StringAttr.get("private"),
+                "type": ir.TypeAttr.get(tensor_type),
+                "noinline": UnitAttr.get(),
+                # TODO: "device": 
+            }
+            
+            detached_tensor = literal.storage.detach().contiguous().cpu().numpy()
+            content = memoryview(detached_tensor)
+            elements_attr = DenseResourceElementsAttr.get_from_buffer(
+                       content , name, tensor_type
+                    )
+            ir_attrs["initial_value"] = elements_attr
+            Operation.create("util.global", attributes=ir_attrs)
+        loaded_value = util_d.GlobalLoadOp(
+            tensor_type, name
+        ).result
+        return loaded_value
+
     def import_program(
         self,
         graph: EinsumGraph,
@@ -345,36 +384,45 @@ class Einsum_importer:
         with self.module_builder.context as ctx, Location.unknown():
             with self.module_builder.ip:
                 # get function input types
-                function_argument_types = []
-                tensor_args: List[FakeTensor] = []
+                input_tensor_args: List[FakeTensor] = []
                 scalar_args: List[FakeScalar] = []
+                param_args : List[Parameter] = []
+                # collect from args
                 for input_tensor in graph.inputs:
                     if isinstance(input_tensor, FakeTensor):
-                        shape_list = []
-                        for d in input_tensor.symbolic_shapes:
-                            if d.is_dynamic:
-                                # kdynamic if dim is dynamic
-                                shape = ShapedType.get_dynamic_size()
-                            else:
-                                shape = d.size
-                            shape_list.append(shape)
-                        mlir_dtype = self.from_dtype(input_tensor.dtype)
-                        tensor_arg_type = RankedTensorType.get(shape_list, mlir_dtype)
-                        function_argument_types.append(tensor_arg_type)
-                        tensor_args.append(input_tensor)
+                        if isinstance(input_tensor, Parameter):
+                            param_args.append(input_tensor)
+                        else:
+                            input_tensor_args.append(input_tensor)
                     else:
                         # scalar are not argument of function
                         assert isinstance(input_tensor, FakeScalar)
                         scalar_args.append(input_tensor)
 
+                # get function argument types
+                function_argument_types = []
+                for input_tensor in input_tensor_args:
+                    shape_list = []
+                    for d in input_tensor.symbolic_shapes:
+                        if d.is_dynamic:
+                            # kdynamic if dim is dynamic
+                            shape = ShapedType.get_dynamic_size()
+                        else:
+                            shape = d.size
+                        shape_list.append(shape)
+                    mlir_dtype = self.from_dtype(input_tensor.dtype)
+                    tensor_arg_type = RankedTensorType.get(shape_list, mlir_dtype)
+                    function_argument_types.append(tensor_arg_type)
+
                 @func.FuncOp.from_py_func(*function_argument_types, name=func_name)
                 def generated_func(*args):
-                    # 建立输入参数的符号表
-                    # for tensors
+                    # initialize symbol table
+                    # function input tensors
                     args_list = list(args)
-                    for i, arg in enumerate(args_list):
+                    assert len(args_list) == len(input_tensor_args)
+                    for input_tensor, arg in zip(input_tensor_args, args_list):
                         # function input arg --> mlir value
-                        self.symbol_table[graph.inputs[i]] = arg
+                        self.symbol_table[input_tensor] = arg
 
                     # for scalars
                     # init scalars at first of all
@@ -389,7 +437,7 @@ class Einsum_importer:
                                 _eq_tensor = scalar.sym_val._fake_tensor
                             else:
                                 # get equivalent dim from disjoint set
-                                for input_tensor in tensor_args:
+                                for input_tensor in input_tensor_args:
                                     for dim in input_tensor.symbolic_shapes:
                                         if graph.sym_dim_set.is_connected(
                                             scalar.sym_val, dim
@@ -465,6 +513,11 @@ class Einsum_importer:
                             )
                         # insert into symbol table
                         self.symbol_table[scalar] = scalar_mlir_value
+
+                    # for parameters
+                    for param in param_args:
+                        param_mlir_value = self._lift_tensor_to_global(param)
+                        self.symbol_table[param] = param_mlir_value 
 
                     # 遍历所有节点，生成对应的 MLIR 操作
                     for node in graph.nodes:
