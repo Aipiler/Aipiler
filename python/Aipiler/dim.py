@@ -44,6 +44,9 @@ class Dim:
         """
         return self._size
 
+    def __repr__(self):
+        return f"dim({self.size})"
+
 
 def dim(size: int | str) -> Dim:
     assert isinstance(size, (int, str))

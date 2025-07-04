@@ -50,6 +50,9 @@ class DimAxisRelation:
         else:
             raise KeyError(f"KeyError: {key}")
 
+    def __repr__(self):
+        return f"{self._dim_to_axis}"
+
 
 class AxisAxisRelation:
     class RelationShip(Enum):
@@ -341,147 +344,68 @@ class EinsumPrimitive(ABC):
     def __init__(self, inputs: List[FakeData], einsum_str: str) -> None:
         self.inputs = inputs
         self.einsum_str = einsum_str
-        self.axes_relations = parse_einsum_str(einsum_str)
-
-        self.dim_axis_relations = DimAxisRelation()
-
-        # TODO: use relation instead of script string
-        self.inputs_scripts, self.outputs_scripts = self.parse_einsum_str(
-            self.einsum_str
-        )
-        # update scripts
-        for scripts in (*self.inputs_scripts, *self.outputs_scripts):
-            if scripts[0] == "_" and len(scripts) == 1:
-                scripts.clear()
-        # iter scripts
-        _ = []
-        for sp in (*self.inputs_scripts, *self.outputs_scripts):
-            _ += sp
-        self.iteration_scripts = set(_)
-        # outputs
+        self.axes_relations: AxisAxisRelation = parse_einsum_str(einsum_str)
         self.outputs = self.run()
 
-    def _run(self):
+        self.dim_axis_relations = DimAxisRelation()
+        # update dim_axis_relations
+        self.inputs_axes = self.axes_relations.inputs_axes
+        self.outputs_axes = self.axes_relations.outputs_axes
+        for axes, io_tensor in zip(
+            (*self.inputs_axes, *self.outputs_axes), (*self.inputs, *self.outputs)
+        ):
+            io_tensor: FakeTensor
+            for axis, dim in zip(axes, io_tensor.symbolic_shapes):
+                self.dim_axis_relations.insert(dim, axis)
+
+        self.iteration_scripts = self._get_iterspace()
+
+    def _get_iterspace(self) -> Set[Axis]:
+        """Give an example of iterspace
+        a(bc) -> abc ==> iterspace: Axis("a"), Axis("b"), Axis("c")
+        Returns:
+            Set[Axis]: example axes to iterate
+        """
+        valide_axes = [
+            axis
+            for axis in (
+                *self.axes_relations.all_input_axes,
+                *self.axes_relations.all_output_axes,
+            )
+            if not axis.is_combined or not axis.is_scalar
+        ]
+        iter_axis_name = set()
+        iter_space = set()
+        for axis in valide_axes:
+            if axis.name in iter_axis_name:
+                continue
+            else:
+                iter_axis_name.add(axis.name)
+                iter_space.add(axis)
+        return iter_space
+
+    def run(self):
         dtype = self.inputs[0].dtype
         outputs_axes = self.axes_relations.outputs_axes
         rets = []
         for output_axes in outputs_axes:
+            axes_names = [axis.name for axis in output_axes]
             ret = FakeTensor(
-                symbolic_shapes=dims((axis.name for axis in output_axes)),
+                symbolic_shapes=dims(axes_names),
                 dtype=dtype,
                 trace=self,
             )
             rets.append(ret)
         return rets
 
-    def run(self):
-        """
-        check inputs and einsum, generate symbolic outputs
-        """
-        # TODO: dtypes of outputs
-        dtype = self.inputs[0].dtype
-        ret = []
-        for output_scripts in self.outputs_scripts:
-            ret.append(
-                FakeTensor(
-                    symbolic_shapes=dims(output_scripts), dtype=dtype, trace=self
-                )
-            )
-        return ret
-
-    def accept(self, visitor) -> None:
-        """
-        Accept a visitor for the visitor pattern.
-        This method should be implemented by subclasses.
-        """
-        cls_name = self.__class__.__name__
-        mth = getattr(visitor, f"visit_{cls_name}", None)
-        if mth is None:
-            raise RuntimeError("Expected visitor has function:  `{}`".format(cls_name))
-        return mth(self)
-
-    def parse_einsum_str(
-        self,
-        equation: str,
-    ) -> Tuple[List[List[str]], List[List[str]]]:
-        """
-        解析einsum方程字符串，遵循严格的格式要求
-
-        规则:
-        1. 只支持一个或两个操作数（最多一个逗号）
-        2. 必须有箭头'->'表示输出
-        3. 如果是0维张量，必须用'_'表示，不允许空着不写
-        4. 禁止省略号'...'
-        5. 只接受小写字母和下划线作为下标
-
-        Args:
-            equation (str): 符合上述规则的einsum方程字符串
-
-        Returns:
-            Tuple[List[List[str]], List[List[str]]]: 二元组，包含:
-                - input_subscripts:  每个输入操作数的下标列表
-                - output_subscripts: 每个输出的下标列表
-        """
-
-        def parse_subscripts_part(part: str):
-            # "ab,bc" -> ['ab', 'bc']
-            part_subscripts = part.split(",")
-            # 确保每个操作数都有下标，0维张量必须用'_'而不是空字符串
-            for i, subscripts in enumerate(part_subscripts):
-                if not subscripts:
-                    raise ValueError(
-                        f"第{i+1}个操作数的下标不能为空，0维张量请使用'_'表示"
-                    )
-
-            # ['ab', 'bc'] -> [['a', 'b'], ['b', 'c']]
-            rets = []
-            for part_subscript in part_subscripts:
-                part_subscript_list = list(part_subscript)
-                for idx in part_subscript_list:
-                    if idx == "_" and len(part_subscript_list) != 1:
-                        raise ValueError(f"错误的输入{part_subscript}")
-                rets.append(part_subscript_list)
-            return rets
-
-        # 第一步：字符合法性检查
-        # 创建包含所有允许字符的集合：小写字母a-z、下划线、逗号、箭头符号
-        # TODO: support affine expression
-        equation = equation.replace(" ", "")
-        allowed_chars: Set[str] = set("abcdefghijklmnopqrstuvwxyz_,->")
-
-        # 遍历方程中的每个字符，确保都在允许列表中
-        for char in equation:
-            if char not in allowed_chars:
-                # 如果发现非法字符，抛出异常并指明是哪个字符
-                raise ValueError(
-                    f"Einsum方程只能包含小写字母、下划线和方程结构符号，发现非法字符: '{char}'"
-                )
-
-        # 第二步：检查方程格式 - 必须有箭头
-        # 箭头'->'是强制性的，用于分隔输入和输出部分
-        if "->" not in equation:
-            raise ValueError("Einsum方程必须包含箭头'->'来明确指定输出")
-
-        # 第三步：拆分方程为输入和输出部分
-        # 例如："ab,bc->ac" 分割为 "ab,bc" 和 "ac"
-        inputs_part: str
-        outputs_part: str
-        inputs_part, outputs_part = equation.split("->")
-        inputs = parse_subscripts_part(inputs_part)
-        outputs = parse_subscripts_part(outputs_part)
-
-        # 第十步：验证输出下标合法性
-        # 确保每个输出下标在输入中出现过（除了特殊的'_'标记）
-        subscript_counts = []
-        for input_subscript in inputs:
-            subscript_counts += input_subscript
-
-        for subscript_list in outputs:
-            for sp in subscript_list:
-                if sp != "_" and sp not in subscript_counts:
-                    # 如果输出中有未在输入中出现过的下标，报错
-                    raise ValueError(f"输出下标 '{sp}' 未在任何输入操作数中出现")
-        return inputs, outputs
+    def __repr__(self):
+        return "inputs = \t\t{}\n\noutputs = \t\t{}\n\neinsum_str = \t\t{}\n\ndim_axis_relations = \t{}\n\naxes_relations = \t\n{}\n".format(
+            self.inputs,
+            self.outputs,
+            self.einsum_str,
+            self.dim_axis_relations,
+            self.axes_relations,
+        )
 
 
 class MapPrimitive(EinsumPrimitive):
@@ -495,13 +419,13 @@ class MapPrimitive(EinsumPrimitive):
         super().__init__([lhs, rhs], einsum_str)
 
         # init scripts
-        assert len(self.inputs_scripts) == 2
-        self.lhs_scripts, self.rhs_scripts = self.inputs_scripts
+        assert len(self.inputs_axes) == 2
+        self.lhs_axes, self.rhs_axes = self.inputs_axes
         self.lhs = lhs
         self.rhs = rhs
         self.op = op
         self.output = self.outputs[0]
-        self.output_scripts = self.outputs_scripts[0]
+        self.output_axes = self.outputs_axes[0]
 
 
 class ReducePrimitive(EinsumPrimitive):
@@ -514,8 +438,8 @@ class ReducePrimitive(EinsumPrimitive):
         op: ComputeOperator,
     ) -> None:
         super().__init__([x], einsum_str)
-        assert len(self.inputs_scripts) == 1
-        self.x_scripts = self.inputs_scripts[0]  # only one input
+        assert len(self.inputs_axes) == 1
+        self.x_axes = self.inputs_axes[0]  # only one input
 
         self.dims_to_reduce = (
             [dims_to_reduce]
@@ -523,10 +447,9 @@ class ReducePrimitive(EinsumPrimitive):
             else list(dims_to_reduce)
         )
 
-        # 自己组合出ReduceFu
         self.op = op
         self.output = self.outputs[0]
-        self.output_scripts = self.outputs_scripts[0]
+        self.output_axes = self.outputs_axes[0]
 
 
 class UnaryPrimitive(EinsumPrimitive):
@@ -534,11 +457,11 @@ class UnaryPrimitive(EinsumPrimitive):
     def __init__(self, x: FakeData, einsum_str: str, op: ComputeOperator):
         super().__init__(inputs=[x], einsum_str=einsum_str)
         self.x = x
-        assert len(self.inputs_scripts) == 1
-        self.x_scripts = self.inputs_scripts[0]  # only one input
+        assert len(self.inputs_axes) == 1
+        self.x_axes = self.inputs_axes[0]  # only one input
         self.op = op
         self.output = self.outputs[0]
-        self.output_scripts = self.outputs_scripts[0]
+        self.output_axes = self.inputs_axes[0]
 
 
 class CascadePrimitive(EinsumPrimitive):
@@ -554,81 +477,13 @@ class CascadePrimitive(EinsumPrimitive):
         self.graph: EinsumGraph = graph
 
 
-class RearrangePrimitive(EinsumPrimitive):
-    def __init__(self, inputs, einsum_str, **axes_length):
-        super().__init__(inputs, einsum_str)
-        self.input = self.inputs[0]
-        self.inputs_script = self.inputs_scripts[0]
-        self.outputs_script = self.outputs_scripts[0]
-        self.axes_length: Dict[str, int] = axes_length
-
-    def parse_einsum_str(self, equation: str):
-        def parse_subscripts_part(part: str):
-            # "ab,bc" -> ['ab', 'bc']
-            part_subscripts = part.split(",")
-            # 确保每个操作数都有下标，0维张量必须用'_'而不是空字符串
-            for i, subscripts in enumerate(part_subscripts):
-                if not subscripts:
-                    raise ValueError(
-                        f"第{i+1}个操作数的下标不能为空，0维张量请使用'_'表示"
-                    )
-
-            # ['ab', 'bc'] -> [['a', 'b'], ['b', 'c']]
-            rets = []
-            for part_subscript in part_subscripts:
-                part_subscript_list = list(part_subscript)
-                for idx in part_subscript_list:
-                    if idx == "_" and len(part_subscript_list) != 1:
-                        raise ValueError(f"错误的输入{part_subscript}")
-                rets.append(part_subscript_list)
-            return rets
-
-        # 第一步：字符合法性检查
-        # 创建包含所有允许字符的集合：小写字母a-z、下划线、逗号、箭头符号
-        # TODO: support affine expression
-        equation = equation.replace(" ", "")
-        allowed_chars: Set[str] = set("abcdefghijklmnopqrstuvwxyz()->")
-
-        # 遍历方程中的每个字符，确保都在允许列表中
-        for char in equation:
-            if char not in allowed_chars:
-                # 如果发现非法字符，抛出异常并指明是哪个字符
-                raise ValueError(
-                    f"Einsum方程只能包含小写字母、下划线和方程结构符号，发现非法字符: '{char}'"
-                )
-
-        # 第二步：检查方程格式 - 必须有箭头
-        # 箭头'->'是强制性的，用于分隔输入和输出部分
-        if "->" not in equation:
-            raise ValueError("Einsum方程必须包含箭头'->'来明确指定输出")
-
-        # 第三步：拆分方程为输入和输出部分
-        # 例如："ab,bc->ac" 分割为 "ab,bc" 和 "ac"
-        input_part: str
-        output_part: str
-        input_part, output_part = equation.split("->")
-        input_ = parse_subscripts_part(input_part)
-        output_ = parse_subscripts_part(output_part)
-
-        # 第十步：验证输出下标合法性
-        # 确保每个输出下标在输入中出现过（除了特殊的'_'标记）
-        subscript_counts = []
-        for input_subscript in input_:
-            subscript_counts += input_subscript
-
-        for subscript_list in output_:
-            for sp in subscript_list:
-                if sp != "_" and sp not in subscript_counts:
-                    # 如果输出中有未在输入中出现过的下标，报错
-                    raise ValueError(f"输出下标 '{sp}' 未在任何输入操作数中出现")
-        return input_, output_
-
-
-class PopulatePrimitive(EinsumPrimitive):
-
-    def __init__(self):
-        super().__init__(inputs=[], einsum_str="")
-        pass
+# class RearrangePrimitive(EinsumPrimitive):
+#     def __init__(self, inputs, einsum_str, **axes_length):
+#         super().__init__(inputs, einsum_str)
+#         self.input = self.inputs[0]
+#         self.inputs_script = self.inputs_scripts[0]
+#         self.outputs_script = self.outputs_scripts[0]
+#         self.axes_length: Dict[str, int] = axes_length
 
 
 class EinsumBuilder:

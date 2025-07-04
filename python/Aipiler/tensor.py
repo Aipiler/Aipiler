@@ -26,6 +26,9 @@ class FakeScalar(FakeData):
     def sym_val(self):
         return self._sym_val
 
+    def __repr__(self):
+        return "FakeScalar({}, {})".format(self._sym_val, self.dtype)
+
 
 class FakeTensor(FakeData):
     def __init__(
@@ -58,16 +61,24 @@ class FakeTensor(FakeData):
         """
         return len(self.symbolic_shapes)
 
+    def __repr__(self):
+        return "FakeTensor({}, {})".format(self.symbolic_shapes, self.dtype)
+
 
 class Parameter(FakeTensor):
-    def __init__(self, shape: Sequence[Dim], dtype: DataType = dtypes.float32, storage: torch.Tensor = None):
+    def __init__(
+        self,
+        shape: Sequence[Dim],
+        dtype: DataType = dtypes.float32,
+        storage: torch.Tensor = None,
+    ):
         for d in shape:
             if d.is_dynamic:
                 raise ValueError("Shape of FakeParameter can't be dynamic.")
         super().__init__(shape, dtype, trace=None)
         # self._device = None
         self._storage = storage
-    
+
     @property
     def shape(self):
         return self.symbolic_shapes
@@ -199,11 +210,12 @@ def from_torch_to_fake_tensor(torch_tensor: torch.Tensor) -> FakeTensor:
         trace=None,
     )
 
+
 def from_torch_to_parameter(torch_tensor: torch.Tensor) -> Parameter:
     return Parameter(
         shape=[Dim(torch_tensor.shape[i]) for i in range(torch_tensor.dim())],
-        dtype=dtypes.f32, # TODO
-        storage=torch_tensor
+        dtype=dtypes.f32,  # TODO
+        storage=torch_tensor,
     )
 
 

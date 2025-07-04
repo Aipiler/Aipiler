@@ -7,7 +7,6 @@ from Aipiler.primitive import (
     UnaryPrimitive,
     CascadePrimitive,
 )
-from Aipiler.visitor import MLIRCodeGenVisitor
 from Aipiler.dim import Dim, DisjointSetUnion
 
 EINSUM_ALPHABET = "abcdefghijklmnopqrstuvwxyz"

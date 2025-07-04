@@ -65,6 +65,7 @@ from Aipiler.support.ir_imports import util_d
 
 import numpy as np
 
+
 class Einsum_importer:
 
     def __init__(
@@ -76,7 +77,6 @@ class Einsum_importer:
         self.symbol_table: Dict[FakeData, ir.Value] = {}
         self.module_builder: ModuleBuilder = module_builder
         self.module_op: builtin.ModuleOp = module_builder.module_op
-        
 
         self._AIPILER_TO_MLIR: Dict[dtypes.DataType, Callable[[], IrType]] = {
             dtypes.f32: lambda: F32Type.get(),
@@ -173,34 +173,34 @@ class Einsum_importer:
 
         @linalg_structured_op
         def _map_tensor_tensor(
-            A=TensorDef(T, *(symbol_defs[s] for s in node.lhs_scripts)),
-            B=TensorDef(T, *(symbol_defs[s] for s in node.rhs_scripts)),
+            A=TensorDef(T, *(symbol_defs[s] for s in node.lhs_axes)),
+            B=TensorDef(T, *(symbol_defs[s] for s in node.rhs_axes)),
             C=TensorDef(
                 T,
-                *(symbol_defs[s] for s in node.output_scripts),
+                *(symbol_defs[s] for s in node.output_axes),
                 output=True,
             ),
         ):
             domain(*(domain_defs[s] for s in node.iteration_scripts))
-            output_indices = tuple(domain_defs[s] for s in node.output_scripts)
-            lhs_indices = tuple(domain_defs[s] for s in node.lhs_scripts)
-            rhs_indices = tuple(domain_defs[s] for s in node.rhs_scripts)
+            output_indices = tuple(domain_defs[s] for s in node.output_axes)
+            lhs_indices = tuple(domain_defs[s] for s in node.lhs_axes)
+            rhs_indices = tuple(domain_defs[s] for s in node.rhs_axes)
             # TODO: 当前只支持加减乘数,不能写死
             C[output_indices] = map_op(A[lhs_indices], B[rhs_indices])
 
         @linalg_structured_op
         def _map_tensor_scalar(
-            A=TensorDef(T, *(symbol_defs[s] for s in node.lhs_scripts)),
+            A=TensorDef(T, *(symbol_defs[s] for s in node.lhs_axes)),
             B=ScalarDef(T),
             C=TensorDef(
                 T,
-                *(symbol_defs[s] for s in node.output_scripts),
+                *(symbol_defs[s] for s in node.output_axes),
                 output=True,
             ),
         ):
             domain(*(domain_defs[s] for s in node.iteration_scripts))
-            output_indices = tuple(domain_defs[s] for s in node.output_scripts)
-            lhs_indices = tuple(domain_defs[s] for s in node.lhs_scripts)
+            output_indices = tuple(domain_defs[s] for s in node.output_axes)
+            lhs_indices = tuple(domain_defs[s] for s in node.lhs_axes)
             # TODO: 当前只支持加减乘数,不能写死
             C[output_indices] = map_op(A[lhs_indices], B)
 
@@ -272,16 +272,16 @@ class Einsum_importer:
 
         @linalg_structured_op
         def _reduce(
-            INPUT=TensorDef(T, *(symbol_defs[s] for s in node.x_scripts)),
+            INPUT=TensorDef(T, *(symbol_defs[s] for s in node.x_axes)),
             OUTPUT=TensorDef(
                 T,
-                *(symbol_defs[s] for s in node.output_scripts),
+                *(symbol_defs[s] for s in node.output_axes),
                 output=True,
             ),
         ):
             domain(*(domain_defs[s] for s in node.iteration_scripts))
-            output_indices = tuple(domain_defs[s] for s in node.output_scripts)
-            input_indices = tuple(domain_defs[s] for s in node.x_scripts)
+            output_indices = tuple(domain_defs[s] for s in node.output_axes)
+            input_indices = tuple(domain_defs[s] for s in node.x_axes)
             target_dim_indices = tuple(domain_defs[s] for s in node.dims_to_reduce)
             # TODO: 当前只支持加减乘数,不能写死
             OUTPUT[output_indices] = reduce_op[target_dim_indices](INPUT[input_indices])
@@ -319,8 +319,8 @@ class Einsum_importer:
 
         @linalg_structured_op
         def elemwise_unary(
-            I=TensorDef(T, *(symbol_defs[s] for s in node.x_scripts)),
-            O=TensorDef(U, *(symbol_defs[s] for s in node.output_scripts), output=True),
+            I=TensorDef(T, *(symbol_defs[s] for s in node.x_axes)),
+            O=TensorDef(U, *(symbol_defs[s] for s in node.output_axes), output=True),
             fun=UnaryFnAttrDef(default=UnaryFn.sqrt),
             cast=TypeFnAttrDef(default=TypeFn.cast_signed),
         ):
@@ -346,7 +346,7 @@ class Einsum_importer:
         mlir_value = self._lift_tensor_to_global(tensor)
         self.symbol_table[tensor] = mlir_value
         return mlir_value
-    
+
     def _lift_tensor_to_global(self, literal: Parameter) -> ir.Value:
         """lift tensor to module attribute and global declare
         Args:
@@ -357,7 +357,9 @@ class Einsum_importer:
         """
         name = "parameter_{}".format(len(self.parameter_table))
         self.parameter_table[name] = literal
-        with InsertionPoint.at_block_begin(self.module_op.regions[0].blocks[0]), Location.unknown():
+        with InsertionPoint.at_block_begin(
+            self.module_op.regions[0].blocks[0]
+        ), Location.unknown():
             element_type = self.from_dtype(literal.dtype)
             tensor_type = RankedTensorType.get(literal.numeric_shape, element_type)
             ir_attrs = {
@@ -365,19 +367,17 @@ class Einsum_importer:
                 "sym_visibility": StringAttr.get("private"),
                 "type": ir.TypeAttr.get(tensor_type),
                 "noinline": UnitAttr.get(),
-                # TODO: "device": 
+                # TODO: "device":
             }
-            
+
             detached_tensor = literal.storage.detach().contiguous().cpu().numpy()
             content = memoryview(detached_tensor)
             elements_attr = DenseResourceElementsAttr.get_from_buffer(
-                       content , name, tensor_type
-                    )
+                content, name, tensor_type
+            )
             ir_attrs["initial_value"] = elements_attr
             Operation.create("util.global", attributes=ir_attrs)
-        loaded_value = util_d.GlobalLoadOp(
-            tensor_type, name
-        ).result
+        loaded_value = util_d.GlobalLoadOp(tensor_type, name).result
         return loaded_value
 
     def import_program(
@@ -394,7 +394,7 @@ class Einsum_importer:
                 # get function input types
                 input_tensor_args: List[FakeTensor] = []
                 scalar_args: List[FakeScalar] = []
-                param_args : List[Parameter] = []
+                param_args: List[Parameter] = []
                 # collect from args
                 for input_tensor in graph.inputs:
                     if isinstance(input_tensor, FakeTensor):
@@ -525,7 +525,7 @@ class Einsum_importer:
                     # for parameters
                     # for param in param_args:
                     #     param_mlir_value = self._lift_tensor_to_global(param)
-                    #     self.symbol_table[param] = param_mlir_value 
+                    #     self.symbol_table[param] = param_mlir_value
 
                     # 遍历所有节点，生成对应的 MLIR 操作
                     for node in graph.nodes:

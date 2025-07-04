@@ -75,18 +75,18 @@ class MLIRCodeGenVisitor:
 
         @linalg_structured_op
         def _map(
-            A=TensorDef(T, *(symbol_defs[s] for s in node.lhs_scripts)),
-            B=TensorDef(T, *(symbol_defs[s] for s in node.rhs_scripts)),
+            A=TensorDef(T, *(symbol_defs[s] for s in node.lhs_axes)),
+            B=TensorDef(T, *(symbol_defs[s] for s in node.rhs_axes)),
             C=TensorDef(
                 T,
-                *(symbol_defs[s] for s in node.output_scripts),
+                *(symbol_defs[s] for s in node.output_axes),
                 output=True,
             ),
         ):
             domain((domain_defs[s] for s in node.iteration_scripts))
-            output_indices = tuple(domain_defs[s] for s in node.output_scripts)
-            lhs_indices = tuple(domain_defs[s] for s in node.lhs_scripts)
-            rhs_indices = tuple(domain_defs[s] for s in node.rhs_scripts)
+            output_indices = tuple(domain_defs[s] for s in node.output_axes)
+            lhs_indices = tuple(domain_defs[s] for s in node.lhs_axes)
+            rhs_indices = tuple(domain_defs[s] for s in node.rhs_axes)
             # TODO: 当前只支持加减乘数,不能写死
             C[output_indices] = A[lhs_indices] * B[rhs_indices]
 
@@ -119,16 +119,16 @@ class MLIRCodeGenVisitor:
 
         @linalg_structured_op
         def _map(
-            INPUT=TensorDef(T, *(symbol_defs[s] for s in node.x_scripts)),
+            INPUT=TensorDef(T, *(symbol_defs[s] for s in node.x_axes)),
             OUTPUT=TensorDef(
                 T,
-                *(symbol_defs[s] for s in node.output_scripts),
+                *(symbol_defs[s] for s in node.output_axes),
                 output=True,
             ),
         ):
             domain(*(domain_defs[s] for s in node.iteration_scripts))
-            output_indices = tuple(domain_defs[s] for s in node.output_scripts)
-            input_indices = tuple(domain_defs[s] for s in node.x_scripts)
+            output_indices = tuple(domain_defs[s] for s in node.output_axes)
+            input_indices = tuple(domain_defs[s] for s in node.x_axes)
             # TODO: 当前只支持加减乘数,不能写死
             OUTPUT[output_indices] += INPUT[input_indices]
 
