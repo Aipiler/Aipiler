@@ -1,4 +1,5 @@
 from typing import Tuple, List, Set, Dict
+import functools
 
 
 def parse_subscripts_part(part: str):
