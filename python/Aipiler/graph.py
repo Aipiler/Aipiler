@@ -101,8 +101,17 @@ class EinsumGraph:
                 dims_eq_set = set([node.dim_axis_relations[a] for a in eq_set])
                 if d in equal_dict:
                     equal_dict[d].update(dims_eq_set)
+                    dims_eq_set = equal_dict[d]
                 else:
-                    equal_dict.update({d: dims_eq_set})
+                    equal_dict[d] = dims_eq_set
+                # equal dims map to the same set
+                # update other sets
+                for _d in dims_eq_set:
+                    if _d in equal_dict:
+                        equal_dict[_d].update(dims_eq_set)
+                    else:
+                        equal_dict[_d] = dims_eq_set
+
             # insert depend eq dim
             # input as key
             depend_eq_dict_key_input = self.dims_relations._depend_eq_dict_key_input
@@ -122,6 +131,17 @@ class EinsumGraph:
                     depend_eq_dict_key_output[d].update(dims_eq_set)
                 else:
                     depend_eq_dict_key_output.update({d: dims_eq_set})
+        # handle long dependence
+        for i_d, o_dims in self.dims_relations._depend_eq_dict_key_input.items():
+            long_depends = set()
+            for o_d in o_dims:
+                # if o_d is input of another primitive
+                if o_d in self.dims_relations._depend_eq_dict_key_input:
+                    long_depends.update(
+                        self.dims_relations._depend_eq_dict_key_input[o_d]
+                    )
+                    self.dims_relations._depend_eq_dict_key_output[o_d].add(i_d)
+            o_dims.update(long_depends)
 
     def __repr__(self):
         from Aipiler.utils import printer, namer
