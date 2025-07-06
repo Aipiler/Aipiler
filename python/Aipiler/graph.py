@@ -12,6 +12,49 @@ from Aipiler.dim import Dim, DisjointSetUnion
 EINSUM_ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
 
+class DimDimRelation:
+    def __init__(self):
+        self._eq_dict: Dict[Dim, Set[Dim]] = dict()
+        self._depend_eq_dict_key_input: Dict[Dim, Set[Dim]] = dict()
+        self._depend_eq_dict_key_output: Dict[Dim, Set[Dim]] = dict()
+
+    def is_equal(self, d0: Dim, d1: Dim):
+        if d0 not in self._eq_dict:
+            raise ValueError(f"Cannot find dim: {d0}, is it a wild dim?")
+        if d1 not in self._eq_dict:
+            raise ValueError(f"Cannot find dim: {d1}, is it a wild dim?")
+        return d1 in self._eq_dict[d0]
+
+    def __repr__(self):
+        from Aipiler.utils.printer import P
+
+        with P.section("Dims Relations(Cross Prims)"):
+            with P.section("EQ"):
+                if len(self._eq_dict) == 0:
+                    P.add_line("Nothing")
+                else:
+                    with P.table(
+                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
+                    ) as t:
+                        t.add_row("Dim", "Equal To")
+                        t.add_row("-" * 30, "-" * 80)
+                        for d, s in self._eq_dict.items():
+                            t.add_row(str(d), str(s))
+            with P.section("DEPEND&EQ"):
+                if len(self._depend_eq_dict_key_input) == 0:
+                    P.add_line("Nothing")
+                else:
+                    with P.table(
+                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
+                    ) as t:
+                        t.add_row("Input Dim", "Depend and Equal By")
+                        t.add_row("-" * 30, "-" * 80)
+                        for d, s in self._depend_eq_dict_key_input.items():
+                            t.add_row(str(d), str(s))
+            P.add_line()
+        return str(P)
+
+
 class EinsumGraph:
     """节点管理器，负责管理计算图中的所有节点"""
 
@@ -25,7 +68,7 @@ class EinsumGraph:
         self.outputs = list(outputs)
         self.inputs = list(inputs)
         self.nodes: List[EinsumPrimitive]
-        self.sym_dim_set: DisjointSetUnion
+        self.dims_relations = DimDimRelation()
 
     def update_nodes(self) -> "EinsumGraph":
         nodes: List[EinsumPrimitive] = []
@@ -48,160 +91,205 @@ class EinsumGraph:
                     self.inputs.append(i)
 
         self.nodes = nodes
-        self.sym_dim_set = self.update_dim_value_set()
+        self.update_dims_relations()
         return self
 
-    def update_dim_value_set(self):
-        """
-        更新图中所有节点的维度值集合
-        """
-        sym_dim_set = DisjointSetUnion()
+    def update_dims_relations(self):
         for node in self.nodes:
-            inputs_scripts = node.inputs_scripts
-            outputs_scripts = node.outputs_scripts
-
-            input_tensors = node.inputs
-            output_tensor = node.outputs
-
-            idx_dim_dict: Dict[str, List[Dim]] = {}
-            for input_script, input_tensor in zip(inputs_scripts, input_tensors):
-                if not input_script:  # this input is scalar
-                    continue
-                assert isinstance(input_tensor, FakeTensor)
-                for input_idx, input_dim in zip(
-                    input_script, input_tensor.symbolic_shapes
-                ):
-                    if input_idx not in idx_dim_dict:
-                        idx_dim_dict[input_idx] = []
-                    idx_dim_dict[input_idx].append(input_dim)
-
-            for output_script, output_tensor in zip(outputs_scripts, output_tensor):
-                assert isinstance(output_tensor, FakeTensor)
-                for output_idx, output_dim in zip(
-                    output_script, output_tensor.symbolic_shapes
-                ):
-                    if output_idx not in idx_dim_dict:
-                        idx_dim_dict[output_idx] = []
-                    idx_dim_dict[output_idx].append(output_dim)
-
-            # 更新维度值集合
-            for script, dim_list in idx_dim_dict.items():
-                sym_dim_set.union(*dim_list)
-
-        for value_dim_set in sym_dim_set.get_all_value_dim_set():
-            value_dim_set.populate_dim_size()
-        return sym_dim_set
-
-    def __str__(self) -> str:
-        tensors = []
-        cascade_docs = []
-
-        def nameof(t):
-            if isinstance(t, FakeScalar):
-                if isinstance(t.sym_val, Dim):
-                    # find
-                    src_tensor_name = nameof(t.sym_val._fake_tensor)
-                    dim_idx = t.sym_val._idx_in_tensor
-                    return f"{src_tensor_name}.dim{dim_idx}"
+            # insert eq dims
+            equal_dict = self.dims_relations._eq_dict
+            for axis, eq_set in node.axes_relations.equal_dict.items():
+                d = node.dim_axis_relations[axis]
+                dims_eq_set = set([node.dim_axis_relations[a] for a in eq_set])
+                if d in equal_dict:
+                    equal_dict[d].update(dims_eq_set)
                 else:
-                    return f"{t.sym_val}"
-            else:
-                if t not in tensors:
-                    assert False
-                return "t" + str(tensors.index(t))
+                    equal_dict.update({d: dims_eq_set})
+            # insert depend eq dim
+            # input as key
+            depend_eq_dict_key_input = self.dims_relations._depend_eq_dict_key_input
+            for axis, eq_set in node.axes_relations.depend_eq_dict_key_input.items():
+                d = node.dim_axis_relations[axis]
+                dims_eq_set = set([node.dim_axis_relations[a] for a in eq_set])
+                if d in depend_eq_dict_key_input:
+                    depend_eq_dict_key_input[d].update(dims_eq_set)
+                else:
+                    depend_eq_dict_key_input.update({d: dims_eq_set})
+            # output as key
+            depend_eq_dict_key_output = self.dims_relations._depend_eq_dict_key_output
+            for axis, eq_set in node.axes_relations.depend_eq_dict_key_output.items():
+                d = node.dim_axis_relations[axis]
+                dims_eq_set = set([node.dim_axis_relations[a] for a in eq_set])
+                if d in depend_eq_dict_key_output:
+                    depend_eq_dict_key_output[d].update(dims_eq_set)
+                else:
+                    depend_eq_dict_key_output.update({d: dims_eq_set})
 
-        doc = "Graph("
-        tensors += self.inputs
-        param_doc = []
-        input_tensors = [t for t in self.inputs if isinstance(t, FakeTensor)]
-        input_scalars = [t for t in self.inputs if isinstance(t, FakeScalar)]
-        # print tensor first because of scalar maybe dim
-        for inp in input_tensors:
-            n = nameof(inp)
-            param_doc.append(n)
-        for inp in input_scalars:
-            n = nameof(inp)
-            param_doc.append(n)
-        doc += ", ".join(param_doc)
-        doc += ")\n"
+    def __repr__(self):
+        from Aipiler.utils import printer, namer
 
-        # 打印graph
-        for prim in self.nodes:
-            if isinstance(prim, MapPrimitive):
-                lhs = prim.inputs[0]
-                rhs = prim.inputs[1]
-                ret = prim.output
-                tensors.append(ret)
-                prim_doc = '{ret} = map({lhs}, {rhs}, "{einsum_str}", "{op}")'.format(
-                    ret=nameof(ret),
-                    lhs=nameof(lhs),
-                    rhs=nameof(rhs),
-                    einsum_str=prim.einsum_str,
-                    op=prim.op.name,
+        input_names = [namer.N.get_or_create_name_of(i) for i in self.inputs]
+        with printer.P.section("Graph({})".format(", ".join(input_names))):
+            for node in self.nodes:
+                if isinstance(node, MapPrimitive):
+                    printer.P.add_line(
+                        '{ret} = map({lhs}, {rhs}, "{einsum_str}", "{op}")\t\t# {name}'.format(
+                            ret=namer.N.get_or_create_name_of(node.output),
+                            lhs=namer.N.get_or_create_name_of(node.lhs),
+                            rhs=namer.N.get_or_create_name_of(node.rhs),
+                            einsum_str=node.einsum_str,
+                            op=node.op.name,
+                            name=namer.N.get_or_create_name_of(node),
+                        )
+                    )
+                elif isinstance(node, ReducePrimitive):
+                    printer.P.add_line(
+                        '{ret} = reduce({x}, "{einsum_str}", "{reduce_dims}", "{op}")\t\t# {name}'.format(
+                            ret=namer.N.get_or_create_name_of(node.output),
+                            x=namer.N.get_or_create_name_of(node.x),
+                            einsum_str=node.einsum_str,
+                            reduce_dims=", ".join(node.dims_to_reduce),
+                            op=node.op.name,
+                            name=namer.N.get_or_create_name_of(node),
+                        )
+                    )
+                elif isinstance(node, UnaryPrimitive):
+                    printer.P.add_line(
+                        '{ret} = unary({x}, "{einsum_str}", "{op}"\t\t# {name})'.format(
+                            ret=namer.N.get_or_create_name_of(node.output),
+                            x=namer.N.get_or_create_name_of(node.x),
+                            einsum_str=node.einsum_str,
+                            name=namer.N.get_or_create_name_of(node),
+                        )
+                    )
+                else:
+                    printer.P.add_line("UnImplemented stringify.")
+            printer.P.add_line(
+                "return {}".format(
+                    ", ".join([namer.N.get_or_create_name_of(o) for o in self.outputs])
                 )
-                doc += "\t"
-                doc += prim_doc
-            elif isinstance(prim, ReducePrimitive):
-                inp = prim.inputs[0]
-                ret = prim.output
-                tensors.append(ret)
-                prim_doc = '{ret} = reduce({inp}, "{einsum_str}", "{reduce_dims}", "{op}")'.format(
-                    ret=nameof(ret),
-                    inp=nameof(inp),
-                    einsum_str=prim.einsum_str,
-                    reduce_dims=prim.dims_to_reduce,
-                    op=prim.op.name,
-                )
-                doc += "\t"
-                doc += prim_doc
-            elif isinstance(prim, UnaryPrimitive):
-                inp = prim.inputs[0]
-                ret = prim.output
-                tensors.append(ret)
-                prim_doc = '{ret} = unary({inp}, "{einsum_str}", "{op}")'.format(
-                    ret=nameof(ret),
-                    inp=nameof(inp),
-                    einsum_str=prim.einsum_str,
-                    op=prim.op.name,
-                )
-                doc += "\t"
-                doc += prim_doc
-            elif isinstance(prim, CascadePrimitive):
-                for ret in prim.outputs:
-                    tensors.append(ret)
-                prim_doc = '{ret} = cascade{i}({inp}, "{einsum_str}")'.format(
-                    ret=", ".join([nameof(ret) for ret in prim.outputs]),
-                    i=len(cascade_docs),
-                    inp=", ".join([nameof(inp) for inp in prim.inputs]),
-                    einsum_str=prim.einsum_str,
-                )
-                cascade_docs.append(str(prim.graph))
-                doc += "\t"
-                doc += prim_doc
-            else:
-                doc += "Unstringify Primitive: " + prim.__class__.__name__
-            doc += "\n"
-        doc += "\treturn "
-        outputs = [nameof(out) for out in self.outputs]
-        doc += ", ".join(outputs)
-        doc += "\n"
+            )
+            printer.P.add_line()
+            with printer.P.section("Nodes in Graph:"):
+                for node in self.nodes:
+                    printer.P.add_line(str(node))
+                    printer.P.add_line()
 
-        # 打印value并查集
-        doc += "\nSymbolic Dim Set(\n"
-        for value_dim_set in set(self.sym_dim_set.dim_set_dict.values()):
-            dim_name_list = []
-            for dim in value_dim_set.dim_set:
-                tensor_name = nameof(dim.fake_tensor)
-                dim_idx = dim.index_in_tensor
-                dim_name = f"{tensor_name}.dim{dim_idx}"
-                dim_name_list.append(dim_name)
-            doc += "\t({}),\n".format(", ".join(dim_name_list))
-        doc += ")\n\n"
+            printer.P.add_line()
+            printer.P.add_line(str(self.dims_relations))
+            printer.P.add_line()
+            return str(printer.P)
 
-        for i, c_doc in enumerate(cascade_docs):
-            doc += "cascade{}:\n".format(i)
-            doc += c_doc
-        return doc
+    # def __str__(self) -> str:
+    #     tensors = []
+    #     cascade_docs = []
+
+    #     def nameof(t):
+    #         if isinstance(t, FakeScalar):
+    #             if isinstance(t.sym_val, Dim):
+    #                 # find
+    #                 src_tensor_name = nameof(t.sym_val._fake_tensor)
+    #                 dim_idx = t.sym_val._idx_in_tensor
+    #                 return f"{src_tensor_name}.dim{dim_idx}"
+    #             else:
+    #                 return f"{t.sym_val}"
+    #         else:
+    #             if t not in tensors:
+    #                 assert False
+    #             return "t" + str(tensors.index(t))
+
+    #     doc = "Graph("
+    #     tensors += self.inputs
+    #     param_doc = []
+    #     input_tensors = [t for t in self.inputs if isinstance(t, FakeTensor)]
+    #     input_scalars = [t for t in self.inputs if isinstance(t, FakeScalar)]
+    #     # print tensor first because of scalar maybe dim
+    #     for inp in input_tensors:
+    #         n = nameof(inp)
+    #         param_doc.append(n)
+    #     for inp in input_scalars:
+    #         n = nameof(inp)
+    #         param_doc.append(n)
+    #     doc += ", ".join(param_doc)
+    #     doc += ")\n"
+
+    #     # 打印graph
+    #     for prim in self.nodes:
+    #         if isinstance(prim, MapPrimitive):
+    #             lhs = prim.inputs[0]
+    #             rhs = prim.inputs[1]
+    #             ret = prim.output
+    #             tensors.append(ret)
+    #             prim_doc = '{ret} = map({lhs}, {rhs}, "{einsum_str}", "{op}")'.format(
+    #                 ret=nameof(ret),
+    #                 lhs=nameof(lhs),
+    #                 rhs=nameof(rhs),
+    #                 einsum_str=prim.einsum_str,
+    #                 op=prim.op.name,
+    #             )
+    #             doc += "\t"
+    #             doc += prim_doc
+    #         elif isinstance(prim, ReducePrimitive):
+    #             inp = prim.inputs[0]
+    #             ret = prim.output
+    #             tensors.append(ret)
+    #             prim_doc = '{ret} = reduce({inp}, "{einsum_str}", "{reduce_dims}", "{op}")'.format(
+    #                 ret=nameof(ret),
+    #                 inp=nameof(inp),
+    #                 einsum_str=prim.einsum_str,
+    #                 reduce_dims=prim.dims_to_reduce,
+    #                 op=prim.op.name,
+    #             )
+    #             doc += "\t"
+    #             doc += prim_doc
+    #         elif isinstance(prim, UnaryPrimitive):
+    #             inp = prim.inputs[0]
+    #             ret = prim.output
+    #             tensors.append(ret)
+    #             prim_doc = '{ret} = unary({inp}, "{einsum_str}", "{op}")'.format(
+    #                 ret=nameof(ret),
+    #                 inp=nameof(inp),
+    #                 einsum_str=prim.einsum_str,
+    #                 op=prim.op.name,
+    #             )
+    #             doc += "\t"
+    #             doc += prim_doc
+    #         elif isinstance(prim, CascadePrimitive):
+    #             for ret in prim.outputs:
+    #                 tensors.append(ret)
+    #             prim_doc = '{ret} = cascade{i}({inp}, "{einsum_str}")'.format(
+    #                 ret=", ".join([nameof(ret) for ret in prim.outputs]),
+    #                 i=len(cascade_docs),
+    #                 inp=", ".join([nameof(inp) for inp in prim.inputs]),
+    #                 einsum_str=prim.einsum_str,
+    #             )
+    #             cascade_docs.append(str(prim.graph))
+    #             doc += "\t"
+    #             doc += prim_doc
+    #         else:
+    #             doc += "Unstringify Primitive: " + prim.__class__.__name__
+    #         doc += "\n"
+    #     doc += "\treturn "
+    #     outputs = [nameof(out) for out in self.outputs]
+    #     doc += ", ".join(outputs)
+    #     doc += "\n"
+
+    #     # 打印value并查集
+    #     doc += "\nSymbolic Dim Set(\n"
+    #     for value_dim_set in set(self.sym_dim_set.dim_set_dict.values()):
+    #         dim_name_list = []
+    #         for dim in value_dim_set.dim_set:
+    #             tensor_name = nameof(dim.fake_tensor)
+    #             dim_idx = dim.index_in_tensor
+    #             dim_name = f"{tensor_name}.dim{dim_idx}"
+    #             dim_name_list.append(dim_name)
+    #         doc += "\t({}),\n".format(", ".join(dim_name_list))
+    #     doc += ")\n\n"
+
+    #     for i, c_doc in enumerate(cascade_docs):
+    #         doc += "cascade{}:\n".format(i)
+    #         doc += c_doc
+    #     return doc
 
     def summary_einsum_str(self):
         """
@@ -248,3 +336,30 @@ class EinsumGraph:
         return "{inputs_scripts}->{outputs_scripts}".format(
             inputs_scripts=",".join(inp_strs), outputs_scripts=", ".join(out_strs)
         )
+
+
+def trace_from(
+    outputs: Optional[Union[FakeTensor, Sequence[FakeTensor]]],
+    inputs: Optional[Union[FakeTensor, Sequence[FakeTensor]]] = None,
+) -> EinsumGraph:
+    """
+    TODO: trace einsumgraph with `inputs` and `outputs`. If inputs are None, trace until leaves of whole graph.
+    for example:
+    the whole graph is: t1=reduce(t0=map(A, B, ...), ...);
+    if inputs = [t0], outputs = [t1], then the result of trace_from has nodes: [reduce]
+    elif inputs= [A, B], outputs= [t1], then the result of trace_from has nodes: [reduce, map]
+    """
+    if isinstance(outputs, FakeTensor):
+        if outputs._trace is None:
+            raise ValueError("trace_from expects symbol tensor(s)")
+        outputs = [outputs]
+    else:
+        outputs = list(outputs)
+        assert all(isinstance(v, FakeTensor) for v in outputs)
+
+    if inputs is not None:
+        if isinstance(inputs, FakeTensor):
+            inputs = [inputs]
+        else:
+            inputs = list(inputs)
+    return EinsumGraph(outputs, inputs).update_nodes()

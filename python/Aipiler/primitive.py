@@ -210,7 +210,7 @@ class AxisAxisRelation:
                         separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
                     ) as t:
                         t.add_row("Axis", "Equal To")
-                        t.add_row("-" * 10, "-" * 40)
+                        t.add_row("-" * 30, "-" * 80)
                         for d, s in self.equal_dict.items():
                             t.add_row(str(d), str(s))
             with P.section("DEPEND&EQ RELATIONSHIP(Axes Relations)"):
@@ -220,7 +220,7 @@ class AxisAxisRelation:
                     with P.table(
                         separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
                     ) as t:
-                        t.add_row("Input Axis", "Depend and Equal To")
+                        t.add_row("Input Axis", "Depend and Equal By")
                         t.add_row("-" * 10, "-" * 40)
                         for d, s in self.depend_eq_dict_key_input.items():
                             t.add_row(str(d), str(s))
@@ -404,6 +404,8 @@ class EinsumPrimitive(ABC):
         for axes, io_tensor in zip(
             (*self.inputs_axes, *self.outputs_axes), (*self.inputs, *self.outputs)
         ):
+            if isinstance(io_tensor, FakeScalar):
+                continue
             io_tensor: FakeTensor
             for axis, dim in zip(axes, io_tensor.symbolic_shapes):
                 self.dim_axis_relations.insert(dim, axis)
@@ -494,6 +496,7 @@ class ReducePrimitive(EinsumPrimitive):
     ) -> None:
         super().__init__([x], einsum_str)
         assert len(self.inputs_axes) == 1
+        self.x = x
         self.x_axes = self.inputs_axes[0]  # only one input
 
         self.dims_to_reduce = (
