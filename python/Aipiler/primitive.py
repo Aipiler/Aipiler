@@ -424,7 +424,7 @@ class EinsumPrimitive(ABC):
                 *self.axes_relations.all_input_axes,
                 *self.axes_relations.all_output_axes,
             )
-            if not axis.is_combined or not axis.is_scalar
+            if not axis.is_combined and not axis.is_scalar
         ]
         iter_axis_name = set()
         iter_space = set()

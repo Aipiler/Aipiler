@@ -45,7 +45,6 @@ from Aipiler.primitive import (
     EinsumPrimitive,
     MapPrimitive,
     ReducePrimitive,
-    PopulatePrimitive,
     UnaryPrimitive,
 )
 from Aipiler.tensor import Tensor, FakeData, FakeTensor, FakeScalar, Parameter
@@ -107,7 +106,7 @@ class Einsum_importer:
                 recorded_dims += t.symbolic_shapes
         eq_dim: Dim
         for dim in recorded_dims:
-            if self.graph.sym_dim_set.is_connected(d, dim):
+            if self.graph.dims_relations.is_equal(d, dim):
                 eq_dim = dim
                 break
         assert eq_dim is not None
@@ -165,42 +164,46 @@ class Einsum_importer:
         symbol_defs = {}
         domain_defs = {}
         for script in node.iteration_scripts:
-            symbol_defs[script] = getattr(S, script)
-            domain_defs[script] = getattr(D, script)
+            symbol_defs[script.name] = getattr(S, script.name)
+            domain_defs[script.name] = getattr(D, script.name)
 
         # 获取map op
         map_op = node.op.get_op_callable()
 
         @linalg_structured_op
         def _map_tensor_tensor(
-            A=TensorDef(T, *(symbol_defs[s] for s in node.lhs_axes)),
-            B=TensorDef(T, *(symbol_defs[s] for s in node.rhs_axes)),
+            A=TensorDef(T, *(symbol_defs[s.name] for s in node.lhs_axes)),
+            B=TensorDef(
+                T, *(symbol_defs[s.name] for s in node.rhs_axes if not s.is_scalar)
+            ),
             C=TensorDef(
                 T,
-                *(symbol_defs[s] for s in node.output_axes),
+                *(symbol_defs[s.name] for s in node.output_axes),
                 output=True,
             ),
         ):
-            domain(*(domain_defs[s] for s in node.iteration_scripts))
-            output_indices = tuple(domain_defs[s] for s in node.output_axes)
-            lhs_indices = tuple(domain_defs[s] for s in node.lhs_axes)
-            rhs_indices = tuple(domain_defs[s] for s in node.rhs_axes)
+            domain(*(domain_defs[s.name] for s in node.iteration_scripts))
+            output_indices = tuple(domain_defs[s.name] for s in node.output_axes)
+            lhs_indices = tuple(domain_defs[s.name] for s in node.lhs_axes)
+            rhs_indices = tuple(
+                domain_defs[s.name] for s in node.rhs_axes if not s.is_scalar
+            )
             # TODO: 当前只支持加减乘数,不能写死
             C[output_indices] = map_op(A[lhs_indices], B[rhs_indices])
 
         @linalg_structured_op
         def _map_tensor_scalar(
-            A=TensorDef(T, *(symbol_defs[s] for s in node.lhs_axes)),
+            A=TensorDef(T, *(symbol_defs[s.name] for s in node.lhs_axes)),
             B=ScalarDef(T),
             C=TensorDef(
                 T,
-                *(symbol_defs[s] for s in node.output_axes),
+                *(symbol_defs[s.name] for s in node.output_axes),
                 output=True,
             ),
         ):
-            domain(*(domain_defs[s] for s in node.iteration_scripts))
-            output_indices = tuple(domain_defs[s] for s in node.output_axes)
-            lhs_indices = tuple(domain_defs[s] for s in node.lhs_axes)
+            domain(*(domain_defs[s.name] for s in node.iteration_scripts))
+            output_indices = tuple(domain_defs[s.name] for s in node.output_axes)
+            lhs_indices = tuple(domain_defs[s.name] for s in node.lhs_axes)
             # TODO: 当前只支持加减乘数,不能写死
             C[output_indices] = map_op(A[lhs_indices], B)
 
@@ -236,7 +239,7 @@ class Einsum_importer:
             else:
                 _scalar, _tensor = node.rhs, node.lhs
 
-            _tensor_mlir_val = self._get_mlir_value(input_tensors[0])
+            _tensor_mlir_val = self._get_mlir_value(_tensor)
             _scalar_mlir_value = self._get_mlir_value(_scalar)
 
             # create init empty tensor from output tensor
@@ -264,24 +267,24 @@ class Einsum_importer:
         symbol_defs = {}
         domain_defs = {}
         for script in node.iteration_scripts:
-            symbol_defs[script] = getattr(S, script)
-            domain_defs[script] = getattr(D, script)
+            symbol_defs[script.name] = getattr(S, script.name)
+            domain_defs[script.name] = getattr(D, script.name)
 
         # 获取reduce op
         reduce_op = ReduceFnType(node.op.get_op_callable())
 
         @linalg_structured_op
         def _reduce(
-            INPUT=TensorDef(T, *(symbol_defs[s] for s in node.x_axes)),
+            INPUT=TensorDef(T, *(symbol_defs[s.name] for s in node.x_axes)),
             OUTPUT=TensorDef(
                 T,
-                *(symbol_defs[s] for s in node.output_axes),
+                *(symbol_defs[s.name] for s in node.output_axes),
                 output=True,
             ),
         ):
-            domain(*(domain_defs[s] for s in node.iteration_scripts))
-            output_indices = tuple(domain_defs[s] for s in node.output_axes)
-            input_indices = tuple(domain_defs[s] for s in node.x_axes)
+            domain(*(domain_defs[s.name] for s in node.iteration_scripts))
+            output_indices = tuple(domain_defs[s.name] for s in node.output_axes)
+            input_indices = tuple(domain_defs[s.name] for s in node.x_axes)
             target_dim_indices = tuple(domain_defs[s] for s in node.dims_to_reduce)
             # TODO: 当前只支持加减乘数,不能写死
             OUTPUT[output_indices] = reduce_op[target_dim_indices](INPUT[input_indices])
@@ -301,8 +304,8 @@ class Einsum_importer:
         symbol_defs = {}
         domain_defs = {}
         for script in node.iteration_scripts:
-            symbol_defs[script] = getattr(S, script)
-            domain_defs[script] = getattr(D, script)
+            symbol_defs[script.name] = getattr(S, script.name)
+            domain_defs[script.name] = getattr(D, script.name)
 
         # 获取map op
         unary_op = node.op.get_op_callable()
@@ -319,8 +322,10 @@ class Einsum_importer:
 
         @linalg_structured_op
         def elemwise_unary(
-            I=TensorDef(T, *(symbol_defs[s] for s in node.x_axes)),
-            O=TensorDef(U, *(symbol_defs[s] for s in node.output_axes), output=True),
+            I=TensorDef(T, *(symbol_defs[s.name] for s in node.x_axes)),
+            O=TensorDef(
+                U, *(symbol_defs[s.name] for s in node.output_axes), output=True
+            ),
             fun=UnaryFnAttrDef(default=UnaryFn.sqrt),
             cast=TypeFnAttrDef(default=TypeFn.cast_signed),
         ):
@@ -334,10 +339,6 @@ class Einsum_importer:
         init_result = self.init_empty_tensor(node.output)
         op = elemwise_unary(input_val, outs=[init_result], fun=unary_op)
         return op
-
-    def import_PopulatePrimitive(self, node: PopulatePrimitive) -> ir.Value:
-        self.visited_nodes.append(node)
-        return node.output
 
     def _get_mlir_value(self, tensor: FakeTensor):
         if tensor in self.symbol_table:
@@ -447,7 +448,7 @@ class Einsum_importer:
                                 # get equivalent dim from disjoint set
                                 for input_tensor in input_tensor_args:
                                     for dim in input_tensor.symbolic_shapes:
-                                        if graph.sym_dim_set.is_connected(
+                                        if graph.dims_relations.is_equal(
                                             scalar.sym_val, dim
                                         ):
                                             _eq_dim = dim

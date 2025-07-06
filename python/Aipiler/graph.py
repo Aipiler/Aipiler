@@ -56,8 +56,6 @@ class DimDimRelation:
 
 
 class EinsumGraph:
-    """节点管理器，负责管理计算图中的所有节点"""
-
     def __init__(
         self,
         outputs: Sequence[FakeData],
@@ -159,6 +157,7 @@ class EinsumGraph:
                             ret=namer.N.get_or_create_name_of(node.output),
                             x=namer.N.get_or_create_name_of(node.x),
                             einsum_str=node.einsum_str,
+                            op=node.op.name,
                             name=namer.N.get_or_create_name_of(node),
                         )
                     )
@@ -179,117 +178,6 @@ class EinsumGraph:
             printer.P.add_line(str(self.dims_relations))
             printer.P.add_line()
             return str(printer.P)
-
-    # def __str__(self) -> str:
-    #     tensors = []
-    #     cascade_docs = []
-
-    #     def nameof(t):
-    #         if isinstance(t, FakeScalar):
-    #             if isinstance(t.sym_val, Dim):
-    #                 # find
-    #                 src_tensor_name = nameof(t.sym_val._fake_tensor)
-    #                 dim_idx = t.sym_val._idx_in_tensor
-    #                 return f"{src_tensor_name}.dim{dim_idx}"
-    #             else:
-    #                 return f"{t.sym_val}"
-    #         else:
-    #             if t not in tensors:
-    #                 assert False
-    #             return "t" + str(tensors.index(t))
-
-    #     doc = "Graph("
-    #     tensors += self.inputs
-    #     param_doc = []
-    #     input_tensors = [t for t in self.inputs if isinstance(t, FakeTensor)]
-    #     input_scalars = [t for t in self.inputs if isinstance(t, FakeScalar)]
-    #     # print tensor first because of scalar maybe dim
-    #     for inp in input_tensors:
-    #         n = nameof(inp)
-    #         param_doc.append(n)
-    #     for inp in input_scalars:
-    #         n = nameof(inp)
-    #         param_doc.append(n)
-    #     doc += ", ".join(param_doc)
-    #     doc += ")\n"
-
-    #     # 打印graph
-    #     for prim in self.nodes:
-    #         if isinstance(prim, MapPrimitive):
-    #             lhs = prim.inputs[0]
-    #             rhs = prim.inputs[1]
-    #             ret = prim.output
-    #             tensors.append(ret)
-    #             prim_doc = '{ret} = map({lhs}, {rhs}, "{einsum_str}", "{op}")'.format(
-    #                 ret=nameof(ret),
-    #                 lhs=nameof(lhs),
-    #                 rhs=nameof(rhs),
-    #                 einsum_str=prim.einsum_str,
-    #                 op=prim.op.name,
-    #             )
-    #             doc += "\t"
-    #             doc += prim_doc
-    #         elif isinstance(prim, ReducePrimitive):
-    #             inp = prim.inputs[0]
-    #             ret = prim.output
-    #             tensors.append(ret)
-    #             prim_doc = '{ret} = reduce({inp}, "{einsum_str}", "{reduce_dims}", "{op}")'.format(
-    #                 ret=nameof(ret),
-    #                 inp=nameof(inp),
-    #                 einsum_str=prim.einsum_str,
-    #                 reduce_dims=prim.dims_to_reduce,
-    #                 op=prim.op.name,
-    #             )
-    #             doc += "\t"
-    #             doc += prim_doc
-    #         elif isinstance(prim, UnaryPrimitive):
-    #             inp = prim.inputs[0]
-    #             ret = prim.output
-    #             tensors.append(ret)
-    #             prim_doc = '{ret} = unary({inp}, "{einsum_str}", "{op}")'.format(
-    #                 ret=nameof(ret),
-    #                 inp=nameof(inp),
-    #                 einsum_str=prim.einsum_str,
-    #                 op=prim.op.name,
-    #             )
-    #             doc += "\t"
-    #             doc += prim_doc
-    #         elif isinstance(prim, CascadePrimitive):
-    #             for ret in prim.outputs:
-    #                 tensors.append(ret)
-    #             prim_doc = '{ret} = cascade{i}({inp}, "{einsum_str}")'.format(
-    #                 ret=", ".join([nameof(ret) for ret in prim.outputs]),
-    #                 i=len(cascade_docs),
-    #                 inp=", ".join([nameof(inp) for inp in prim.inputs]),
-    #                 einsum_str=prim.einsum_str,
-    #             )
-    #             cascade_docs.append(str(prim.graph))
-    #             doc += "\t"
-    #             doc += prim_doc
-    #         else:
-    #             doc += "Unstringify Primitive: " + prim.__class__.__name__
-    #         doc += "\n"
-    #     doc += "\treturn "
-    #     outputs = [nameof(out) for out in self.outputs]
-    #     doc += ", ".join(outputs)
-    #     doc += "\n"
-
-    #     # 打印value并查集
-    #     doc += "\nSymbolic Dim Set(\n"
-    #     for value_dim_set in set(self.sym_dim_set.dim_set_dict.values()):
-    #         dim_name_list = []
-    #         for dim in value_dim_set.dim_set:
-    #             tensor_name = nameof(dim.fake_tensor)
-    #             dim_idx = dim.index_in_tensor
-    #             dim_name = f"{tensor_name}.dim{dim_idx}"
-    #             dim_name_list.append(dim_name)
-    #         doc += "\t({}),\n".format(", ".join(dim_name_list))
-    #     doc += ")\n\n"
-
-    #     for i, c_doc in enumerate(cascade_docs):
-    #         doc += "cascade{}:\n".format(i)
-    #         doc += c_doc
-    #     return doc
 
     def summary_einsum_str(self):
         """
