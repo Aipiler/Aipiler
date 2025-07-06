@@ -45,7 +45,13 @@ class Dim:
         return self._size
 
     def __repr__(self):
-        return f"dim({self.size})"
+        from Aipiler.utils.namer import N
+
+        return "{}(size={}, from={})".format(
+            N.get_or_create_name_of(self),
+            self.size,
+            N.get_or_create_name_of(self._fake_tensor),
+        )
 
 
 def dim(size: int | str) -> Dim:

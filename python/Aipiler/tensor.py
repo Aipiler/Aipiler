@@ -27,7 +27,11 @@ class FakeScalar(FakeData):
         return self._sym_val
 
     def __repr__(self):
-        return "FakeScalar({}, {})".format(self._sym_val, self.dtype)
+        from Aipiler.utils import namer
+
+        return "{}({}, {})".format(
+            namer.N.get_or_create_name_of(self), self._sym_val, self.dtype.short_name
+        )
 
 
 class FakeTensor(FakeData):
@@ -62,7 +66,13 @@ class FakeTensor(FakeData):
         return len(self.symbolic_shapes)
 
     def __repr__(self):
-        return "FakeTensor({}, {})".format(self.symbolic_shapes, self.dtype)
+        from Aipiler.utils import namer
+
+        return "{}({}, {})".format(
+            namer.N.get_or_create_name_of(self),
+            self.symbolic_shapes,
+            self.dtype.short_name,
+        )
 
 
 class Parameter(FakeTensor):

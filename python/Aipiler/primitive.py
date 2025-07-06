@@ -21,6 +21,7 @@ from Aipiler.axis import Axis
 from enum import Enum
 import re
 import __future__
+from Aipiler.utils.printer import P
 
 
 class DimAxisRelation:
@@ -51,7 +52,14 @@ class DimAxisRelation:
             raise KeyError(f"KeyError: {key}")
 
     def __repr__(self):
-        return f"{self._dim_to_axis}"
+        with P.section("Dim to Axis Map"):
+            with P.table(separator=" -> ", aligns=["c", "c"], col_widths=[30, 80]) as t:
+                t.add_row("Dim", "Axis")
+                t.add_row("-" * 10, "-" * 10)
+                for d, a in self._dim_to_axis.items():
+                    t.add_row(str(d), str(a))
+            P.add_line()
+        return str(P)
 
 
 class AxisAxisRelation:
@@ -193,15 +201,56 @@ class AxisAxisRelation:
             assert False
 
     def __repr__(self):
-        return "equal = \t\t{},\ndependent&equal = \t{},\ndependent&spliting = \t{},\ndependent&merging = \t{}".format(
-            self.equal_dict,
-            self.depend_eq_dict_key_input,
-            self.depend_split_dict_key_input,
-            self.depend_merge_dict_key_input,
-        )
+        with P.section("Axes Relations"):
+            with P.section("EQ RELATIONSHIP"):
+                if len(self.equal_dict) == 0:
+                    P.add_line("Nothing")
+                else:
+                    with P.table(
+                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
+                    ) as t:
+                        t.add_row("Axis", "Equal To")
+                        t.add_row("-" * 10, "-" * 40)
+                        for d, s in self.equal_dict.items():
+                            t.add_row(str(d), str(s))
+            with P.section("DEPEND&EQ RELATIONSHIP(Axes Relations)"):
+                if len(self.depend_eq_dict_key_input) == 0:
+                    P.add_line("Nothing")
+                else:
+                    with P.table(
+                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
+                    ) as t:
+                        t.add_row("Input Axis", "Depend and Equal To")
+                        t.add_row("-" * 10, "-" * 40)
+                        for d, s in self.depend_eq_dict_key_input.items():
+                            t.add_row(str(d), str(s))
+            with P.section("DEPEND&SPLITTING RELATIONSHIP(Axes Relations)"):
+                if len(self.depend_split_dict_key_input) == 0:
+                    P.add_line("Nothing")
+                else:
+                    with P.table(
+                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
+                    ) as t:
+                        t.add_row("Input Axis", "Depend and Splitting To")
+                        t.add_row("-" * 10, "-" * 40)
+                        for d, s in self.depend_split_dict_key_input.items():
+                            t.add_row(str(d), str(s))
+            with P.section("DEPEND&MERGING RELATIONSHIP(Axes Relations)"):
+                if len(self.depend_merge_dict_key_input) == 0:
+                    P.add_line("Nothing")
+                else:
+                    with P.table(
+                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
+                    ) as t:
+                        t.add_row("Input Axis", "Depend and Merging To")
+                        t.add_row("-" * 10, "-" * 40)
+                        for d, s in self.depend_merge_dict_key_input.items():
+                            t.add_row(str(d), str(s))
+            P.add_line()
+        return str(P)
 
 
-def parse_einsum_str(equation: str) -> AxisAxisRelation:
+def parse_einsum_str(equation: str, from_prim: "EinsumPrimitive") -> AxisAxisRelation:
     def no_nest_parenthesis(part: str) -> bool:
         # check no nested parenthesis
         need_another = False
@@ -236,7 +285,7 @@ def parse_einsum_str(equation: str) -> AxisAxisRelation:
         # 对于每个元组 (group1, group2)，取非空的那一个
         names = [group1 or group2 for group1, group2 in matches]
         result = [
-            Axis(name, is_input, idx_inside, idx)
+            Axis(name, from_prim, is_input, idx_inside, idx)
             for idx_inside, name in enumerate(names)
         ]
         return result
@@ -344,7 +393,8 @@ class EinsumPrimitive(ABC):
     def __init__(self, inputs: List[FakeData], einsum_str: str) -> None:
         self.inputs = inputs
         self.einsum_str = einsum_str
-        self.axes_relations: AxisAxisRelation = parse_einsum_str(einsum_str)
+        self.axes_relations: AxisAxisRelation = parse_einsum_str(einsum_str, self)
+        # instance outputs
         self.outputs = self.run()
 
         self.dim_axis_relations = DimAxisRelation()
@@ -357,7 +407,7 @@ class EinsumPrimitive(ABC):
             io_tensor: FakeTensor
             for axis, dim in zip(axes, io_tensor.symbolic_shapes):
                 self.dim_axis_relations.insert(dim, axis)
-
+        # iter space
         self.iteration_scripts = self._get_iterspace()
 
     def _get_iterspace(self) -> Set[Axis]:
@@ -399,13 +449,18 @@ class EinsumPrimitive(ABC):
         return rets
 
     def __repr__(self):
-        return "inputs = \t\t{}\n\noutputs = \t\t{}\n\neinsum_str = \t\t{}\n\ndim_axis_relations = \t{}\n\naxes_relations = \t\n{}\n".format(
-            self.inputs,
-            self.outputs,
-            self.einsum_str,
-            self.dim_axis_relations,
-            self.axes_relations,
-        )
+        from Aipiler.utils.namer import N
+
+        with P.section(
+            "{}: {}".format(N.get_or_create_name_of(self), self.__class__.__name__)
+        ):
+            with P.table() as t:
+                t.add_row("inputs", self.inputs)
+                t.add_row("outputs", self.outputs)
+                t.add_row("einsum_str", self.einsum_str)
+            P.add_line(str(self.dim_axis_relations))
+            P.add_line(str(self.axes_relations))
+        return str(P)
 
 
 class MapPrimitive(EinsumPrimitive):

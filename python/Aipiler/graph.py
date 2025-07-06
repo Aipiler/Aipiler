@@ -35,6 +35,7 @@ class EinsumGraph:
             nodes.insert(0, op)
             for i in op.inputs:
                 if i in self.inputs:
+                    # if i in self.inputs, stop tracing forward
                     continue
                 if isinstance(i, FakeTensor):
                     if isinstance(i, Parameter) and i not in self.inputs:
