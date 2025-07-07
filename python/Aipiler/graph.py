@@ -96,7 +96,7 @@ class EinsumGraph:
         for node in self.nodes:
             # insert eq dims
             equal_dict = self.dims_relations._eq_dict
-            for axis, eq_set in node.axes_relations.equal_dict.items():
+            for axis, eq_set in node.axes_relations.equality_handler.equal_dict.items():
                 d = node.dim_axis_relations[axis]
                 dims_eq_set = set([node.dim_axis_relations[a] for a in eq_set])
                 if d in equal_dict:
@@ -115,7 +115,12 @@ class EinsumGraph:
             # insert depend eq dim
             # input as key
             depend_eq_dict_key_input = self.dims_relations._depend_eq_dict_key_input
-            for axis, eq_set in node.axes_relations.depend_eq_dict_key_input.items():
+            for (
+                axis,
+                eq_set,
+            ) in (
+                node.axes_relations.dependency_handler.depend_eq_output_to_input.items()
+            ):
                 d = node.dim_axis_relations[axis]
                 dims_eq_set = set([node.dim_axis_relations[a] for a in eq_set])
                 if d in depend_eq_dict_key_input:
@@ -124,7 +129,12 @@ class EinsumGraph:
                     depend_eq_dict_key_input.update({d: dims_eq_set})
             # output as key
             depend_eq_dict_key_output = self.dims_relations._depend_eq_dict_key_output
-            for axis, eq_set in node.axes_relations.depend_eq_dict_key_output.items():
+            for (
+                axis,
+                eq_set,
+            ) in (
+                node.axes_relations.dependency_handler.depend_eq_output_to_input.items()
+            ):
                 d = node.dim_axis_relations[axis]
                 dims_eq_set = set([node.dim_axis_relations[a] for a in eq_set])
                 if d in depend_eq_dict_key_output:
