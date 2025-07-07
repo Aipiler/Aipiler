@@ -522,6 +522,21 @@ class UnaryPrimitive(EinsumPrimitive):
         self.output_axes = self.inputs_axes[0]
 
 
+class RearrangePrimitive(EinsumPrimitive):
+    def __init__(self, inputs: List[FakeData] | FakeData, einsum_str: str, **axes_length):
+        
+        if isinstance(inputs, FakeData):
+            inputs = [inputs]
+        
+        super().__init__(inputs, einsum_str)
+        self.input = self.inputs[0]
+        self.inputs_script = self.inputs_scripts[0]
+        self.outputs_script = self.outputs_scripts[0]
+        self.axes_length: Dict[str, int] = axes_length
+        self.output = self.outputs[0]
+        self.output_axes = self.outputs_axes[0]
+
+
 class CascadePrimitive(EinsumPrimitive):
     def __init__(
         self,
@@ -534,14 +549,6 @@ class CascadePrimitive(EinsumPrimitive):
         super().__init__(list(inputs), einsum_str)
         self.graph: EinsumGraph = graph
 
-
-# class RearrangePrimitive(EinsumPrimitive):
-#     def __init__(self, inputs, einsum_str, **axes_length):
-#         super().__init__(inputs, einsum_str)
-#         self.input = self.inputs[0]
-#         self.inputs_script = self.inputs_scripts[0]
-#         self.outputs_script = self.outputs_scripts[0]
-#         self.axes_length: Dict[str, int] = axes_length
 
 
 class EinsumBuilder:
@@ -577,6 +584,16 @@ class EinsumBuilder:
     @staticmethod
     def cascade(*args, subgraph, einsum_str):
         return CascadePrimitive(args, subgraph, einsum_str).outputs
+
+    def rearrange(
+        inputs: Union[FakeData, List[FakeData]],
+        einsum_str: str,
+        **axes_length: Dict[str, int],
+    ) -> FakeData:
+        if isinstance(inputs, FakeData):
+            inputs = [inputs]
+        rearrange_primitive = RearrangePrimitive(inputs, einsum_str, **axes_length)
+        return rearrange_primitive.output
 
     @staticmethod
     def populate() -> FakeData:

@@ -172,6 +172,15 @@ def unary(
     )
 
 
+def rearrange(
+    A: Union[FakeData, List[FakeData]],
+    pattern: str,
+    **axes_length: Dict[str, int],
+) -> FakeData:
+    return EinsumBuilder.rearrange(A, pattern, axes_length)
+
+
+
 def cascade(func: FunctionType):
     R"""
     cascade is a black box / subgraph in einsum graph
