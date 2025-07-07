@@ -69,7 +69,7 @@ class MLIRCodeGenVisitor:
         # 根据einsum_str 构建linalg.generic op
         symbol_defs = {}
         domain_defs = {}
-        for script in node.iteration_scripts:
+        for script in node.iteration_axes:
             symbol_defs[script] = getattr(S, script)
             domain_defs[script] = getattr(D, script)
 
@@ -83,7 +83,7 @@ class MLIRCodeGenVisitor:
                 output=True,
             ),
         ):
-            domain((domain_defs[s] for s in node.iteration_scripts))
+            domain((domain_defs[s] for s in node.iteration_axes))
             output_indices = tuple(domain_defs[s] for s in node.output_axes)
             lhs_indices = tuple(domain_defs[s] for s in node.lhs_axes)
             rhs_indices = tuple(domain_defs[s] for s in node.rhs_axes)
@@ -113,7 +113,7 @@ class MLIRCodeGenVisitor:
         # 根据einsum_str 构建linalg.generic op
         symbol_defs = {}
         domain_defs = {}
-        for script in node.iteration_scripts:
+        for script in node.iteration_axes:
             symbol_defs[script] = getattr(S, script)
             domain_defs[script] = getattr(D, script)
 
@@ -126,7 +126,7 @@ class MLIRCodeGenVisitor:
                 output=True,
             ),
         ):
-            domain(*(domain_defs[s] for s in node.iteration_scripts))
+            domain(*(domain_defs[s] for s in node.iteration_axes))
             output_indices = tuple(domain_defs[s] for s in node.output_axes)
             input_indices = tuple(domain_defs[s] for s in node.x_axes)
             # TODO: 当前只支持加减乘数,不能写死

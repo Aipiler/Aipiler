@@ -26,13 +26,15 @@ class Module:
         # 使用有序字典来保证模块和参数的顺序
         self._parameters = OrderedDict()
         self._children = OrderedDict()
-        
+
     def register_parameter(self, name: str, param: Parameter):
         """显式注册一个参数。"""
         if not isinstance(param, Parameter):
-            raise TypeError(f"Cannot assign torch.Tensor. Use MyParameter instead. (Got {type(param).__name__})")
+            raise TypeError(
+                f"Cannot assign torch.Tensor. Use MyParameter instead. (Got {type(param).__name__})"
+            )
         self._parameters[name] = param
-        
+
     def add_module(self, name: str, module):
         """显式注册一个子模块。"""
         if not isinstance(module, Module) and module is not None:
@@ -48,19 +50,19 @@ class Module:
         elif isinstance(value, Module):
             self.add_module(name, value)
         object.__setattr__(self, name, value)
-            
-    def named_parameters(self, prefix: str = ''):
+
+    def named_parameters(self, prefix: str = ""):
         """
         递归地生成所有命名参数。这是一个生成器。
         """
         # 1. 先交出自己的直接参数
         for name, param in self._parameters.items():
-            yield (prefix + '.' + name if prefix else name, param)
-            
+            yield (prefix + "." + name if prefix else name, param)
+
         # 2. 递归地进入所有子模块
         for name, module in self._children.items():
             # 将子模块的名称加入前缀
-            child_prefix = prefix + '.' + name if prefix else name
+            child_prefix = prefix + "." + name if prefix else name
             # 委派生成任务给子模块
             yield from module.named_parameters(prefix=child_prefix)
 
@@ -76,16 +78,16 @@ class Module:
     def forward(self, *args, **kwargs):
         """所有子类都应该重写这个方法。"""
         raise NotImplementedError
-        
+
     def __repr__(self):
         # 创建一个漂亮的打印输出
-        lines = [self.__class__.__name__ + '(']
+        lines = [self.__class__.__name__ + "("]
         for name, module in self._children.items():
-            lines.append(f'  ({name}): {repr(module)}')
-        lines.append(')')
-        return '\n'.join(lines)
-    
-    
+            lines.append(f"  ({name}): {repr(module)}")
+        lines.append(")")
+        return "\n".join(lines)
+
+
 class ModuleList(Module):
     def __init__(self, modules: Iterable = None):
         super().__init__()
@@ -106,37 +108,38 @@ class ModuleList(Module):
 
     def __len__(self):
         return len(self._children)
-        
+
     def __iter__(self):
         return iter(self._children.values())
 
 
 def load_from_safetensor(model: Module, model_path: str):
     from safetensors.torch import load_file
-    
+
     pytorch_state_dict = load_file(model_path)
     custom_named_params = dict(model.named_parameters())
-    
+
     # 遍历从文件中加载的PyTorch权重
     for param_name, pytorch_tensor in pytorch_state_dict.items():
         print(f"正在处理参数: {param_name}...")
-        
+
         # 检查这个参数是否存在于我们的自定义模型中
         if param_name in custom_named_params:
             # 获取自定义模型中对应的Parameter对象
             custom_param: Parameter = custom_named_params[param_name]
-            
+
             # 检查形状是否匹配，这是一个非常重要的健全性检查
             if custom_param.numeric_shape == list(pytorch_tensor.shape):
                 # 关键步骤：进行数据迁移
-                custom_param._storage = pytorch_tensor # 或者其他等效的赋值操作
+                custom_param._storage = pytorch_tensor  # 或者其他等效的赋值操作
                 print(f"  ✅ 成功加载权重，形状: {pytorch_tensor.shape}")
             else:
-                print(f"  ❌ 形状不匹配！PyTorch: {pytorch_tensor.shape}, 自定义: {custom_param.dims()}")
+                print(
+                    f"  ❌ 形状不匹配！PyTorch: {pytorch_tensor.shape}, 自定义: {custom_param.dims()}"
+                )
         else:
             print(f"  ⚠️ 警告: 在自定义模型中找不到参数 {param_name}")
     return model
-
 
 
 def map(
@@ -173,12 +176,11 @@ def unary(
 
 
 def rearrange(
-    A: Union[FakeData, List[FakeData]],
+    A: Union[FakeTensor, List[FakeTensor]],
     pattern: str,
     **axes_length: Dict[str, int],
-) -> FakeData:
-    return EinsumBuilder.rearrange(A, pattern, axes_length)
-
+) -> FakeTensor:
+    return EinsumBuilder.rearrange(A, pattern, **axes_length)
 
 
 def cascade(func: FunctionType):
@@ -410,7 +412,7 @@ def compile_module(
         tmp = exported.compile(save_to=None, target_backend=target_backend)
         ctx = exported.mlir_context()
         del ctx
-        return tmp 
+        return tmp
     else:
         save_dir = f"einsum_{prefix}_vmfb"
         os.makedirs(save_dir, exist_ok=True)

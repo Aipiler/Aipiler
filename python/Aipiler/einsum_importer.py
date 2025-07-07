@@ -163,7 +163,7 @@ class Einsum_importer:
         # 根据einsum_str 构建linalg.generic op
         symbol_defs = {}
         domain_defs = {}
-        for script in node.iteration_scripts:
+        for script in node.iteration_axes:
             symbol_defs[script.name] = getattr(S, script.name)
             domain_defs[script.name] = getattr(D, script.name)
 
@@ -182,7 +182,7 @@ class Einsum_importer:
                 output=True,
             ),
         ):
-            domain(*(domain_defs[s.name] for s in node.iteration_scripts))
+            domain(*(domain_defs[s.name] for s in node.iteration_axes))
             output_indices = tuple(domain_defs[s.name] for s in node.output_axes)
             lhs_indices = tuple(domain_defs[s.name] for s in node.lhs_axes)
             rhs_indices = tuple(
@@ -201,7 +201,7 @@ class Einsum_importer:
                 output=True,
             ),
         ):
-            domain(*(domain_defs[s.name] for s in node.iteration_scripts))
+            domain(*(domain_defs[s.name] for s in node.iteration_axes))
             output_indices = tuple(domain_defs[s.name] for s in node.output_axes)
             lhs_indices = tuple(domain_defs[s.name] for s in node.lhs_axes)
             # TODO: 当前只支持加减乘数,不能写死
@@ -266,7 +266,7 @@ class Einsum_importer:
         # 根据einsum_str 构建linalg.generic op
         symbol_defs = {}
         domain_defs = {}
-        for script in node.iteration_scripts:
+        for script in node.iteration_axes:
             symbol_defs[script.name] = getattr(S, script.name)
             domain_defs[script.name] = getattr(D, script.name)
 
@@ -282,7 +282,7 @@ class Einsum_importer:
                 output=True,
             ),
         ):
-            domain(*(domain_defs[s.name] for s in node.iteration_scripts))
+            domain(*(domain_defs[s.name] for s in node.iteration_axes))
             output_indices = tuple(domain_defs[s.name] for s in node.output_axes)
             input_indices = tuple(domain_defs[s.name] for s in node.x_axes)
             target_dim_indices = tuple(domain_defs[s] for s in node.dims_to_reduce)
@@ -303,7 +303,7 @@ class Einsum_importer:
         # 根据einsum_str 构建linalg.generic op
         symbol_defs = {}
         domain_defs = {}
-        for script in node.iteration_scripts:
+        for script in node.iteration_axes:
             symbol_defs[script.name] = getattr(S, script.name)
             domain_defs[script.name] = getattr(D, script.name)
 

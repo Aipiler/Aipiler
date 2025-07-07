@@ -26,7 +26,7 @@ def mean(A: FakeTensor):
         A.get_dim(1),
         A.dtype,
     )
-    t1 = map(t0, dim, "i, _ -> i", target_dim=["i"], compute_op_str="/")
+    t1 = map(t0, dim, "i, _ -> i", compute_op_str="/")
     return t1
 
 
@@ -38,21 +38,21 @@ def qwen2_rms_norm(
     assert hidden_states.dtype is dtypes.f32
     eps = FakeScalar(1e-6, dtype=dtypes.f32)
     c2 = FakeScalar(2, dtype=dtypes.f32)
-    tmp0 = map(hidden_states, c2, "ij, _ -> ij", [], "^")
+    tmp0 = map(hidden_states, c2, "ij, _ -> ij", "^")
     variance = mean(tmp0)
     # tmp1 = variance + eps
-    tmp1 = map(variance, eps, "j, _ -> j", [], "+")
+    tmp1 = map(variance, eps, "j, _ -> j", "+")
     # tmp2 = torch.rsqrt(tmp1)
     tmp2 = unary(tmp1, "rsqrt")
-    hidden_states = map(hidden_states, tmp2, "ij, i -> ij", [], "*")
+    hidden_states = map(hidden_states, tmp2, "ij, i -> ij", "*")
     # weight * hidden_state
-    ret = map(weight, hidden_states, "j, ij -> ij", [], "*")
+    ret = map(weight, hidden_states, "j, ij -> ij", "*")
     return ret
 
 
 @einsum
 def mm(A: FakeTensor, B: FakeTensor):
-    t = map(A, B, "ik, kj -> ikj", [], compute_op_str="*")
+    t = map(A, B, "ik, kj -> ikj", compute_op_str="*")
     return reduce(t, "ikj -> ij", ["k"], compute_op_str="+")
 
 
@@ -146,7 +146,8 @@ def do_bench(i: int, device: str = "host"):
     np_w_mm = np.random.rand(hidden_size, j).astype(np.float32)
 
     inputs = [np_a, np_w_rms, np_w_mm]
-    # run_inference(vm_module, config, inputs)
+    run_inference(vm_module, config, inputs)
+    exit()
     benchmark_config = BenchmarkConfig(num_runs=20)
     benchmarker = BenchmarkRunner(benchmark_config)
     result = benchmarker.run_benchmark(
@@ -164,4 +165,4 @@ if __name__ == "__main__":
     i_list = (16, 32, 64, 128, 256, 512, 1024)
     for i in i_list:
         print(f"i = {i}")
-        do_bench(i, device="cuda")
+        do_bench(i, device="host")

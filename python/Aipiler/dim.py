@@ -50,7 +50,7 @@ class Dim:
         return "{}(size={}, from={})".format(
             N.get_or_create_name_of(self),
             self.size,
-            N.get_or_create_name_of(self._fake_tensor),
+            N.get_or_create_name_of(self._fake_tensor) if self._fake_tensor else "wild",
         )
 
 

@@ -13,7 +13,12 @@ class Namer:
         from Aipiler import FakeTensor, FakeScalar, Parameter
         from Aipiler.dim import Dim
         from Aipiler.axis import Axis
-        from Aipiler.primitive import MapPrimitive, ReducePrimitive, UnaryPrimitive
+        from Aipiler.primitive import (
+            MapPrimitive,
+            ReducePrimitive,
+            UnaryPrimitive,
+            RearrangePrimitive,
+        )
 
         for ty, ty_name in (
             (FakeTensor, "tensor"),
@@ -24,6 +29,7 @@ class Namer:
             (MapPrimitive, "map"),
             (ReducePrimitive, "reduce"),
             (UnaryPrimitive, "unary"),
+            (RearrangePrimitive, "rearrange"),
         ):
             self._obj_names.update({ty: bidict()})
             self._type_short_names.update({ty: ty_name})
