@@ -25,392 +25,699 @@ from Aipiler.utils.printer import P
 
 
 class DimAxisRelation:
+    """维度和轴之间的双向映射关系管理器"""
+
     def __init__(self):
         self._dim_to_axis: Dict[Dim, Axis] = dict()
         self._axis_to_dim: Dict[Axis, Dim] = dict()
 
     @property
-    def dims(self):
+    def dims(self) -> List[Dim]:
+        """获取所有维度"""
         return list(self._dim_to_axis.keys())
 
     @property
-    def axes(self):
+    def axes(self) -> List[Axis]:
+        """获取所有轴"""
         return list(self._axis_to_dim.keys())
 
-    def insert(self, dim: Dim, axis: Axis):
+    def insert(self, dim: Dim, axis: Axis) -> None:
+        """插入维度-轴映射关系
+
+        Args:
+            dim: 维度对象
+            axis: 轴对象
+
+        Raises:
+            ValueError: 当维度或轴已存在时
+        """
         if dim in self._dim_to_axis or axis in self._axis_to_dim:
-            raise ValueError(f"Pair {dim} - {axis} already existed.")
+            raise ValueError(f"维度-轴对 {dim} - {axis} 已存在")
+
         self._dim_to_axis[dim] = axis
         self._axis_to_dim[axis] = dim
 
+    def get_axis(self, dim: Dim) -> Optional[Axis]:
+        """根据维度获取轴"""
+        return self._dim_to_axis.get(dim)
+
+    def get_dim(self, axis: Axis) -> Optional[Dim]:
+        """根据轴获取维度"""
+        return self._axis_to_dim.get(axis)
+
     def __getitem__(self, key) -> Union[Dim, Axis]:
+        """支持键访问，自动判断类型"""
         if isinstance(key, Dim) and key in self._dim_to_axis:
             return self._dim_to_axis[key]
         elif isinstance(key, Axis) and key in self._axis_to_dim:
             return self._axis_to_dim[key]
         else:
-            raise KeyError(f"KeyError: {key}")
+            raise KeyError(f"未找到键: {key}")
 
-    def __repr__(self):
-        with P.section("Dim to Axis Map"):
+    def __repr__(self) -> str:
+        """格式化输出维度-轴映射"""
+        with P.section("维度到轴的映射"):
             with P.table(separator=" -> ", aligns=["c", "c"], col_widths=[30, 80]) as t:
-                t.add_row("Dim", "Axis")
+                t.add_row("维度", "轴")
                 t.add_row("-" * 10, "-" * 10)
-                for d, a in self._dim_to_axis.items():
-                    t.add_row(str(d), str(a))
+                for dim, axis in self._dim_to_axis.items():
+                    t.add_row(str(dim), str(axis))
             P.add_line()
         return str(P)
 
 
+class RelationshipType(Enum):
+    """轴关系类型枚举"""
+
+    EQ = "equality_between_inputs_or_outputs"
+    DEPEND_EQ = "dependency_and_equality_between_input_and_output"
+    DEPEND_SPLIT = "split_one_input_axis_into_multi_output_axes"
+    DEPEND_MERGE = "merge_multi_input_axes_into_one_output_axes"
+
+
+class RelationshipManager:
+    """轴关系管理器的基类"""
+
+    def __init__(self):
+        self.relationships: Dict[RelationshipType, Dict] = {
+            RelationshipType.EQ: {},
+            RelationshipType.DEPEND_EQ: {},
+            RelationshipType.DEPEND_SPLIT: {},
+            RelationshipType.DEPEND_MERGE: {},
+        }
+
+    def _get_relationship_dict(self, rel_type: RelationshipType) -> Dict:
+        """获取指定类型的关系字典"""
+        return self.relationships[rel_type]
+
+
+class EqualityRelationshipHandler(RelationshipManager):
+    """等价关系处理器"""
+
+    def __init__(self):
+        super().__init__()
+        self.equal_dict: Dict[Axis, Set[Axis]] = {}
+
+    def add_equality(self, *axes) -> None:
+        """添加等价关系"""
+        old_set: Optional[Set[Axis]] = None
+
+        # 查找是否已存在包含这些轴的等价集合
+        for axis in axes:
+            if axis in self.equal_dict:
+                old_set = self.equal_dict[axis]
+                break
+
+        # 创建或更新等价集合
+        if old_set is None:
+            old_set = set(axes)
+        else:
+            old_set.update(axes)
+
+        # 更新所有轴的等价关系
+        for axis in old_set:
+            self.equal_dict[axis] = old_set
+
+
+class DependencyRelationshipHandler(RelationshipManager):
+    """依赖关系处理器"""
+
+    def __init__(self):
+        super().__init__()
+        # 依赖等价关系
+        self.depend_eq_input_to_output: Dict[Axis, Set[Axis]] = {}
+        self.depend_eq_output_to_input: Dict[Axis, Set[Axis]] = {}
+
+        # 依赖拆分关系
+        self.depend_split_input_to_outputs: Dict[Axis, Set[Axis]] = {}
+        self.depend_split_output_to_input: Dict[Axis, Axis] = {}
+
+        # 依赖合并关系
+        self.depend_merge_input_to_output: Dict[Axis, Axis] = {}
+        self.depend_merge_output_to_inputs: Dict[Axis, Set[Axis]] = {}
+
+    def add_dependency_equality(self, input_axis: Axis, output_axis: Axis) -> None:
+        """添加依赖等价关系"""
+        # 更新输入到输出的映射
+        if input_axis in self.depend_eq_input_to_output:
+            self.depend_eq_input_to_output[input_axis].add(output_axis)
+        else:
+            self.depend_eq_input_to_output[input_axis] = {output_axis}
+
+        # 更新输出到输入的映射
+        if output_axis in self.depend_eq_output_to_input:
+            self.depend_eq_output_to_input[output_axis].add(input_axis)
+        else:
+            self.depend_eq_output_to_input[output_axis] = {input_axis}
+
+    def add_inputAxis_split_to_outputAxes(
+        self, input_axis: Axis, output_axes: List[Axis]
+    ) -> None:
+        """添加输入轴拆分到多个输出轴的关系"""
+        for output_axis in output_axes:
+            self.add_inputAxis_split_to_outputAxis(input_axis, output_axis)
+
+    def add_inputAxis_split_to_outputAxis(
+        self, input_axis: Axis, output_axis: Axis
+    ) -> None:
+        """添加依赖拆分关系"""
+        # 更新输入到输出的映射
+        if input_axis in self.depend_split_input_to_outputs:
+            self.depend_split_input_to_outputs[input_axis].add(output_axis)
+        else:
+            self.depend_split_input_to_outputs[input_axis] = {output_axis}
+
+        # 检查输出轴是否已有其他输入轴
+        if (
+            output_axis in self.depend_split_output_to_input
+            and self.depend_split_output_to_input[output_axis] != input_axis
+        ):
+            raise ValueError(f"输出轴 {output_axis} 已与其他输入轴存在拆分关系")
+
+        self.depend_split_output_to_input[output_axis] = input_axis
+
+    def add_inputAxes_merge_to_outputAxis(
+        self, input_axes: List[Axis], output_axis: Axis
+    ) -> None:
+        """添加输入轴拆分到多个输出轴的关系"""
+        for input_axis in input_axes:
+            self.add_inputAxis_merge_to_outputAxis(input_axis, output_axis)
+
+    def add_inputAxis_merge_to_outputAxis(
+        self, input_axis: Axis, output_axis: Axis
+    ) -> None:
+        """添加依赖合并关系"""
+        # 检查输入轴是否已有其他输出轴
+        if (
+            input_axis in self.depend_merge_input_to_output
+            and self.depend_merge_input_to_output[input_axis] != output_axis
+        ):
+            raise ValueError(f"输入轴 {input_axis} 已与其他输出轴存在合并关系")
+
+        self.depend_merge_input_to_output[input_axis] = output_axis
+
+        # 更新输出到输入的映射
+        if output_axis in self.depend_merge_output_to_inputs:
+            self.depend_merge_output_to_inputs[output_axis].add(input_axis)
+        else:
+            self.depend_merge_output_to_inputs[output_axis] = {input_axis}
+
+
 class AxisAxisRelation:
-    class RelationShip(Enum):
-        EQ = "Equality between inputs or outputs"
-        DEPEND_EQ = "Dependency and equality between input and output"
-        DEPEND_SPLIT = "Split one input axis into multi output axes"
-        DEPEND_MERGE = "Merge multi input axes into one output axes"
+    """轴与轴之间的关系管理器"""
 
     def __init__(self, inputs_axes: List[List[Axis]], outputs_axes: List[List[Axis]]):
         self._inputs_axes = inputs_axes
         self._outputs_axes = outputs_axes
-        self.all_input_axes = [_ for __ in inputs_axes for _ in __]
-        self.all_output_axes = [_ for __ in outputs_axes for _ in __]
+        self.all_input_axes = [axis for axes_list in inputs_axes for axis in axes_list]
+        self.all_output_axes = [
+            axis for axes_list in outputs_axes for axis in axes_list
+        ]
 
-        # EQ: equal axes, including axes in DEPEND_EQ
-        # key: any axis; value: equal axes
-        self.equal_dict: Dict[Axis, Set[Axis]] = dict()
-
-        # DEPEND_EQ
-        # key: input axis, value: equal output axes
-        self.depend_eq_dict_key_input: Dict[Axis, Set[Axis]] = dict()
-        # key: output axis, value: equal input axes
-        self.depend_eq_dict_key_output: Dict[Axis, Set[Axis]] = dict()
-
-        # DEPEND_SPLIT
-        # key: input axis, value: output axes
-        self.depend_split_dict_key_input: Dict[Axis, Set[Axis]] = dict()
-        # key: output axis, value: splited input axis
-        self.depend_split_dict_key_output: Dict[Axis, Axis] = dict()
-
-        # DEPEND_MERGE
-        # key: input axis, value: merged output axis
-        self.depend_merge_dict_key_input: Dict[Axis, Axis] = dict()
-        # key: output axis, value: input axes
-        self.depend_merge_dict_key_output: Dict[Axis, Set[Axis]] = dict()
+        # 初始化关系处理器
+        self.equality_handler = EqualityRelationshipHandler()
+        self.dependency_handler = DependencyRelationshipHandler()
 
     @property
-    def inputs_axes(self):
+    def inputs_axes(self) -> List[List[Axis]]:
         return self._inputs_axes
 
     @property
-    def outputs_axes(self):
+    def outputs_axes(self) -> List[List[Axis]]:
         return self._outputs_axes
 
     @overload
-    def insert(self, i: Axis, o: Axis, relationship: "AxisAxisRelation.RelationShip"):
-        """Insert axes with relationship.
-
-        Args:
-            i (Axis): input axis
-            o (Axis): output axis
-            relationship (RelationShip): relationship between i and o
-        """
+    def insert(
+        self, input_axis: Axis, output_axis: Axis, relationship: RelationshipType
+    ) -> None:
+        """插入特定关系的轴对"""
         ...
 
     @overload
-    def insert(self, *axes, relationship: RelationShip = RelationShip.EQ):
-        """Insert equal axes.
-
-        Args:
-            relationship (RelationShip, optional): _description_. Defaults to RelationShip.EQ.
-        """
+    def insert(
+        self, *axes, relationship: RelationshipType = RelationshipType.EQ
+    ) -> None:
+        """插入等价关系的多个轴"""
         ...
 
-    def insert(self, *args, **kwargs):
+    def insert(self, *args, **kwargs) -> None:
+        """插入轴关系的统一接口"""
+        # 解析参数
+        relationship = self._parse_insert_arguments(*args, **kwargs)
+        axes = args[:-1] if isinstance(args[-1], RelationshipType) else args
+
+        if relationship == RelationshipType.EQ:
+            self.equality_handler.add_equality(*axes)
+        elif relationship == RelationshipType.DEPEND_EQ:
+            if len(axes) != 2:
+                raise ValueError("依赖等价关系需要恰好两个轴")
+            self.dependency_handler.add_dependency_equality(axes[0], axes[1])
+        elif relationship == RelationshipType.DEPEND_SPLIT:
+            input_axis = axes[0]
+            output_axes = axes[1:]
+            self.dependency_handler.add_inputAxis_split_to_outputAxes(
+                input_axis, output_axes
+            )
+        elif relationship == RelationshipType.DEPEND_MERGE:
+            output_axis = axes[-1]
+            input_axes = axes[0:-1]
+            self.dependency_handler.add_inputAxes_merge_to_outputAxis(
+                input_axes, output_axis
+            )
+        else:
+            raise ValueError(f"不支持的关系类型: {relationship}")
+
+    def _parse_insert_arguments(self, *args, **kwargs) -> RelationshipType:
+        """解析insert方法的参数"""
         if "relationship" in kwargs:
-            axes = args
-            relation = kwargs["relationship"]
-        elif isinstance(args[-1], AxisAxisRelation.RelationShip):
-            axes = args[:-1]
-            relation = args[-1]
+            relationship = kwargs["relationship"]
+        elif len(args) > 0 and isinstance(args[-1], RelationshipType):
+            relationship = args[-1]
         else:
-            axes = args
-            relation = AxisAxisRelation.RelationShip.EQ
-        if not isinstance(relation, AxisAxisRelation.RelationShip):
-            raise ValueError("Expected relationship in function insert")
+            relationship = RelationshipType.EQ
 
-        if relation == AxisAxisRelation.RelationShip.EQ:
-            old_set: Set[Axis] = None
-            for axis in axes:
-                if axis in self.equal_dict:
-                    old_set = self.equal_dict[axis]
-                    break
-            if old_set is None:
-                old_set = set(axes)
-            else:
-                old_set.update(axes)
-            for axis in old_set:
-                self.equal_dict[axis] = old_set
-        elif relation == AxisAxisRelation.RelationShip.DEPEND_EQ:
-            assert len(axes) == 2
-            i, o = axes
-            # update depend_eq_dict_key_input
-            if i in self.depend_eq_dict_key_input:
-                self.depend_eq_dict_key_input[i].add(o)
-            else:
-                self.depend_eq_dict_key_input[i] = {o}
-            # update depend_eq_dict_key_output
-            if o in self.depend_eq_dict_key_output:
-                self.depend_eq_dict_key_output[o].add(i)
-            else:
-                self.depend_eq_dict_key_output[o] = {i}
+        if not isinstance(relationship, RelationshipType):
+            raise ValueError("关系类型必须是RelationshipType枚举")
 
-        elif relation == AxisAxisRelation.RelationShip.DEPEND_SPLIT:
-            assert len(axes) == 2
-            i, o = axes
-            # update depend_split_dict_key_input
-            if i in self.depend_split_dict_key_input:
-                self.depend_split_dict_key_input[i].add(o)
-            else:
-                self.depend_split_dict_key_input[i] = {o}
-            # update depend_split_dict_key_output
-            if (
-                o in self.depend_split_dict_key_output
-                and self.depend_split_dict_key_output[o] is not i
-            ):
-                raise ValueError(f"Wrong Split relation between {i} and {o}")
-            else:
-                self.depend_split_dict_key_output[o] = i
+        return relationship
 
-        elif relation == AxisAxisRelation.RelationShip.DEPEND_MERGE:
-            assert len(axes) == 2
-            i, o = axes
-            # update depend_merge_dict_key_input
-            if (
-                i in self.depend_merge_dict_key_input
-                and self.depend_merge_dict_key_input[i] is not o
-            ):
-                raise ValueError(f"Wrong merge relation between {i} and {o}")
-            else:
-                self.depend_merge_dict_key_input[i] = o
-            # update depend_merge_dict_key_output
-            if o in self.depend_merge_dict_key_output:
-                self.depend_merge_dict_key_output[o].add(i)
-            else:
-                self.depend_merge_dict_key_output[o] = {i}
-        else:
-            assert False
+    def __repr__(self) -> str:
+        """格式化输出所有轴关系"""
+        sections = []
 
-    def __repr__(self):
-        with P.section("Axes Relations"):
-            with P.section("EQ RELATIONSHIP"):
-                if len(self.equal_dict) == 0:
-                    P.add_line("Nothing")
-                else:
-                    with P.table(
-                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
-                    ) as t:
-                        t.add_row("Axis", "Equal To")
-                        t.add_row("-" * 30, "-" * 80)
-                        for d, s in self.equal_dict.items():
-                            t.add_row(str(d), str(s))
-            with P.section("DEPEND&EQ RELATIONSHIP(Axes Relations)"):
-                if len(self.depend_eq_dict_key_input) == 0:
-                    P.add_line("Nothing")
-                else:
-                    with P.table(
-                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
-                    ) as t:
-                        t.add_row("Input Axis", "Depend and Equal By")
-                        t.add_row("-" * 10, "-" * 40)
-                        for d, s in self.depend_eq_dict_key_input.items():
-                            t.add_row(str(d), str(s))
-            with P.section("DEPEND&SPLITTING RELATIONSHIP(Axes Relations)"):
-                if len(self.depend_split_dict_key_input) == 0:
-                    P.add_line("Nothing")
-                else:
-                    with P.table(
-                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
-                    ) as t:
-                        t.add_row("Input Axis", "Depend and Splitting To")
-                        t.add_row("-" * 10, "-" * 40)
-                        for d, s in self.depend_split_dict_key_input.items():
-                            t.add_row(str(d), str(s))
-            with P.section("DEPEND&MERGING RELATIONSHIP(Axes Relations)"):
-                if len(self.depend_merge_dict_key_input) == 0:
-                    P.add_line("Nothing")
-                else:
-                    with P.table(
-                        separator=" | ", aligns=["c", "c"], col_widths=[30, 80]
-                    ) as t:
-                        t.add_row("Input Axis", "Depend and Merging To")
-                        t.add_row("-" * 10, "-" * 40)
-                        for d, s in self.depend_merge_dict_key_input.items():
-                            t.add_row(str(d), str(s))
-            P.add_line()
+        # 等价关系
+        if self.equality_handler.equal_dict:
+            sections.append(self._format_equality_section())
+
+        # 依赖等价关系
+        if self.dependency_handler.depend_eq_input_to_output:
+            sections.append(self._format_dependency_eq_section())
+
+        # 依赖拆分关系
+        if self.dependency_handler.depend_split_input_to_outputs:
+            sections.append(self._format_dependency_split_section())
+
+        # 依赖合并关系
+        if self.dependency_handler.depend_merge_input_to_output:
+            sections.append(self._format_dependency_merge_section())
+
+        return "\n".join(sections)
+
+    def _format_equality_section(self) -> str:
+        """格式化等价关系部分"""
+        with P.section("等价关系"):
+            with P.table(separator=" | ", aligns=["c", "c"], col_widths=[30, 80]) as t:
+                t.add_row("轴", "等价于")
+                t.add_row("-" * 30, "-" * 80)
+                for axis, equal_set in self.equality_handler.equal_dict.items():
+                    t.add_row(str(axis), str(equal_set))
+        return str(P)
+
+    def _format_dependency_eq_section(self) -> str:
+        """格式化依赖等价关系部分"""
+        with P.section("依赖等价关系"):
+            with P.table(separator=" | ", aligns=["c", "c"], col_widths=[30, 80]) as t:
+                t.add_row("输入轴", "依赖等价于")
+                t.add_row("-" * 30, "-" * 80)
+                for (
+                    input_axis,
+                    output_set,
+                ) in self.dependency_handler.depend_eq_input_to_output.items():
+                    t.add_row(str(input_axis), str(output_set))
+        return str(P)
+
+    def _format_dependency_split_section(self) -> str:
+        """格式化依赖拆分关系部分"""
+        with P.section("依赖拆分关系"):
+            with P.table(separator=" | ", aligns=["c", "c"], col_widths=[30, 80]) as t:
+                t.add_row("输入轴", "拆分为")
+                t.add_row("-" * 30, "-" * 80)
+                for (
+                    input_axis,
+                    output_set,
+                ) in self.dependency_handler.depend_split_input_to_outputs.items():
+                    t.add_row(str(input_axis), str(output_set))
+        return str(P)
+
+    def _format_dependency_merge_section(self) -> str:
+        """格式化依赖合并关系部分"""
+        with P.section("依赖合并关系"):
+            with P.table(separator=" | ", aligns=["c", "c"], col_widths=[30, 80]) as t:
+                t.add_row("输入轴", "合并为")
+                t.add_row("-" * 30, "-" * 80)
+                for (
+                    input_axis,
+                    output_axis,
+                ) in self.dependency_handler.depend_merge_input_to_output.items():
+                    t.add_row(str(input_axis), str(output_axis))
         return str(P)
 
 
-def parse_einsum_str(equation: str, from_prim: "EinsumPrimitive") -> AxisAxisRelation:
-    def no_nest_parenthesis(part: str) -> bool:
-        # check no nested parenthesis
+class PatternParseError(Exception):
+    """Einsum pattern解析错误"""
+
+    pass
+
+
+class EinsumParser:
+    """Einsum字符串解析器"""
+
+    ALLOWED_CHARS = set("abcdefghijklmnopqrstuvwxyz_(),->")
+    PARENTHESES_PATTERN = r"\((.*?)\)|(.)"
+
+    def __init__(self, from_prim: "EinsumPrimitive"):
+        self.from_prim = from_prim
+
+    def parse(self, equation: str) -> AxisAxisRelation:
+        """解析Einsum字符串"""
+        equation = self._preprocess_equation(equation)
+        self._validate_equation(equation)
+
+        inputs_part, outputs_part = self._split_equation(equation)
+
+        inputs_axes = self._parse_subscripts_part(inputs_part, is_input=True)
+        outputs_axes = self._parse_subscripts_part(outputs_part, is_input=False)
+
+        return self._build_axis_relations(inputs_axes, outputs_axes)
+
+    def _preprocess_equation(self, equation: str) -> str:
+        """预处理方程字符串"""
+        return equation.replace(" ", "")
+
+    def _validate_equation(self, equation: str):
+        """验证方程格式"""
+        for char in equation:
+            if char not in self.ALLOWED_CHARS:
+                raise PatternParseError(f"非法字符: '{char}'")
+
+        if "->" not in equation:
+            raise PatternParseError("方程必须包含箭头'->'")
+
+    def _split_equation(self, equation: str) -> Tuple[str, str]:
+        """分割方程为输入和输出部分"""
+        return equation.split("->", 1)
+
+    def _validate_parentheses(self, part: str) -> bool:
+        """检查括号是否嵌套"""
         need_another = False
-        for l in part:
-            if l == "(":
+        for char in part:
+            if char == "(":
                 if need_another:
                     return False
-                else:
-                    need_another = True
-
-            elif l == ")":
+                need_another = True
+            elif char == ")":
                 if need_another:
                     need_another = False
                 else:
-                    raise ValueError("Unbalanced parentheses.")
+                    raise PatternParseError("括号不匹配")
         return True
 
-    def parse_single(
-        part: str, is_input: bool, idx: Optional[int] = None
+    def _parse_single_subscript(
+        self, part: str, is_input: bool, idx: Optional[int] = None
     ) -> List[Axis]:
-        # parse str like "ab", "a(bc)d"
-        if not no_nest_parenthesis(part):
-            raise ValueError(f"Nested parentheses in {part}")
+        """解析单个下标字符串"""
+        if not self._validate_parentheses(part):
+            raise PatternParseError(f"嵌套括号: {part}")
 
-        # \((.*?)\) 是第一个捕获组，(.) 是第二个捕获组 (这里为了简单直接用 . 匹配所有单个字符)
-        pattern = r"\((.*?)\)|(.)"
-
-        # re.findall会返回一个元组列表，因为有两个捕获组
-        # 例如: [('', 'a'), ('', 'b'), ('abc', ''), ...]
-        matches = re.findall(pattern, part)
-
-        # 对于每个元组 (group1, group2)，取非空的那一个
+        matches = re.findall(self.PARENTHESES_PATTERN, part)
         names = [group1 or group2 for group1, group2 in matches]
-        result = [
-            Axis(name, from_prim, is_input, idx_inside, idx)
+
+        return [
+            Axis(name, self.from_prim, is_input, idx_inside, idx)
             for idx_inside, name in enumerate(names)
         ]
-        return result
 
-    def parse_subscripts_part(part: str, is_input: bool):
-        # "ab,bc" -> ['ab', 'bc']
-        part_subscripts = part.split(",")
-        # 确保每个操作数都有下标，0维张量必须用'_'而不是空字符串
-        for i, subscripts in enumerate(part_subscripts):
-            if not subscripts:
-                raise ValueError(f"第{i+1}个操作数的下标不能为空，0维张量请使用'_'表示")
-        axes: List[List[Axis]] = []
-        for idx, part in enumerate(part_subscripts):
-            io_axes = parse_single(part, is_input, idx)
-            axes.append(io_axes)
+    def _parse_subscripts_part(self, part: str, is_input: bool) -> List[List[Axis]]:
+        """解析下标部分"""
+        subscripts = part.split(",")
 
-        return axes
+        for i, subscript in enumerate(subscripts):
+            if not subscript:
+                raise PatternParseError(
+                    f"第{i+1}个操作数下标不能为空，0维张量请使用'_'"
+                )
 
-    equation = equation.replace(" ", "")
-    allowed_chars: Set[str] = set("abcdefghijklmnopqrstuvwxyz_(),->")
+        return [
+            self._parse_single_subscript(subscript, is_input, idx)
+            for idx, subscript in enumerate(subscripts)
+        ]
 
-    for char in equation:
-        if char not in allowed_chars:
-            raise ValueError(
-                f"Einsum方程只能包含小写字母、下划线和方程结构符号，发现非法字符: '{char}'"
-            )
+    def _build_axis_relations(
+        self, inputs_axes: List[List[Axis]], outputs_axes: List[List[Axis]]
+    ) -> AxisAxisRelation:
+        """构建轴关系"""
+        relation = AxisAxisRelation(inputs_axes, outputs_axes)
 
-    if "->" not in equation:
-        raise ValueError("Einsum方程必须包含箭头'->'来明确指定输出")
+        input_name_axes_dict = self._group_axes_by_name(inputs_axes)
+        output_name_axes_dict = self._group_axes_by_name(outputs_axes)
 
-    # 拆分方程为输入和输出部分
-    inputs_part: str
-    outputs_part: str
-    inputs_part, outputs_part = equation.split("->")
+        self._add_equality_relations(
+            relation, input_name_axes_dict, output_name_axes_dict
+        )
+        self._add_dependency_relations(
+            relation, input_name_axes_dict, output_name_axes_dict
+        )
 
-    # parse and get axes
-    inputs_axes = parse_subscripts_part(inputs_part, True)
-    outputs_axes = parse_subscripts_part(outputs_part, False)
+        return relation
 
-    input_name_axes_dict: Dict[str, List[Axis]] = dict()
-    output_name_axes_dict: Dict[str, List[Axis]] = dict()
-    for input_axes in inputs_axes:
-        for axis in input_axes:
-            if axis.name in input_name_axes_dict:
-                axes_of_name = input_name_axes_dict[axis.name]
-                axes_of_name.append(axis)
-            else:
-                input_name_axes_dict[axis.name] = [axis]
-    for output_axes in outputs_axes:
-        for axis in output_axes:
-            if axis.name in output_name_axes_dict:
-                axes_of_name = output_name_axes_dict[axis.name]
-                axes_of_name.append(axis)
-            else:
-                output_name_axes_dict[axis.name] = [axis]
+    def _group_axes_by_name(self, axes_list: List[List[Axis]]) -> Dict[str, List[Axis]]:
+        """按名称分组轴"""
+        name_axes_dict = {}
+        for axes in axes_list:
+            for axis in axes:
+                name_axes_dict.setdefault(axis.name, []).append(axis)
+        return name_axes_dict
 
-    # create relation
-    relation = AxisAxisRelation(inputs_axes, outputs_axes)
-    input_names = list(input_name_axes_dict.keys())
-    output_names = list(output_name_axes_dict.keys())
-    for name in input_names:
-        if name in output_names:
-            input_axes = input_name_axes_dict[name]
-            output_axes = output_name_axes_dict[name]
-            # add equality relation
-            relation.insert(
-                *input_axes, *output_axes, relationship=AxisAxisRelation.RelationShip.EQ
-            )
-            # add dependent equality relation
-            for i_axis in input_axes:
-                for o_axis in output_axes:
-                    relation.insert(
-                        i_axis,
-                        o_axis,
-                        relationship=AxisAxisRelation.RelationShip.DEPEND_EQ,
-                    )
+    def _add_equality_relations(
+        self,
+        relation: AxisAxisRelation,
+        input_dict: Dict[str, List[Axis]],
+        output_dict: Dict[str, List[Axis]],
+    ):
+        """添加相等关系"""
+        for name in input_dict:
+            if name in output_dict:
+                input_axes = input_dict[name]
+                output_axes = output_dict[name]
 
-    for i_name in input_names:
-        for o_name in output_names:
-            input_axes = input_name_axes_dict[i_name]
-            output_axes = output_name_axes_dict[o_name]
-            # add dependent split relation
-            if len(i_name) > len(o_name) and o_name in i_name:
+                # 添加相等关系
+                relation.insert(
+                    *input_axes, *output_axes, relationship=RelationshipType.EQ
+                )
+
+                # 添加依赖相等关系
                 for i_axis in input_axes:
                     for o_axis in output_axes:
                         relation.insert(
-                            i_axis,
-                            o_axis,
-                            relationship=AxisAxisRelation.RelationShip.DEPEND_SPLIT,
-                        )
-            # add dependent merging relation
-            elif len(o_name) > len(i_name) and i_name in o_name:
-                for i_axis in input_axes:
-                    for o_axis in output_axes:
-                        relation.insert(
-                            i_axis,
-                            o_axis,
-                            relationship=AxisAxisRelation.RelationShip.DEPEND_MERGE,
+                            i_axis, o_axis, relationship=RelationshipType.DEPEND_EQ
                         )
 
-    return relation
+    def _add_dependency_relations(
+        self,
+        relation: AxisAxisRelation,
+        input_dict: Dict[str, List[Axis]],
+        output_dict: Dict[str, List[Axis]],
+    ):
+        """添加依赖关系"""
+        for i_name in input_dict:
+            for o_name in output_dict:
+                input_axes = input_dict[i_name]
+                output_axes = output_dict[o_name]
+
+                # 分割关系
+                if len(i_name) > len(o_name) and o_name in i_name:
+                    for i_axis in input_axes:
+                        for o_axis in output_axes:
+                            relation.insert(
+                                i_axis,
+                                o_axis,
+                                relationship=RelationshipType.DEPEND_SPLIT,
+                            )
+
+                # 合并关系
+                elif len(o_name) > len(i_name) and i_name in o_name:
+                    for i_axis in input_axes:
+                        for o_axis in output_axes:
+                            relation.insert(
+                                i_axis,
+                                o_axis,
+                                relationship=RelationshipType.DEPEND_MERGE,
+                            )
+
+
+# def parse_einsum_str(equation: str, from_prim: "EinsumPrimitive") -> AxisAxisRelation:
+#     def no_nest_parenthesis(part: str) -> bool:
+#         # check no nested parenthesis
+#         need_another = False
+#         for l in part:
+#             if l == "(":
+#                 if need_another:
+#                     return False
+#                 else:
+#                     need_another = True
+
+#             elif l == ")":
+#                 if need_another:
+#                     need_another = False
+#                 else:
+#                     raise ValueError("Unbalanced parentheses.")
+#         return True
+
+#     def parse_single(
+#         part: str, is_input: bool, idx: Optional[int] = None
+#     ) -> List[Axis]:
+#         # parse str like "ab", "a(bc)d"
+#         if not no_nest_parenthesis(part):
+#             raise ValueError(f"Nested parentheses in {part}")
+
+#         # \((.*?)\) 是第一个捕获组，(.) 是第二个捕获组 (这里为了简单直接用 . 匹配所有单个字符)
+#         pattern = r"\((.*?)\)|(.)"
+
+#         # re.findall会返回一个元组列表，因为有两个捕获组
+#         # 例如: [('', 'a'), ('', 'b'), ('abc', ''), ...]
+#         matches = re.findall(pattern, part)
+
+#         # 对于每个元组 (group1, group2)，取非空的那一个
+#         names = [group1 or group2 for group1, group2 in matches]
+#         result = [
+#             Axis(name, from_prim, is_input, idx_inside, idx)
+#             for idx_inside, name in enumerate(names)
+#         ]
+#         return result
+
+#     def parse_subscripts_part(part: str, is_input: bool):
+#         # "ab,bc" -> ['ab', 'bc']
+#         part_subscripts = part.split(",")
+#         # 确保每个操作数都有下标，0维张量必须用'_'而不是空字符串
+#         for i, subscripts in enumerate(part_subscripts):
+#             if not subscripts:
+#                 raise ValueError(f"第{i+1}个操作数的下标不能为空，0维张量请使用'_'表示")
+#         axes: List[List[Axis]] = []
+#         for idx, part in enumerate(part_subscripts):
+#             io_axes = parse_single(part, is_input, idx)
+#             axes.append(io_axes)
+
+#         return axes
+
+#     equation = equation.replace(" ", "")
+#     allowed_chars: Set[str] = set("abcdefghijklmnopqrstuvwxyz_(),->")
+
+#     for char in equation:
+#         if char not in allowed_chars:
+#             raise ValueError(
+#                 f"Einsum方程只能包含小写字母、下划线和方程结构符号，发现非法字符: '{char}'"
+#             )
+
+#     if "->" not in equation:
+#         raise ValueError("Einsum方程必须包含箭头'->'来明确指定输出")
+
+#     # 拆分方程为输入和输出部分
+#     inputs_part: str
+#     outputs_part: str
+#     inputs_part, outputs_part = equation.split("->")
+
+#     # parse and get axes
+#     inputs_axes = parse_subscripts_part(inputs_part, True)
+#     outputs_axes = parse_subscripts_part(outputs_part, False)
+
+#     input_name_axes_dict: Dict[str, List[Axis]] = dict()
+#     output_name_axes_dict: Dict[str, List[Axis]] = dict()
+#     for input_axes in inputs_axes:
+#         for axis in input_axes:
+#             if axis.name in input_name_axes_dict:
+#                 axes_of_name = input_name_axes_dict[axis.name]
+#                 axes_of_name.append(axis)
+#             else:
+#                 input_name_axes_dict[axis.name] = [axis]
+#     for output_axes in outputs_axes:
+#         for axis in output_axes:
+#             if axis.name in output_name_axes_dict:
+#                 axes_of_name = output_name_axes_dict[axis.name]
+#                 axes_of_name.append(axis)
+#             else:
+#                 output_name_axes_dict[axis.name] = [axis]
+
+#     # create relation
+#     relation = AxisAxisRelation(inputs_axes, outputs_axes)
+#     input_names = list(input_name_axes_dict.keys())
+#     output_names = list(output_name_axes_dict.keys())
+#     for name in input_names:
+#         if name in output_names:
+#             input_axes = input_name_axes_dict[name]
+#             output_axes = output_name_axes_dict[name]
+#             # add equality relation
+#             relation.insert(
+#                 *input_axes, *output_axes, relationship=AxisAxisRelation.RelationShip.EQ
+#             )
+#             # add dependent equality relation
+#             for i_axis in input_axes:
+#                 for o_axis in output_axes:
+#                     relation.insert(
+#                         i_axis,
+#                         o_axis,
+#                         relationship=AxisAxisRelation.RelationShip.DEPEND_EQ,
+#                     )
+
+#     for i_name in input_names:
+#         for o_name in output_names:
+#             input_axes = input_name_axes_dict[i_name]
+#             output_axes = output_name_axes_dict[o_name]
+#             # add dependent split relation
+#             if len(i_name) > len(o_name) and o_name in i_name:
+#                 for i_axis in input_axes:
+#                     for o_axis in output_axes:
+#                         relation.insert(
+#                             i_axis,
+#                             o_axis,
+#                             relationship=AxisAxisRelation.RelationShip.DEPEND_SPLIT,
+#                         )
+#             # add dependent merging relation
+#             elif len(o_name) > len(i_name) and i_name in o_name:
+#                 for i_axis in input_axes:
+#                     for o_axis in output_axes:
+#                         relation.insert(
+#                             i_axis,
+#                             o_axis,
+#                             relationship=AxisAxisRelation.RelationShip.DEPEND_MERGE,
+#                         )
+
+#     return relation
 
 
 class EinsumPrimitive(ABC):
-    def __init__(self, inputs: List[FakeData], einsum_str: str) -> None:
+    def __init__(
+        self, inputs: List[FakeData], einsum_str: str, einsum_parser: EinsumParser
+    ) -> None:
         self.inputs = inputs
         self.einsum_str = einsum_str
-        self.axes_relations: AxisAxisRelation = parse_einsum_str(einsum_str, self)
-        # instance outputs
-        self.outputs = self.run()
+        self.einsum_parser = einsum_parser
+        # 解析轴关系
+        self.axes_relations: AxisAxisRelation = self.einsum_parser.parse(einsum_str)
 
-        self.dim_axis_relations = DimAxisRelation()
-        # update dim_axis_relations
-        self.inputs_axes = self.axes_relations.inputs_axes
-        self.outputs_axes = self.axes_relations.outputs_axes
-        for axes, io_tensor in zip(
-            (*self.inputs_axes, *self.outputs_axes), (*self.inputs, *self.outputs)
-        ):
-            if isinstance(io_tensor, FakeScalar):
-                continue
-            io_tensor: FakeTensor
-            for axis, dim in zip(axes, io_tensor.symbolic_shapes):
-                self.dim_axis_relations.insert(dim, axis)
-        # iter space
+        # 生成输出
+        self.outputs = self._create_outputs()
+
+        # 初始化维度-轴关系
+        self.dim_axis_relations = self._create_dim_axis_relations()
+
+        # 获取迭代空间
         self.iteration_scripts = self._get_iterspace()
+
+    def _create_dim_axis_relations(self) -> "DimAxisRelation":
+        """创建维度-轴关系"""
+        dim_axis_relations = DimAxisRelation()
+
+        all_axes = (*self.axes_relations.inputs_axes, *self.axes_relations.outputs_axes)
+        all_tensors = (*self.inputs, *self.outputs)
+
+        for axes, tensor in zip(all_axes, all_tensors):
+            if isinstance(tensor, FakeScalar):
+                continue
+
+            for axis, dim in zip(axes, tensor.symbolic_shapes):
+                dim_axis_relations.insert(dim, axis)
+
+        return dim_axis_relations
 
     def _get_iterspace(self) -> Set[Axis]:
         """Give an example of iterspace
@@ -436,19 +743,35 @@ class EinsumPrimitive(ABC):
                 iter_space.add(axis)
         return iter_space
 
-    def run(self):
+    # def run(self):
+    #     dtype = self.inputs[0].dtype
+    #     outputs_axes = self.axes_relations.outputs_axes
+    #     rets = []
+    #     for output_axes in outputs_axes:
+    #         axes_names = [axis.name for axis in output_axes]
+    #         ret = FakeTensor(
+    #             symbolic_shapes=dims(axes_names),
+    #             dtype=dtype,
+    #             trace=self,
+    #         )
+    #         rets.append(ret)
+    #     return rets
+
+    def _create_outputs(self) -> List["FakeData"]:
+        """创建输出张量"""
         dtype = self.inputs[0].dtype
-        outputs_axes = self.axes_relations.outputs_axes
-        rets = []
-        for output_axes in outputs_axes:
+        outputs = []
+
+        for output_axes in self.axes_relations.outputs_axes:
             axes_names = [axis.name for axis in output_axes]
-            ret = FakeTensor(
+            output = FakeTensor(
                 symbolic_shapes=dims(axes_names),
                 dtype=dtype,
                 trace=self,
             )
-            rets.append(ret)
-        return rets
+            outputs.append(output)
+
+        return outputs
 
     def __repr__(self):
         from Aipiler.utils.namer import N
@@ -473,16 +796,16 @@ class MapPrimitive(EinsumPrimitive):
         einsum_str: str,
         op: ComputeOperator,
     ) -> None:
-        super().__init__([lhs, rhs], einsum_str)
+        super().__init__([lhs, rhs], einsum_str, EinsumParser(self))
 
         # init scripts
-        assert len(self.inputs_axes) == 2
-        self.lhs_axes, self.rhs_axes = self.inputs_axes
+        assert len(self.inputs) == 2
+        self.lhs_axes, self.rhs_axes = self.axes_relations.inputs_axes
         self.lhs = lhs
         self.rhs = rhs
         self.op = op
         self.output = self.outputs[0]
-        self.output_axes = self.outputs_axes[0]
+        self.output_axes = self.axes_relations.outputs_axes[0]
 
 
 class ReducePrimitive(EinsumPrimitive):
@@ -494,28 +817,27 @@ class ReducePrimitive(EinsumPrimitive):
         dims_to_reduce: Union[str, Sequence[str]],
         op: ComputeOperator,
     ) -> None:
-        super().__init__([x], einsum_str)
-        assert len(self.inputs_axes) == 1
+        super().__init__([x], einsum_str, EinsumParser(self))
+        assert len(self.inputs) == 1
         self.x = x
-        self.x_axes = self.inputs_axes[0]  # only one input
+        self.x_axes = self.axes_relations.inputs_axes[0]  # only one input
 
         self.dims_to_reduce = (
             [dims_to_reduce]
             if isinstance(dims_to_reduce, str)
             else list(dims_to_reduce)
         )
-
         self.op = op
         self.output = self.outputs[0]
-        self.output_axes = self.outputs_axes[0]
+        self.output_axes = self.axes_relations.outputs_axes[0]
 
 
 class UnaryPrimitive(EinsumPrimitive):
 
     def __init__(self, x: FakeData, einsum_str: str, op: ComputeOperator):
-        super().__init__(inputs=[x], einsum_str=einsum_str)
+        super().__init__([x], einsum_str, EinsumParser(self))
         self.x = x
-        assert len(self.inputs_axes) == 1
+        assert len(self.inputs) == 1
         self.x_axes = self.inputs_axes[0]  # only one input
         self.op = op
         self.output = self.outputs[0]
@@ -523,18 +845,27 @@ class UnaryPrimitive(EinsumPrimitive):
 
 
 class RearrangePrimitive(EinsumPrimitive):
-    def __init__(self, inputs: List[FakeData] | FakeData, einsum_str: str, **axes_length):
-        
-        if isinstance(inputs, FakeData):
-            inputs = [inputs]
-        
-        super().__init__(inputs, einsum_str)
+    def __init__(
+        self, inputs: List[FakeData] | FakeData, einsum_str: str, **axes_length
+    ):
+        if isinstance(inputs, list):
+            super().__init__(inputs, einsum_str, EinsumParser(self))
+        else:
+            super().__init__([inputs], einsum_str, EinsumParser(self))
+
         self.input = self.inputs[0]
-        self.inputs_script = self.inputs_scripts[0]
-        self.outputs_script = self.outputs_scripts[0]
         self.axes_length: Dict[str, int] = axes_length
         self.output = self.outputs[0]
-        self.output_axes = self.outputs_axes[0]
+        self.output_axes = self.axes_relations.outputs_axes[0]
+
+
+class RepeatPrimitive(EinsumPrimitive):
+    def __init__(self, x: FakeData, einsum_str: str, **axes_length):
+        super().__init__([x], einsum_str, EinsumParser(self))
+        assert len(self.inputs) == 1
+        self.axes_length: Dict[str, int] = axes_length
+        self.output = self.outputs[0]
+        self.output_axes = self.axes_relations.outputs_axes[0]
 
 
 class CascadePrimitive(EinsumPrimitive):
@@ -548,7 +879,6 @@ class CascadePrimitive(EinsumPrimitive):
 
         super().__init__(list(inputs), einsum_str)
         self.graph: EinsumGraph = graph
-
 
 
 class EinsumBuilder:
@@ -582,18 +912,24 @@ class EinsumBuilder:
         return UnaryPrimitive(x, einsum_str, op).output
 
     @staticmethod
-    def cascade(*args, subgraph, einsum_str):
+    def cascade(*args, subgraph, einsum_str) -> FakeData:
         return CascadePrimitive(args, subgraph, einsum_str).outputs
 
+    @staticmethod
     def rearrange(
         inputs: Union[FakeData, List[FakeData]],
         einsum_str: str,
         **axes_length: Dict[str, int],
     ) -> FakeData:
-        if isinstance(inputs, FakeData):
-            inputs = [inputs]
-        rearrange_primitive = RearrangePrimitive(inputs, einsum_str, **axes_length)
-        return rearrange_primitive.output
+        return RearrangePrimitive(inputs, einsum_str, **axes_length).output
+
+    @staticmethod
+    def Repeat(
+        input: FakeData,
+        einsum_str: str,
+        **axes_length: Dict[str, int],
+    ) -> FakeData:
+        return RearrangePrimitive(input, einsum_str, **axes_length).output
 
     @staticmethod
     def populate() -> FakeData:
