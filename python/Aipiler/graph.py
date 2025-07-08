@@ -5,6 +5,8 @@ from Aipiler.primitive import (
     MapPrimitive,
     ReducePrimitive,
     UnaryPrimitive,
+    RearrangePrimitive,
+    RepeatPrimitive,
     CascadePrimitive,
 )
 from Aipiler.dim import Dim, DisjointSetUnion
@@ -174,7 +176,7 @@ class EinsumGraph:
                     printer.P.add_line(
                         '{ret} = reduce({x}, "{einsum_str}", "{reduce_dims}", "{op}")\t\t# {name}'.format(
                             ret=namer.N.get_or_create_name_of(node.output),
-                            x=namer.N.get_or_create_name_of(node.x),
+                            x=namer.N.get_or_create_name_of(node.input),
                             einsum_str=node.einsum_str,
                             reduce_dims=", ".join(node.dims_to_reduce),
                             op=node.op.name,
@@ -185,9 +187,43 @@ class EinsumGraph:
                     printer.P.add_line(
                         '{ret} = unary({x}, "{einsum_str}", "{op}"\t\t# {name})'.format(
                             ret=namer.N.get_or_create_name_of(node.output),
-                            x=namer.N.get_or_create_name_of(node.x),
+                            x=namer.N.get_or_create_name_of(node.input),
                             einsum_str=node.einsum_str,
                             op=node.op.name,
+                            name=namer.N.get_or_create_name_of(node),
+                        )
+                    )
+                elif isinstance(node, RearrangePrimitive):
+                    printer.P.add_line(
+                        '{ret} = rearrange({x}, "{einsum_str}", {axes_length})'.format(
+                            ret=namer.N.get_or_create_name_of(node.output),
+                            x=namer.N.get_or_create_name_of(node.input),
+                            einsum_str=node.einsum_str,
+                            axes_length=(
+                                ", ".join(
+                                    [
+                                        f"{axis}={length}"
+                                        for axis, length in node.axes_length.items()
+                                    ]
+                                )
+                                if node.axes_length
+                                else ""
+                            ),
+                            name=namer.N.get_or_create_name_of(node),
+                        )
+                    )
+                elif isinstance(node, RepeatPrimitive):
+                    printer.P.add_line(
+                        '{ret} = repeat({x}, "{einsum_str}", {axes_length})'.format(
+                            ret=namer.N.get_or_create_name_of(node.output),
+                            x=namer.N.get_or_create_name_of(node.input),
+                            einsum_str=node.einsum_str,
+                            axes_length=", ".join(
+                                [
+                                    f"{axis}={length}"
+                                    for (axis, length) in node.axes_length.items()
+                                ]
+                            ),
                             name=namer.N.get_or_create_name_of(node),
                         )
                     )
@@ -198,7 +234,7 @@ class EinsumGraph:
                     ", ".join([namer.N.get_or_create_name_of(o) for o in self.outputs])
                 )
             )
-            printer.P.add_line()
+            printer.P.add_line("-" * 100)
             with printer.P.section("Nodes in Graph:"):
                 for node in self.nodes:
                     printer.P.add_line(str(node))

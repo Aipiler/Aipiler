@@ -183,6 +183,22 @@ def rearrange(
     return EinsumBuilder.rearrange(A, pattern, **axes_length)
 
 
+def expand(
+    A: FakeTensor,
+    pattern: str,
+    **axes_length: Dict[str, int],
+) -> FakeTensor:
+    return EinsumBuilder.expand(A, pattern, **axes_length)
+
+
+def repeat(
+    A: FakeTensor,
+    pattern: str,
+    **axes_length: Dict[str, int],
+) -> FakeTensor:
+    return EinsumBuilder.repeat(A, pattern, **axes_length)
+
+
 def cascade(func: FunctionType):
     R"""
     cascade is a black box / subgraph in einsum graph

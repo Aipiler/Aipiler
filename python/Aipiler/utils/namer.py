@@ -18,6 +18,7 @@ class Namer:
             ReducePrimitive,
             UnaryPrimitive,
             RearrangePrimitive,
+            RepeatPrimitive,
         )
 
         for ty, ty_name in (
@@ -30,6 +31,7 @@ class Namer:
             (ReducePrimitive, "reduce"),
             (UnaryPrimitive, "unary"),
             (RearrangePrimitive, "rearrange"),
+            (RepeatPrimitive, "repeat"),
         ):
             self._obj_names.update({ty: bidict()})
             self._type_short_names.update({ty: ty_name})

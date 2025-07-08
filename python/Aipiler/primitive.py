@@ -619,7 +619,19 @@ class MapPrimitive(EinsumPrimitive):
         self.output_axes = self.outputs_axes[0]
 
 
-class ReducePrimitive(EinsumPrimitive):
+class SimplePrimitiveMixin:
+    """为简单操作提供通用属性的混入类"""
+
+    def _setup_single_input_output(self):
+        """设置单输入单输出的通用属性"""
+        assert len(self.inputs) == 1
+        self.input = self.inputs[0]
+        self.input_axes = self.inputs_axes[0]
+        self.output = self.outputs[0]
+        self.output_axes = self.outputs_axes[0]
+
+
+class ReducePrimitive(EinsumPrimitive, SimplePrimitiveMixin):
 
     def __init__(
         self,
@@ -629,9 +641,7 @@ class ReducePrimitive(EinsumPrimitive):
         op: ComputeOperator,
     ) -> None:
         super().__init__([x], einsum_str)
-        assert len(self.inputs) == 1
-        self.x = x
-        self.x_axes = self.inputs_axes[0]  # only one input
+        self._setup_single_input_output()
 
         self.dims_to_reduce = (
             [dims_to_reduce]
@@ -639,31 +649,31 @@ class ReducePrimitive(EinsumPrimitive):
             else list(dims_to_reduce)
         )
         self.op = op
-        self.output = self.outputs[0]
-        self.output_axes = self.outputs_axes[0]
 
 
-class UnaryPrimitive(EinsumPrimitive):
+class UnaryPrimitive(EinsumPrimitive, SimplePrimitiveMixin):
 
     def __init__(self, x: FakeData, einsum_str: str, op: ComputeOperator):
         super().__init__([x], einsum_str)
-        self.x = x
-        assert len(self.inputs) == 1
-        self.x_axes = self.inputs_axes[0]  # only one input
+        self._setup_single_input_output()
         self.op = op
-        self.output = self.outputs[0]
-        self.output_axes = self.inputs_axes[0]
 
 
 class RearrangePrimitive(EinsumPrimitive):
     def __init__(
-        self, inputs: List[FakeTensor] | FakeTensor, einsum_str: str, **axes_length
+        self,
+        inputs: List[FakeTensor] | FakeTensor,
+        einsum_str: str,
+        **axes_length: Dict[str, int],
     ):
         if isinstance(inputs, FakeTensor):
             inputs = [inputs]
         # initialize
         self.inputs = inputs
         self.einsum_str = einsum_str
+        if not axes_length:
+            self.axes_length = None
+        self.axes_length = axes_length
         # wild means no related tensor
         (
             self.inputs_axes,
@@ -756,6 +766,54 @@ class RearrangePrimitive(EinsumPrimitive):
         return str(P)
 
 
+class RepeatPrimitive(EinsumPrimitive, SimplePrimitiveMixin):
+    """扩展操作：在指定位置插入新维度
+
+    例如: "b h w c -> b h new_axis w c", new_axis=2
+    在h和w之间插入一个大小为2的新维度
+    """
+
+    def __init__(self, x: FakeTensor, einsum_str: str, **axes_length: Dict[str, int]):
+
+        super().__init__([x], einsum_str)
+        self._setup_single_input_output()
+        if not axes_length:
+            raise ValueError(
+                "RepeatPrimitive requires axes_length to specify new axis size"
+            )
+        self.axes_length = axes_length
+        # 设置新轴的维度信息
+        self.sized_output_dims: Dict[Dim, int] = self._handle_sized_output_dims(
+            axes_length
+        )
+
+    def _handle_sized_output_dims(self, axes_length: Dict[str, int]) -> Dict[Dim, int]:
+        """处理输出维度的尺寸约束"""
+        sized_dims: Dict[Dim, int] = {}
+        for dim, axis in zip(self.output.symbolic_shapes, self.output_axes):
+            if axis.name in axes_length:
+                size = axes_length[axis.name]
+                dim._set_size(size)
+                sized_dims[dim] = size
+        return sized_dims
+
+    def __repr__(self):
+        from Aipiler.utils.namer import N
+
+        with P.section(
+            "{}: {}".format(N.get_or_create_name_of(self), self.__class__.__name__)
+        ):
+            with P.table(separator=" | ") as t:
+                t.add_row("input", self.input)
+                t.add_row("output", self.output)
+                t.add_row("einsum_str", self.einsum_str)
+                t.add_row("sized dims", self.sized_output_dims)
+                t.add_row("iter space", self.iteration_axes)
+            P.add_line(str(self.dim_axis_relations))
+            P.add_line(str(self.axes_relations))
+        return str(P)
+
+
 class CascadePrimitive(EinsumPrimitive):
     def __init__(
         self,
@@ -819,6 +877,14 @@ class EinsumBuilder:
             )
         rearrange_primitive = RearrangePrimitive(inputs, einsum_str, **axes_length)
         return rearrange_primitive.output
+
+    @staticmethod
+    def repeat(
+        inputs: FakeTensor,
+        einsum_str: str,
+        **axes_length: Dict[str, int],
+    ) -> FakeTensor:
+        return RepeatPrimitive(inputs, einsum_str, **axes_length).output
 
     @staticmethod
     def populate() -> FakeData:
